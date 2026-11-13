@@ -1059,23 +1059,83 @@ public sealed class MainView : UserControl
                     rh = ReadFieldFloat(GetChildField(rect, "height"));
                 }
 
-                int cropX = 0, cropY = 0, cropW = width, cropH = height;
-                if (rw > 0 && rh > 0)
+                // Port the crop/scale/packing sequence from AssetStudio's
+                // SpriteHelper.CutImage. Unity stores textureRect in bottom-left
+                // coordinates, while the decoded Android bitmap is top-left.
+                var settings = GetChildField(renderData, "settingsRaw");
+                long packed = ReadFieldInt64(GetChildField(settings, "packed"));
+                long packingRotation = ReadFieldInt64(GetChildField(settings, "packingRotation"));
+                float downscale = ReadFieldFloat(
+                    GetChildField(renderData, "downscaleMultiplier"), 1f);
+                int scaledWidth = width;
+                int scaledHeight = height;
+                if (downscale > 0f && float.IsFinite(downscale) && Math.Abs(downscale - 1f) > 0.0001f)
                 {
-                    cropX = Math.Clamp((int)Math.Floor(rx), 0, width - 1);
-                    cropY = Math.Clamp(height - (int)Math.Ceiling(ry + rh), 0, height - 1);
-                    cropW = Math.Clamp((int)Math.Ceiling(rw), 1, width - cropX);
-                    cropH = Math.Clamp((int)Math.Ceiling(rh), 1, height - cropY);
+                    scaledWidth = Math.Max(1, (int)(width / downscale));
+                    scaledHeight = Math.Max(1, (int)(height / downscale));
                 }
 
-                using var full = global::Android.Graphics.Bitmap.CreateBitmap(
+                int cropX = 0, cropY = 0, cropW = scaledWidth, cropH = scaledHeight;
+                if (rw > 0 && rh > 0)
+                {
+                    int rectX = (int)Math.Floor(rx);
+                    int rectY = (int)Math.Floor(ry);
+                    int rectRight = Math.Min((int)Math.Ceiling(rx + rw), scaledWidth);
+                    int rectBottom = Math.Min((int)Math.Ceiling(ry + rh), scaledHeight);
+                    cropX = Math.Clamp(rectX, 0, scaledWidth - 1);
+                    cropY = Math.Clamp(scaledHeight - rectBottom, 0, scaledHeight - 1);
+                    cropW = Math.Clamp(rectRight - rectX, 1, scaledWidth - cropX);
+                    cropH = Math.Clamp(rectBottom - rectY, 1, scaledHeight - cropY);
+                }
+
+                using var decodedBitmap = global::Android.Graphics.Bitmap.CreateBitmap(
                     width, height, global::Android.Graphics.Bitmap.Config.Argb8888!);
-                full.SetPixels(pixels, 0, width, 0, 0, width, height);
-                using var cropped = global::Android.Graphics.Bitmap.CreateBitmap(full, cropX, cropY, cropW, cropH);
+                decodedBitmap.SetPixels(pixels, 0, width, 0, 0, width, height);
+                using var scaledBitmap = scaledWidth != width || scaledHeight != height
+                    ? global::Android.Graphics.Bitmap.CreateScaledBitmap(
+                        decodedBitmap, scaledWidth, scaledHeight, true)
+                    : null;
+                var cropSource = scaledBitmap ?? decodedBitmap;
+                using var cropped = global::Android.Graphics.Bitmap.CreateBitmap(
+                    cropSource, cropX, cropY, cropW, cropH);
+
+                global::Android.Graphics.Bitmap finalSprite = cropped;
+                global::Android.Graphics.Bitmap? packedSprite = null;
+                if (packed == 1)
+                {
+                    using var matrix = new global::Android.Graphics.Matrix();
+                    switch (packingRotation)
+                    {
+                        case 1: // FlipHorizontal
+                            matrix.SetScale(-1f, 1f);
+                            matrix.PostTranslate(cropW, 0f);
+                            break;
+                        case 2: // FlipVertical
+                            matrix.SetScale(1f, -1f);
+                            matrix.PostTranslate(0f, cropH);
+                            break;
+                        case 3: // Rotate180
+                            matrix.SetRotate(180f, cropW / 2f, cropH / 2f);
+                            break;
+                        case 4: // AssetStudio rotates packed 90-degree sprites by 270 degrees
+                            matrix.SetRotate(-90f, cropW / 2f, cropH / 2f);
+                            break;
+                    }
+                    if (packingRotation is >= 1 and <= 4)
+                    {
+                        packedSprite = global::Android.Graphics.Bitmap.CreateBitmap(
+                            cropped, 0, 0, cropW, cropH, matrix, true);
+                        finalSprite = packedSprite;
+                    }
+                }
+
                 using var output = new MemoryStream();
-                cropped.Compress(global::Android.Graphics.Bitmap.CompressFormat.Png!, 100, output);
+                finalSprite.Compress(global::Android.Graphics.Bitmap.CompressFormat.Png!, 100, output);
+                int finalWidth = finalSprite.Width;
+                int finalHeight = finalSprite.Height;
+                packedSprite?.Dispose();
                 return (Png: output.ToArray(), TextureWidth: width, TextureHeight: height,
-                    SpriteWidth: cropW, SpriteHeight: cropH);
+                    SpriteWidth: finalWidth, SpriteHeight: finalHeight);
             });
 
             sourceWidth = result.TextureWidth;
