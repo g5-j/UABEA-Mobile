@@ -93,7 +93,8 @@ static (TextureFile Texture, byte[] Data, string Source) LoadTexture(
 
 static void SavePreview(byte[] encoded, TextureFormat format, int width, int height, string path)
 {
-    byte[] bgra = TextureFile.DecodeManaged(encoded, format, width, height);
+    byte[] bgra = AssetStudioTextureDecoder.TryDecode(encoded, format, width, height)
+        ?? TextureFile.DecodeManaged(encoded, format, width, height);
     int required = checked(width * height * 4);
     if (bgra == null || bgra.Length < required)
         throw new NotSupportedException($"Decode returned {bgra?.Length ?? 0} bytes, expected {required}.");
