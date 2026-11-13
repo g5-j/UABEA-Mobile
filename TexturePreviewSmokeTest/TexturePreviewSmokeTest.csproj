@@ -9,7 +9,6 @@
   <ItemGroup>
     <Compile Include="../UABEA.Android/AssetStudioTextureDecoder.cs" Link="AssetStudioTextureDecoder.cs" />
     <PackageReference Include="AssetRipper.TextureDecoder" Version="1.2.0" />
-    <PackageReference Include="SixLabors.ImageSharp" Version="3.1.11" />
     <Reference Include="AssetsTools.NET">
       <HintPath>../Libs/AssetsTools.NET.dll</HintPath>
     </Reference>
