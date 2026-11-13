@@ -2619,40 +2619,55 @@ public sealed class MainView : UserControl
             }
         }
 
-        // Resolve the resource by its actual metadata name first. Never choose
-        // an arbitrary imported resource merely because its length is large
-        // enough to contain the requested byte range.
-        string? fullPath = candidates
-            .Where(File.Exists)
-            .FirstOrDefault(HasValidRange);
+        string? fullPath = null;
 
-        if (fullPath == null)
+        // First honor the exact metadata path. If that file exists but the
+        // requested range is invalid, do not silently substitute another file.
+        var existingCandidates = candidates
+            .Where(File.Exists)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        if (existingCandidates.Count > 0)
+        {
+            var validCandidates = existingCandidates.Where(HasValidRange).ToList();
+            if (validCandidates.Count == 1)
+                fullPath = validCandidates[0];
+            else if (validCandidates.Count > 1)
+                throw new FileNotFoundException(
+                    "The external resource path resolves to multiple files. Select the matching resource file.");
+            else
+                throw new InvalidDataException(
+                    "The matching resource file exists, but the requested offset and size are outside that file.");
+        }
+
+        // Android filesystems are case-sensitive. Resolve a case-insensitive
+        // filename match before considering any generic session fallback.
+        if (fullPath == null && Directory.Exists(root))
         {
             string expectedName = Path.GetFileName(normalized);
-            var namedSessionFiles = _sessionResourcePaths
-                .Where(File.Exists)
+            var sameName = Directory.EnumerateFiles(root, "*", SearchOption.TopDirectoryOnly)
                 .Where(path => string.Equals(
                     Path.GetFileName(path), expectedName,
                     StringComparison.OrdinalIgnoreCase))
-                .Where(HasValidRange)
-                .Distinct(StringComparer.OrdinalIgnoreCase)
                 .ToList();
 
-            if (namedSessionFiles.Count == 1)
+            if (sameName.Count > 0)
             {
-                fullPath = namedSessionFiles[0];
-            }
-            else if (namedSessionFiles.Count > 1)
-            {
-                throw new FileNotFoundException(
-                    "More than one imported resource matches this texture path. Import only the matching resource file.");
+                var validSameName = sameName.Where(HasValidRange).ToList();
+                if (validSameName.Count == 1)
+                    fullPath = validSameName[0];
+                else if (validSameName.Count > 1)
+                    throw new FileNotFoundException(
+                        "Multiple resource files match this texture path. Select the matching resource file.");
+                else
+                    throw new InvalidDataException(
+                        "The matching resource file exists, but the requested offset and size are outside that file.");
             }
         }
 
-        // A single imported resource can be used as a fallback when Unity's
-        // source path is virtual (for example archive:/...) and has no matching
-        // filename. If several resources were imported, the correct one must
-        // be identified by name rather than guessing from the byte range.
+        // If Unity uses a virtual archive path with no filename match, reuse
+        // an imported session resource only when there is exactly one valid
+        // candidate. Never guess between multiple resource files by byte range.
         if (fullPath == null)
         {
             var validSessionFiles = _sessionResourcePaths
@@ -2668,33 +2683,9 @@ public sealed class MainView : UserControl
                     "The texture resource path does not match any imported file, and multiple resource files are available. Select the matching resource file.");
         }
 
-        // Android filesystems are case-sensitive, so perform one final
-        // case-insensitive filename lookup without accepting unrelated files.
-        if (fullPath == null && Directory.Exists(root))
-        {
-            var sameName = Directory.EnumerateFiles(root, "*", SearchOption.TopDirectoryOnly)
-                .Where(path => string.Equals(
-                    Path.GetFileName(path), Path.GetFileName(normalized),
-                    StringComparison.OrdinalIgnoreCase))
-                .Where(HasValidRange)
-                .ToList();
-
-            if (sameName.Count == 1)
-                fullPath = sameName[0];
-            else if (sameName.Count > 1)
-                throw new FileNotFoundException(
-                    "Multiple resource files match this texture path. Select the matching resource file.");
-        }
-
         if (fullPath == null)
-        {
-            bool matchingFileExists = candidates.Any(File.Exists);
-            if (matchingFileExists)
-                throw new InvalidDataException(
-                    "The matching resource file exists, but the requested offset and size are outside that file.");
             throw new FileNotFoundException(
                 "The matching external resource file was not found. Select the correct .resource or .resS file with the assets file.");
-        }
 
         using var stream = File.OpenRead(fullPath);
         stream.Position = checked((long)offset);
@@ -2709,7 +2700,6 @@ public sealed class MainView : UserControl
         }
         return data;
     }
-
     private Border CreatePreviewCard(string title, Control content, MaterialIconKind iconKind = MaterialIconKind.Image)
     {
         var panel = new StackPanel { Spacing = 9, VerticalAlignment = VerticalAlignment.Center };
