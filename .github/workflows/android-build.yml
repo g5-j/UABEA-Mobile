@@ -44,7 +44,7 @@ jobs:
             echo "::error::Android sdkmanager was not found."
             exit 1
           fi
-          yes | "$SDKMANAGER" --licenses >/dev/null
+          "$SDKMANAGER" --licenses <<< "$(printf 'y\\n%.0s' {1..30})" >/dev/null
           "$SDKMANAGER" "ndk;27.2.12479018" "cmake;3.22.1"
           test -f "$SDK_ROOT/ndk/27.2.12479018/build/cmake/android.toolchain.cmake"
 
