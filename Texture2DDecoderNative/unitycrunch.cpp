@@ -1,3 +1,4 @@
+#include <string.h>
 #include "unitycrunch.h"
 #include <stdint.h>
 #include <algorithm>
