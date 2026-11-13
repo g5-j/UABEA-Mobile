@@ -98,7 +98,7 @@ internal sealed class CubemapPreviewControl : Control, IDisposable
             double distance = Distance(pair[0], pair[1]);
             Point center = Midpoint(pair[0], pair[1]);
             if (_lastPinchDistance > 1)
-                _zoom = Math.Clamp(_zoom * (_lastPinchDistance / Math.Max(1, distance)), 0.55, 2.8);
+                _zoom = Math.Clamp(_zoom * (distance / _lastPinchDistance), 0.55, 2.8);
             _yaw += (center.X - _lastPinchCenter.X) * 0.006;
             _pitch = Math.Clamp(_pitch + (center.Y - _lastPinchCenter.Y) * 0.006, -1.48, 1.48);
             _lastPinchDistance = distance;
