@@ -133,6 +133,12 @@ foreach (var asset in instance.file.AssetInfos)
         try
         {
             var (texture, data, source) = LoadTexture(manager, instance, asset, directory);
+            if (texture.m_Width == 0 && texture.m_Height == 0)
+            {
+                missingResourceCount++;
+                report.Add($"SKIP Texture2D id={asset.PathId}: Unity placeholder texture has 0x0 dimensions.");
+                continue;
+            }
             if (texture.m_Width <= 0 || texture.m_Height <= 0 || data.Length == 0)
                 throw new InvalidDataException($"Invalid texture payload {texture.m_Width}x{texture.m_Height}, {data.Length} bytes.");
             string file = Path.Combine(output, $"texture-{asset.PathId}.png");
