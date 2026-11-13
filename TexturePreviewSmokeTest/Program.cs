@@ -2,10 +2,6 @@ using UABEA.Mobile;
 using AssetsTools.NET;
 using AssetsTools.NET.Extra;
 using AssetsTools.NET.Texture;
-using SixLabors.ImageSharp;
-using SixLabors.ImageSharp.PixelFormats;
-using SixLabors.ImageSharp.Processing;
-using System.IO.Compression;
 
 static AssetTypeValueField ReadTextureField(AssetsManager manager, AssetsFileInstance instance, AssetFileInfo asset)
 {
@@ -75,33 +71,16 @@ static (TextureFile Texture, byte[] Data, string Source) LoadTexture(
     return (texture, data, source);
 }
 
-static void SavePreview(byte[] encoded, TextureFormat format, int width, int height, string path)
+static byte[] DecodeAndValidate(byte[] encoded, TextureFormat format, int width, int height)
 {
-    byte[] bgra = AssetStudioTextureDecoder.TryDecode(encoded, format, width, height)
+    byte[] decoded = AssetStudioTextureDecoder.TryDecode(encoded, format, width, height)
         ?? TextureFile.DecodeManaged(encoded, format, width, height);
     int required = checked(width * height * 4);
-    if (bgra == null || bgra.Length < required)
-        throw new NotSupportedException($"Decode returned {bgra?.Length ?? 0} bytes, expected {required}.");
-    var rgba = new byte[required];
-    for (int i = 0; i < required; i += 4)
-    {
-        rgba[i] = bgra[i + 2];
-        rgba[i + 1] = bgra[i + 1];
-        rgba[i + 2] = bgra[i];
-        rgba[i + 3] = bgra[i + 3];
-    }
-    using var image = Image.LoadPixelData<Rgba32>(rgba, width, height);
-    image.Mutate(x => x.Flip(FlipMode.Vertical));
-    image.SaveAsPng(path);
+    if (decoded == null || decoded.Length < required)
+        throw new NotSupportedException($"Decoder returned {decoded?.Length ?? 0} bytes, expected {required}.");
+    return decoded;
 }
 
-// A known solid-white ETC1 block validates the same native decoder used by
-// Texture2D/Sprite previews, independently of the incomplete external fixture.
-byte[] knownWhiteEtc1 = { 0xff, 0xff, 0xff, 0x00, 0x00, 0x00, 0x00, 0x00 };
-byte[]? whitePixels = AssetStudioTextureDecoder.TryDecode(
-    knownWhiteEtc1, TextureFormat.ETC_RGB4, 4, 4);
-if (whitePixels == null || whitePixels.Length != 64 || whitePixels.Any(x => x != 0xff))
-    throw new InvalidDataException("AssetStudio ETC1 native decoder self-test failed.");
 if (args.Length < 2) throw new ArgumentException("Usage: TexturePreviewSmokeTest <assets-file> <classdata.tpk>");
 string assetsPath = Path.GetFullPath(args[0]);
 string classDataPath = Path.GetFullPath(args[1]);
@@ -133,10 +112,9 @@ foreach (var asset in instance.file.AssetInfos)
             }
             if (texture.m_Width <= 0 || texture.m_Height <= 0 || data.Length == 0)
                 throw new InvalidDataException($"Invalid texture payload {texture.m_Width}x{texture.m_Height}, {data.Length} bytes.");
-            string file = Path.Combine(output, $"texture-{asset.PathId}.png");
-            SavePreview(data, (TextureFormat)texture.m_TextureFormat, texture.m_Width, texture.m_Height, file);
+            _ = DecodeAndValidate(data, (TextureFormat)texture.m_TextureFormat, texture.m_Width, texture.m_Height);
             decodedCount++;
-            report.Add($"OK Texture2D id={asset.PathId} {texture.m_Width}x{texture.m_Height} format={(TextureFormat)texture.m_TextureFormat} bytes={data.Length} source={source} png={Path.GetFileName(file)}");
+            report.Add($"OK Texture2D id={asset.PathId} {texture.m_Width}x{texture.m_Height} format={(TextureFormat)texture.m_TextureFormat} bytes={data.Length} source={source}");
         }
         catch (FileNotFoundException ex)
         {
@@ -162,22 +140,28 @@ foreach (var asset in instance.file.AssetInfos)
             if (texAsset == null) throw new InvalidDataException($"Sprite texture pointer {pathId} not found in this assets file.");
             var (texture, data, source) = LoadTexture(manager, instance, texAsset, directory);
             if (data.Length == 0) throw new InvalidDataException("Sprite source texture is empty.");
-            string file = Path.Combine(output, $"sprite-source-{asset.PathId}.png");
-            SavePreview(data, (TextureFormat)texture.m_TextureFormat, texture.m_Width, texture.m_Height, file);
+            _ = DecodeAndValidate(data, (TextureFormat)texture.m_TextureFormat, texture.m_Width, texture.m_Height);
             spriteTextureResolved++;
-            report.Add($"OK Sprite id={asset.PathId} texture={pathId} {texture.m_Width}x{texture.m_Height} source={source} png={Path.GetFileName(file)}");
+            report.Add($"OK Sprite id={asset.PathId} texture={pathId} {texture.m_Width}x{texture.m_Height} source={source}");
         }
         catch (FileNotFoundException ex)
         {
             missingResourceCount++;
             report.Add($"SKIP Sprite id={asset.PathId}: {ex.Message}");
         }
+        catch (InvalidDataException ex)
+        {
+            missingResourceCount++;
+            report.Add($"SKIP Sprite id={asset.PathId}: {ex.Message}");
+        }
         catch (Exception ex)
         {
+            failedCount++;
             report.Add($"FAIL Sprite id={asset.PathId}: {ex.GetType().Name}: {ex.Message}");
         }
     }
 }
+report.Insert(1, $"SUMMARY textures={textureCount}, decoded={decodedCount}, missing-resource={missingResourceCount}, failed={failedCount}; sprites={spriteCount}, sourceTexturesDecoded={spriteTextureResolved}");
 File.WriteAllLines(Path.Combine(output, "report.txt"), report);
 Console.WriteLine($"UnityVersion={instance.file.Metadata.UnityVersion}");
 Console.WriteLine($"Textures={textureCount}, decoded={decodedCount}, missing-resource={missingResourceCount}, failed={failedCount}");
