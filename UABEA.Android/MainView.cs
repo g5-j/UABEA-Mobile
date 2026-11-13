@@ -1735,16 +1735,28 @@ public sealed class MainView : UserControl
         if (topLevel is null)
             return false;
 
+        string expectedName = Path.GetFileName(NormalizeResourcePath(source));
+        string expectedExtension = Path.GetExtension(expectedName);
+        string[] resourcePatterns = expectedExtension.Equals(".resS", StringComparison.OrdinalIgnoreCase)
+            ? new[] { "*.resS", "*.ress" }
+            : expectedExtension.Equals(".resource", StringComparison.OrdinalIgnoreCase)
+                ? new[] { "*.resource" }
+                : expectedExtension.Equals(".resources", StringComparison.OrdinalIgnoreCase)
+                    ? new[] { "*.resources" }
+                    : new[] { "*.resource", "*.resources", "*.resS", "*.ress" };
+
         var selected = await topLevel.StorageProvider.OpenFilePickerAsync(
             new FilePickerOpenOptions
             {
-                Title = "Select the matching .resource file",
+                Title = string.IsNullOrWhiteSpace(expectedExtension)
+                    ? "Select the matching Unity resource file"
+                    : $"Select the matching {expectedExtension} file",
                 AllowMultiple = false,
                 FileTypeFilter = new[]
                 {
-                    new FilePickerFileType("Unity resource files")
+                    new FilePickerFileType("Matching Unity resource files")
                     {
-                        Patterns = new[] { "*.resource", "*.resources", "*.resS", "*.ress" }
+                        Patterns = resourcePatterns
                     }
                 }
             });
@@ -1754,7 +1766,6 @@ public sealed class MainView : UserControl
 
         string root = GetExternalResourceDirectory(instance);
         Directory.CreateDirectory(root);
-        string expectedName = Path.GetFileName(NormalizeResourcePath(source));
         if (string.IsNullOrWhiteSpace(expectedName))
             expectedName = selected[0].Name;
         string destination = Path.Combine(root, expectedName);
