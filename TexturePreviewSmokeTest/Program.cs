@@ -61,10 +61,28 @@ static (TextureFile Texture, byte[] Data, string Source) LoadTexture(
         string name = Path.GetFileName(path.Replace("archive:/", "", StringComparison.OrdinalIgnoreCase));
         string full = Path.Combine(directory, name);
         if (!File.Exists(full))
-            throw new FileNotFoundException($"External texture resource missing: {path}");
+        {
+            // Match the Android app's one-session-resource fallback: only use
+            // the sole imported resource file when the complete byte range fits.
+            var candidates = Directory.GetFiles(directory)
+                .Where(x => !x.EndsWith(".assets", StringComparison.OrdinalIgnoreCase))
+                .Where(x =>
+                {
+                    try
+                    {
+                        long length = new FileInfo(x).Length;
+                        return offset <= (ulong)length && size <= (ulong)length - offset;
+                    }
+                    catch { return false; }
+                })
+                .ToArray();
+            if (candidates.Length == 1) full = candidates[0];
+            else throw new FileNotFoundException(
+                $"External texture resource missing: {path}; valid session candidates={candidates.Length}; offset={offset}; size={size}");
+        }
         using var fs = File.OpenRead(full);
         if (offset > (ulong)fs.Length || size > (ulong)fs.Length - offset)
-            throw new InvalidDataException($"Resource range invalid: {name} offset={offset} size={size} length={fs.Length}");
+            throw new InvalidDataException($"Resource range invalid: {Path.GetFileName(full)} offset={offset} size={size} length={fs.Length}");
         fs.Position = checked((long)offset);
         data = new byte[checked((int)size)];
         fs.ReadExactly(data);
