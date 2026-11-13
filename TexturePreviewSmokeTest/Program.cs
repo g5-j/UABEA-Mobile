@@ -44,14 +44,14 @@ static (TextureFile Texture, byte[] Data, string Source) LoadTexture(
     var texture = TextureFile.ReadTextureFile(field);
     byte[] data = texture.pictureData ?? Array.Empty<byte>();
     string source = "embedded";
-    var stream = field.Children.FirstOrDefault(x => x.Name == "m_StreamData");
+    var stream = field["m_StreamData"];
     ulong offset = 0, size = 0;
     string path = "";
     if (stream != null && !stream.IsDummy)
     {
-        var off = stream.Children.FirstOrDefault(x => x.Name == "offset");
-        var siz = stream.Children.FirstOrDefault(x => x.Name == "size");
-        var pth = stream.Children.FirstOrDefault(x => x.Name == "path");
+        var off = stream["offset"];
+        var siz = stream["size"];
+        var pth = stream["path"];
         offset = ReadUnsigned(off);
         size = ReadUnsigned(siz);
         if (pth != null && !pth.IsDummy) path = pth.AsString ?? "";
@@ -134,9 +134,9 @@ foreach (var asset in instance.file.AssetInfos)
         try
         {
             var sprite = manager.GetBaseField(instance, asset);
-            var rd = sprite.Children.FirstOrDefault(x => x.Name == "m_RD");
-            var texPtr = rd?.Children.FirstOrDefault(x => x.Name == "texture");
-            long pathId = texPtr?.Children.FirstOrDefault(x => x.Name == "m_PathID")?.AsLong ?? 0;
+            var rd = sprite["m_RD"];
+            var texPtr = rd["texture"];
+            long pathId = texPtr["m_PathID"]?.AsLong ?? 0;
             var texAsset = instance.file.AssetInfos.FirstOrDefault(x => x.PathId == pathId && x.GetTypeId(instance.file) == (int)AssetClassID.Texture2D);
             if (texAsset == null) throw new InvalidDataException($"Sprite texture pointer {pathId} not found in this assets file.");
             var (texture, data, source) = LoadTexture(manager, instance, texAsset, directory);
