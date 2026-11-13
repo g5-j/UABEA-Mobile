@@ -1065,7 +1065,7 @@ public sealed class MainView : UserControl
 
                 var brightnessLabel = new TextBlock
                 {
-                    Text = "Lighting · 100%",
+                    Text = "Exposure · 100%",
                     Foreground = TextBrush,
                     VerticalAlignment = VerticalAlignment.Center
                 };
@@ -1081,7 +1081,28 @@ public sealed class MainView : UserControl
                     if (args.Property == RangeBase.ValueProperty && largeViewer != null)
                     {
                         largeViewer.Brightness = brightness.Value;
-                        brightnessLabel.Text = $"Lighting · {(int)(brightness.Value * 100)}%";
+                        brightnessLabel.Text = $"Exposure · {(int)(brightness.Value * 100)}%";
+                    }
+                };
+                var zoomLabel = new TextBlock
+                {
+                    Text = "Zoom · 100%",
+                    Foreground = TextBrush,
+                    VerticalAlignment = VerticalAlignment.Center
+                };
+                var zoom = new Slider
+                {
+                    Minimum = 0.55,
+                    Maximum = 2.8,
+                    Value = 1,
+                    MinWidth = 130
+                };
+                zoom.PropertyChanged += (_, args) =>
+                {
+                    if (args.Property == RangeBase.ValueProperty && largeViewer != null)
+                    {
+                        largeViewer.Zoom = zoom.Value;
+                        zoomLabel.Text = $"Zoom · {(int)(zoom.Value * 100)}%";
                     }
                 };
                 var reset = new Button
@@ -1096,6 +1117,7 @@ public sealed class MainView : UserControl
                 {
                     largeViewer.ResetView();
                     brightness.Value = 1;
+                    zoom.Value = 1;
                 };
 
                 var header = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto") };
@@ -1110,18 +1132,17 @@ public sealed class MainView : UserControl
                 header.Children.Add(close);
 
                 var controls = new StackPanel { Spacing = 8 };
-                controls.Children.Add(new Grid
-                {
-                    ColumnDefinitions = new ColumnDefinitions("Auto,*,Auto"),
-                    Children =
-                    {
-                        brightnessLabel,
-                        brightness,
-                        reset
-                    }
-                });
+                var exposureRow = new Grid { ColumnDefinitions = new ColumnDefinitions("Auto,*") };
+                exposureRow.Children.Add(brightnessLabel);
                 Grid.SetColumn(brightness, 1);
-                Grid.SetColumn(reset, 2);
+                exposureRow.Children.Add(brightness);
+                var zoomRow = new Grid { ColumnDefinitions = new ColumnDefinitions("Auto,*") };
+                zoomRow.Children.Add(zoomLabel);
+                Grid.SetColumn(zoom, 1);
+                zoomRow.Children.Add(zoom);
+                controls.Children.Add(exposureRow);
+                controls.Children.Add(zoomRow);
+                controls.Children.Add(reset);
                 controls.Children.Add(facePanel);
 
                 var layout = new Grid { RowDefinitions = new RowDefinitions("Auto,*,Auto") };
