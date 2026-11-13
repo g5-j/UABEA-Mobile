@@ -86,10 +86,10 @@ jobs:
             exit 1
           fi
           dotnet run --project TexturePreviewSmokeTest/TexturePreviewSmokeTest.csproj -- "$ASSETS_FILE" ReleaseFiles/classdata.tpk
-      - name: Upload decoded fixture previews
+      - name: Upload sharedassets validation report
         uses: actions/upload-artifact@v4
         with:
-          name: sharedassets-decoded-previews
+          name: sharedassets-validation-report
           path: texture-preview-output/
           if-no-files-found: error
           compression-level: 0
