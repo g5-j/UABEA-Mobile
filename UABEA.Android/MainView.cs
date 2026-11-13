@@ -857,7 +857,11 @@ public sealed class MainView : UserControl
         {
             var imageResult = await Task.Run(() =>
             {
-                var field = manager.GetBaseField(instance, asset);
+                // Match UABEA's TextureHelper.GetByteArrayTexture exactly:
+                // the Unity type tree can expose image data as an ordinary array,
+                // but TextureFile requires it to be read as a ByteArray. Sprite
+                // preview already uses this path; Texture2D must use it too.
+                var field = ReadTextureFieldForPreview(manager, instance, asset);
                 if (field == null)
                     throw new InvalidDataException("Texture data could not be read.");
                 var texture = TextureFile.ReadTextureFile(field);
@@ -866,9 +870,13 @@ public sealed class MainView : UserControl
                     throw new InvalidDataException("Unsupported or invalid image dimensions.");
 
                 byte[] data = texture.pictureData ?? Array.Empty<byte>();
-                ulong streamOffset = ReadUnsignedField(field["m_StreamData"]["offset"]);
-                ulong streamSize = ReadUnsignedField(field["m_StreamData"]["size"]);
-                string streamPath = field["m_StreamData"]["path"]?.AsString ?? texture.m_StreamData.path ?? "";
+                var streamData = GetChildField(field, "m_StreamData");
+                ulong streamOffset = ReadUnsignedField(GetChildField(streamData, "offset"));
+                ulong streamSize = ReadUnsignedField(GetChildField(streamData, "size"));
+                var streamPathField = GetChildField(streamData, "path");
+                string streamPath = streamPathField == null || streamPathField.IsDummy
+                    ? texture.m_StreamData.path ?? ""
+                    : streamPathField.AsString;
                 textureResourceSource = streamPath;
                 if (streamSize > 0 && !string.IsNullOrWhiteSpace(streamPath))
                 {
@@ -888,43 +896,13 @@ public sealed class MainView : UserControl
                 if (data.Length == 0)
                     throw new InvalidDataException("This texture contains no image data.");
 
-                // TextureFile.DecodeManaged returns pixels in BGRA byte order.
-                // Android Bitmap.SetPixels expects packed ARGB integers, so swap
-                // the red/blue channels while preserving the source alpha.
-                byte[] bgra = TextureFile.DecodeManaged(
-                    data, (TextureFormat)texture.m_TextureFormat,
-                    texture.m_Width, texture.m_Height);
-                if (bgra == null || bgra.Length < texture.m_Width * texture.m_Height * 4)
-                    throw new NotSupportedException("This texture format is not supported by the mobile preview decoder.");
-
                 int width = texture.m_Width;
                 int height = texture.m_Height;
+                int[] pixels = DecodeTexturePixelsToArgb(
+                    data, (TextureFormat)texture.m_TextureFormat, width, height);
+
                 using var bitmap = global::Android.Graphics.Bitmap.CreateBitmap(
                     width, height, global::Android.Graphics.Bitmap.Config.Argb8888!);
-                var pixels = new int[width * height];
-
-                // Unity texture pixel data is bottom-left oriented. The current
-                // decoder output is also horizontally reversed for this preview
-                // path, so map both axes to restore the expected top-left image.
-                for (int y = 0; y < height; y++)
-                {
-                    int sourceY = height - 1 - y;
-                    for (int x = 0; x < width; x++)
-                    {
-                        // Apply the additional horizontal flip requested for the preview.
-                        // The previous horizontal reversal is cancelled; vertical correction remains.
-                        int sourceX = x;
-                        int sourceOffset = (sourceY * width + sourceX) * 4;
-                        byte blue = bgra[sourceOffset];
-                        byte green = bgra[sourceOffset + 1];
-                        byte red = bgra[sourceOffset + 2];
-                        byte alpha = bgra[sourceOffset + 3];
-
-                        pixels[y * width + x] =
-                            (alpha << 24) | (red << 16) | (green << 8) | blue;
-                    }
-                }
-
                 bitmap.SetPixels(pixels, 0, width, 0, 0, width, height);
                 using var output = new MemoryStream();
                 bitmap.Compress(global::Android.Graphics.Bitmap.CompressFormat.Png!, 100, output);
