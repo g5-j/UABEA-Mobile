@@ -1029,11 +1029,12 @@ public sealed class MainView : UserControl
                                 continue;
                             }
 
-                            string componentType = Enum.GetName(typeof(AssetClassID), componentInfo.TypeId) ??
-                                $"Class {componentInfo.TypeId}";
+                            int componentTypeId = componentInfo.GetTypeId(instance.file);
+                            string componentType = Enum.GetName(typeof(AssetClassID), componentTypeId) ??
+                                $"Class {componentTypeId}";
                             rows.Add((depth + 1, componentType, true));
-                            if (componentInfo.TypeId == (int)AssetClassID.Transform ||
-                                componentInfo.TypeId == (int)AssetClassID.RectTransform)
+                            if (componentTypeId == (int)AssetClassID.Transform ||
+                                componentTypeId == (int)AssetClassID.RectTransform)
                                 transformPathId = componentPathId;
                         }
                     }
