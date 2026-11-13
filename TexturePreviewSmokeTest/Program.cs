@@ -122,7 +122,7 @@ manager.LoadClassPackage(classDataPath);
 var instance = manager.LoadAssetsFile(assetsPath, false);
 manager.LoadClassDatabaseFromPackage(instance.file.Metadata.UnityVersion);
 
-int textureCount = 0, decodedCount = 0, failedCount = 0, spriteCount = 0, spriteTextureResolved = 0;
+int textureCount = 0, decodedCount = 0, failedCount = 0, missingResourceCount = 0, spriteCount = 0, spriteTextureResolved = 0;
 var report = new List<string>();
 foreach (var asset in instance.file.AssetInfos)
 {
@@ -139,6 +139,11 @@ foreach (var asset in instance.file.AssetInfos)
             SavePreview(data, (TextureFormat)texture.m_TextureFormat, texture.m_Width, texture.m_Height, file);
             decodedCount++;
             report.Add($"OK Texture2D id={asset.PathId} {texture.m_Width}x{texture.m_Height} format={(TextureFormat)texture.m_TextureFormat} bytes={data.Length} source={source} png={Path.GetFileName(file)}");
+        }
+        catch (FileNotFoundException ex)
+        {
+            missingResourceCount++;
+            report.Add($"SKIP Texture2D id={asset.PathId}: {ex.Message}");
         }
         catch (Exception ex)
         {
@@ -164,6 +169,11 @@ foreach (var asset in instance.file.AssetInfos)
             spriteTextureResolved++;
             report.Add($"OK Sprite id={asset.PathId} texture={pathId} {texture.m_Width}x{texture.m_Height} source={source} png={Path.GetFileName(file)}");
         }
+        catch (FileNotFoundException ex)
+        {
+            missingResourceCount++;
+            report.Add($"SKIP Sprite id={asset.PathId}: {ex.Message}");
+        }
         catch (Exception ex)
         {
             report.Add($"FAIL Sprite id={asset.PathId}: {ex.GetType().Name}: {ex.Message}");
@@ -172,7 +182,7 @@ foreach (var asset in instance.file.AssetInfos)
 }
 File.WriteAllLines(Path.Combine(output, "report.txt"), report);
 Console.WriteLine($"UnityVersion={instance.file.Metadata.UnityVersion}");
-Console.WriteLine($"Textures={textureCount}, decoded={decodedCount}, failed={failedCount}");
+Console.WriteLine($"Textures={textureCount}, decoded={decodedCount}, missing-resource={missingResourceCount}, failed={failedCount}");
 Console.WriteLine($"Sprites={spriteCount}, sourceTexturesDecoded={spriteTextureResolved}");
 foreach (var line in report) Console.WriteLine(line);
 if (textureCount == 0 || decodedCount == 0 || failedCount > 0)
