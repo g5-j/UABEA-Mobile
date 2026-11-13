@@ -1602,8 +1602,9 @@ public sealed class MainView : UserControl
         catch (Exception ex)
         {
             error = ex.Message;
-            needsExternalResource = ex is FileNotFoundException &&
-                ex.Message.Contains("external resource file was not found", StringComparison.OrdinalIgnoreCase);
+            // Any unresolved or ambiguous resource selection needs the same
+            // picker flow, not only a literal "file not found" error.
+            needsExternalResource = ex is FileNotFoundException;
         }
         finally { }
 
