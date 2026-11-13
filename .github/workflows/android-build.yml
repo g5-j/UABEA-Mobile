@@ -55,15 +55,15 @@ jobs:
             echo "::error::Android NDK CMake toolchain was not found."
             exit 1
           fi
-          cmake -S Texture2DDecoderNative -B "$RUNNER_TEMP/t2d-android" \
-            -DCMAKE_TOOLCHAIN_FILE="$NDK_DIR/build/cmake/android.toolchain.cmake" \
-            -DANDROID_ABI=arm64-v8a \
-            -DANDROID_PLATFORM=android-23 \
-            -DANDROID_STL=c++_static \
+          cmake -S Texture2DDecoderNative -B "$RUNNER_TEMP/t2d-android" \\
+            -DCMAKE_TOOLCHAIN_FILE="$NDK_DIR/build/cmake/android.toolchain.cmake" \\
+            -DANDROID_ABI=arm64-v8a \\
+            -DANDROID_PLATFORM=android-23 \\
+            -DANDROID_STL=c++_static \\
             -DCMAKE_BUILD_TYPE=Release
           cmake --build "$RUNNER_TEMP/t2d-android" --config Release --parallel 2
           mkdir -p UABEA.Android/runtimes/android-arm64/native
-          cp "$RUNNER_TEMP/t2d-android/libTexture2DDecoderNative.so" \
+          cp "$RUNNER_TEMP/t2d-android/libTexture2DDecoderNative.so" \\
             UABEA.Android/runtimes/android-arm64/native/libTexture2DDecoderNative.so
           test -s UABEA.Android/runtimes/android-arm64/native/libTexture2DDecoderNative.so
 
@@ -78,6 +78,7 @@ jobs:
             exit 1
           fi
           dotnet run --project TexturePreviewSmokeTest/TexturePreviewSmokeTest.csproj -- "$ASSETS_FILE" ReleaseFiles/classdata.tpk
+
       - name: Prepare stable release signing key
         env:
           ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
@@ -105,17 +106,17 @@ jobs:
           done
 
           dotnet restore UABEA.Android/UABEA.Android.csproj
-          dotnet publish UABEA.Android/UABEA.Android.csproj \
-            -c Release \
-            -f net8.0-android31.0 \
-            -r android-arm64 \
-            -p:AndroidPackageFormat=apk \
-            -p:AndroidKeyStore=true \
-            -p:AndroidSigningKeyStore="$RUNNER_TEMP/uabea-release.keystore" \
-            -p:AndroidSigningKeyAlias="$ANDROID_KEY_ALIAS" \
-            -p:AndroidSigningStorePass="$ANDROID_KEYSTORE_PASSWORD" \
-            -p:AndroidSigningKeyPass="$ANDROID_KEY_PASSWORD" \
-            -p:PublishTrimmed=false \
+          dotnet publish UABEA.Android/UABEA.Android.csproj \\
+            -c Release \\
+            -f net8.0-android31.0 \\
+            -r android-arm64 \\
+            -p:AndroidPackageFormat=apk \\
+            -p:AndroidKeyStore=true \\
+            -p:AndroidSigningKeyStore="$RUNNER_TEMP/uabea-release.keystore" \\
+            -p:AndroidSigningKeyAlias="$ANDROID_KEY_ALIAS" \\
+            -p:AndroidSigningStorePass="$ANDROID_KEYSTORE_PASSWORD" \\
+            -p:AndroidSigningKeyPass="$ANDROID_KEY_PASSWORD" \\
+            -p:PublishTrimmed=false \\
             -p:RunAOTCompilation=false
 
           APK="$(find UABEA.Android/bin/Release/net8.0-android31.0/android-arm64/publish -maxdepth 1 -type f -iname '*signed.apk' | head -n 1)"
@@ -129,11 +130,30 @@ jobs:
           APKSIGNER="$(find "$ANDROID_HOME/build-tools" -type f -name apksigner | sort -V | tail -n 1)"
           "$APKSIGNER" verify --verbose UABEA-Mobile.apk
 
-      - name: Upload APK only (Ultra ZIP)
+      - name: Install 7-Zip
+        run: |
+          set -euo pipefail
+          if ! command -v 7z >/dev/null 2>&1; then
+            sudo apt-get update
+            sudo apt-get install -y p7zip-full
+          fi
+          7z
+          
+      - name: Create and verify Ultra 7z archive
+        run: |
+          set -euo pipefail
+          SHORT_SHA="${GITHUB_SHA:0:7}"
+          ARCHIVE="UABEA-Mobile-${SHORT_SHA}.7z"
+          7z a -t7z -mx=9 -m0=lzma2 -mmt=on "$ARCHIVE" UABEA-Mobile.apk
+          7z t "$ARCHIVE"
+          7z l "$ARCHIVE" | grep -F "UABEA-Mobile.apk"
+          echo "ARCHIVE=$ARCHIVE" >> "$GITHUB_ENV"
+
+      - name: Upload 7z build artifact
         uses: actions/upload-artifact@v4
         with:
-          name: UABEA-Mobile-${{ github.sha }}.zip
-          path: UABEA-Mobile.apk
+          name: UABEA-Mobile-${{ github.sha }}
+          path: UABEA-Mobile-${{ github.sha }}.7z
           if-no-files-found: error
-          compression-level: 9
+          compression-level: 0
           retention-days: 30
