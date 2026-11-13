@@ -20,6 +20,23 @@ static AssetTypeValueField ReadTextureField(AssetsManager manager, AssetsFileIns
         return template.MakeValue(reader, asset.GetAbsoluteByteStart(instance.file), null);
 }
 
+static ulong ReadUnsigned(AssetTypeValueField? field)
+{
+    if (field == null || field.IsDummy || field.Value == null) return 0;
+    return field.Value.ValueType switch
+    {
+        AssetValueType.UInt8 => field.AsByte,
+        AssetValueType.UInt16 => field.AsUShort,
+        AssetValueType.UInt32 => field.AsUInt,
+        AssetValueType.UInt64 => field.AsULong,
+        AssetValueType.Int8 => checked((ulong)field.AsSByte),
+        AssetValueType.Int16 => checked((ulong)field.AsShort),
+        AssetValueType.Int32 => checked((ulong)field.AsInt),
+        AssetValueType.Int64 => checked((ulong)field.AsLong),
+        _ => throw new InvalidDataException($"Unexpected numeric field type: {field.Value.ValueType}.")
+    };
+}
+
 static (TextureFile Texture, byte[] Data, string Source) LoadTexture(
     AssetsManager manager, AssetsFileInstance instance, AssetFileInfo asset, string directory)
 {
@@ -35,8 +52,8 @@ static (TextureFile Texture, byte[] Data, string Source) LoadTexture(
         var off = stream.Children.FirstOrDefault(x => x.Name == "offset");
         var siz = stream.Children.FirstOrDefault(x => x.Name == "size");
         var pth = stream.Children.FirstOrDefault(x => x.Name == "path");
-        if (off != null && !off.IsDummy) offset = off.AsUInt64;
-        if (siz != null && !siz.IsDummy) size = siz.AsUInt64;
+        offset = ReadUnsigned(off);
+        size = ReadUnsigned(siz);
         if (pth != null && !pth.IsDummy) path = pth.AsString ?? "";
     }
     if (size > 0 && !string.IsNullOrWhiteSpace(path))
@@ -119,7 +136,7 @@ foreach (var asset in instance.file.AssetInfos)
             var sprite = manager.GetBaseField(instance, asset);
             var rd = sprite.Children.FirstOrDefault(x => x.Name == "m_RD");
             var texPtr = rd?.Children.FirstOrDefault(x => x.Name == "texture");
-            long pathId = texPtr?.Children.FirstOrDefault(x => x.Name == "m_PathID")?.AsInt64 ?? 0;
+            long pathId = texPtr?.Children.FirstOrDefault(x => x.Name == "m_PathID")?.AsLong ?? 0;
             var texAsset = instance.file.AssetInfos.FirstOrDefault(x => x.PathId == pathId && x.GetTypeId(instance.file) == (int)AssetClassID.Texture2D);
             if (texAsset == null) throw new InvalidDataException($"Sprite texture pointer {pathId} not found in this assets file.");
             var (texture, data, source) = LoadTexture(manager, instance, texAsset, directory);
