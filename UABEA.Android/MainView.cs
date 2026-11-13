@@ -842,6 +842,273 @@ public sealed class MainView : UserControl
         {
             await ShowMeshPreviewAsync(manager, instance, asset);
         }
+        else if (typeName.Contains("Cubemap", StringComparison.OrdinalIgnoreCase))
+        {
+            await ShowCubemapPreviewAsync(manager, instance, asset);
+        }
+        else if (typeName.Contains("GameObject", StringComparison.OrdinalIgnoreCase))
+        {
+            await ShowGameObjectPreviewAsync(manager, instance, asset);
+        }
+    }
+
+    private async Task ShowCubemapPreviewAsync(
+        AssetsManager manager, AssetsFileInstance instance, AssetFileInfo asset)
+    {
+        var loadingCard = AddPreviewLoadingCard("Cubemap preview", MaterialIconKind.Image);
+        var faceBitmaps = new List<(string Name, Avalonia.Media.Imaging.Bitmap Bitmap)>();
+        string? error = null;
+        int width = 0, height = 0;
+        string formatName = "Unknown";
+
+        try
+        {
+            var result = await Task.Run(() =>
+            {
+                var field = ReadTextureFieldForPreview(manager, instance, asset);
+                if (field == null)
+                    throw new InvalidDataException("Cubemap data could not be read.");
+
+                width = (int)ReadFieldInt64(GetChildField(field, "m_Width"));
+                height = (int)ReadFieldInt64(GetChildField(field, "m_Height"));
+                int formatValue = (int)ReadFieldInt64(GetChildField(field, "m_TextureFormat"));
+                var format = (TextureFormat)formatValue;
+                formatName = format.ToString();
+                if (width <= 0 || height <= 0 || width > 4096 || height > 4096)
+                    throw new InvalidDataException("Cubemap dimensions are invalid or unsupported.");
+
+                var imageField = GetChildField(field, "m_ImageData") ??
+                    GetChildField(field, "image data");
+                if (imageField == null)
+                    throw new InvalidDataException("This Cubemap does not contain readable image data.");
+                byte[] imageData = imageField.AsByteArray ?? Array.Empty<byte>();
+                if (imageData.Length < 6)
+                    throw new InvalidDataException("Cubemap image data is empty or incomplete.");
+                if (imageData.Length % 6 != 0)
+                    throw new InvalidDataException("Cubemap face data is not evenly divided into six faces; this layout is not supported yet.");
+
+                int faceSize = imageData.Length / 6;
+                string[] names = { "+X (Right)", "-X (Left)", "+Y (Top)", "-Y (Bottom)", "+Z (Front)", "-Z (Back)" };
+                var decodedFaces = new List<(string Name, byte[] Png)>(6);
+                for (int faceIndex = 0; faceIndex < 6; faceIndex++)
+                {
+                    var faceData = new byte[faceSize];
+                    Buffer.BlockCopy(imageData, faceIndex * faceSize, faceData, 0, faceSize);
+                    int[] pixels = DecodeTexturePixelsToArgb(faceData, format, width, height);
+                    using var bitmap = global::Android.Graphics.Bitmap.CreateBitmap(
+                        width, height, global::Android.Graphics.Bitmap.Config.Argb8888!);
+                    bitmap.SetPixels(pixels, 0, width, 0, 0, width, height);
+                    using var png = new MemoryStream();
+                    bitmap.Compress(global::Android.Graphics.Bitmap.CompressFormat.Png!, 100, png);
+                    decodedFaces.Add((names[faceIndex], png.ToArray()));
+                }
+                return decodedFaces;
+            });
+
+            foreach (var face in result)
+            {
+                using var stream = new MemoryStream(face.Png);
+                faceBitmaps.Add((face.Name, new Avalonia.Media.Imaging.Bitmap(stream)));
+            }
+        }
+        catch (Exception ex)
+        {
+            error = ex.Message;
+        }
+
+        if (_currentAssets != instance || _currentPage != BrowserPage.AssetDetails)
+        {
+            RemovePreviewLoadingCard(loadingCard);
+            foreach (var face in faceBitmaps) face.Bitmap.Dispose();
+            return;
+        }
+
+        RemovePreviewLoadingCard(loadingCard);
+        if (faceBitmaps.Count == 6)
+        {
+            var grid = new Grid
+            {
+                ColumnDefinitions = new ColumnDefinitions("*,*,*"),
+                RowDefinitions = new RowDefinitions("Auto,Auto")
+            };
+            for (int i = 0; i < faceBitmaps.Count; i++)
+            {
+                var item = faceBitmaps[i];
+                var cell = new StackPanel { Spacing = 4, Margin = new Thickness(3) };
+                cell.Children.Add(new Image
+                {
+                    Source = item.Bitmap,
+                    Stretch = Stretch.Uniform,
+                    MaxHeight = 112,
+                    HorizontalAlignment = HorizontalAlignment.Stretch
+                });
+                cell.Children.Add(new TextBlock
+                {
+                    Text = item.Name,
+                    FontSize = 10,
+                    Foreground = TextBrush,
+                    HorizontalAlignment = HorizontalAlignment.Center
+                });
+                Grid.SetColumn(cell, i % 3);
+                Grid.SetRow(cell, i / 3);
+                grid.Children.Add(cell);
+            }
+
+            var content = new StackPanel { Spacing = 8 };
+            content.Children.Add(new TextBlock
+            {
+                Text = $"{width} × {height} px per face • {formatName}",
+                Foreground = MutedBrush,
+                FontSize = 12
+            });
+            content.Children.Add(grid);
+            _items.Children.Add(CreatePreviewCard("Cubemap • six faces", content, MaterialIconKind.Image));
+        }
+        else
+        {
+            _items.Children.Add(CreatePreviewCard("Cubemap preview",
+                new TextBlock
+                {
+                    Text = "Preview unavailable: " + (error ?? "The six Cubemap faces could not be decoded."),
+                    Foreground = TextBrush,
+                    TextWrapping = TextWrapping.Wrap
+                }, MaterialIconKind.Image));
+        }
+    }
+
+    private async Task ShowGameObjectPreviewAsync(
+        AssetsManager manager, AssetsFileInstance instance, AssetFileInfo asset)
+    {
+        var loadingCard = AddPreviewLoadingCard("GameObject hierarchy", MaterialIconKind.CubeOutline);
+        var rows = new List<(int Depth, string Text, bool IsComponent)>();
+        string? error = null;
+
+        try
+        {
+            await Task.Run(() =>
+            {
+                var assetsByPath = instance.file.AssetInfos.ToDictionary(x => x.PathId);
+                var visited = new HashSet<long>();
+
+                AssetTypeValueField? ReadAsset(long pathId)
+                {
+                    if (!assetsByPath.TryGetValue(pathId, out var info))
+                        return null;
+                    return manager.GetBaseField(instance, info);
+                }
+
+                void AddGameObject(long gameObjectPathId, int depth)
+                {
+                    if (depth > 80 || !visited.Add(gameObjectPathId))
+                        return;
+                    var gameObject = ReadAsset(gameObjectPathId);
+                    if (gameObject == null)
+                    {
+                        rows.Add((depth, $"Missing GameObject reference • Path ID {gameObjectPathId}", false));
+                        return;
+                    }
+
+                    string objectName = ReadFieldString(GetChildField(gameObject, "m_Name"));
+                    if (string.IsNullOrWhiteSpace(objectName))
+                        objectName = $"GameObject {gameObjectPathId}";
+                    bool active = ReadFieldInt64(GetChildField(gameObject, "m_IsActive")) != 0;
+                    rows.Add((depth, (active ? "● " : "○ ") + objectName, false));
+
+                    long transformPathId = 0;
+                    var components = GetChildField(GetChildField(gameObject, "m_Component"), "Array");
+                    if (components != null)
+                    {
+                        foreach (var componentEntry in components.Children)
+                        {
+                            if (componentEntry.Children.Count == 0) continue;
+                            var pointer = componentEntry[componentEntry.Children.Count - 1];
+                            long componentPathId = ReadFieldInt64(GetChildField(pointer, "m_PathID"));
+                            if (componentPathId == 0) continue;
+                            if (!assetsByPath.TryGetValue(componentPathId, out var componentInfo))
+                            {
+                                rows.Add((depth + 1, $"Missing component • Path ID {componentPathId}", true));
+                                continue;
+                            }
+
+                            string componentType = Enum.GetName(typeof(AssetClassID), componentInfo.TypeId) ??
+                                $"Class {componentInfo.TypeId}";
+                            rows.Add((depth + 1, componentType, true));
+                            if (componentInfo.TypeId == (int)AssetClassID.Transform ||
+                                componentInfo.TypeId == (int)AssetClassID.RectTransform)
+                                transformPathId = componentPathId;
+                        }
+                    }
+
+                    if (transformPathId == 0) return;
+                    var transform = ReadAsset(transformPathId);
+                    var children = GetChildField(GetChildField(transform, "m_Children"), "Array");
+                    if (children == null) return;
+                    foreach (var childPointer in children.Children)
+                    {
+                        long childTransformId = ReadFieldInt64(GetChildField(childPointer, "m_PathID"));
+                        if (childTransformId == 0) continue;
+                        var childTransform = ReadAsset(childTransformId);
+                        long childGameObjectId = ReadFieldInt64(
+                            GetChildField(GetChildField(childTransform, "m_GameObject"), "m_PathID"));
+                        if (childGameObjectId != 0)
+                            AddGameObject(childGameObjectId, depth + 1);
+                    }
+                }
+
+                AddGameObject(asset.PathId, 0);
+            });
+        }
+        catch (Exception ex)
+        {
+            error = ex.Message;
+        }
+
+        if (_currentAssets != instance || _currentPage != BrowserPage.AssetDetails)
+        {
+            RemovePreviewLoadingCard(loadingCard);
+            return;
+        }
+
+        RemovePreviewLoadingCard(loadingCard);
+        var content = new StackPanel { Spacing = 4 };
+        if (rows.Count > 0)
+        {
+            foreach (var row in rows)
+            {
+                content.Children.Add(new Border
+                {
+                    Background = row.IsComponent ? SurfaceBrush : SurfaceContainerBrush,
+                    CornerRadius = new CornerRadius(8),
+                    Padding = new Thickness(9, 7),
+                    Margin = new Thickness(row.Depth * 12, 1, 0, 1),
+                    Child = new TextBlock
+                    {
+                        Text = row.Text,
+                        Foreground = row.IsComponent ? MutedBrush : TextBrush,
+                        FontSize = row.IsComponent ? 12 : 14,
+                        FontWeight = row.IsComponent ? FontWeight.Normal : FontWeight.SemiBold,
+                        TextWrapping = TextWrapping.Wrap
+                    }
+                });
+            }
+            content.Children.Insert(0, new TextBlock
+            {
+                Text = $"Hierarchy • {rows.Count} entries • current assets file only",
+                Foreground = MutedBrush,
+                FontSize = 11
+            });
+        }
+        else
+        {
+            content.Children.Add(new TextBlock
+            {
+                Text = "Preview unavailable: " + (error ?? "No GameObject hierarchy or component references were found."),
+                Foreground = TextBrush,
+                TextWrapping = TextWrapping.Wrap
+            });
+        }
+
+        _items.Children.Add(CreatePreviewCard("GameObject / Prefab hierarchy", content, MaterialIconKind.CubeOutline));
     }
 
     private async Task ShowTexturePreviewAsync(
@@ -1244,7 +1511,8 @@ public sealed class MainView : UserControl
         if (template == null)
             throw new InvalidDataException("Texture type information could not be read.");
 
-        var imageData = template.Children.FirstOrDefault(x => x.Name == "image data");
+        var imageData = template.Children.FirstOrDefault(x =>
+            x.Name == "image data" || x.Name == "m_ImageData");
         if (imageData != null)
             imageData.ValueType = AssetValueType.ByteArray;
 
