@@ -107,18 +107,7 @@ jobs:
           done
 
           dotnet restore UABEA.Android/UABEA.Android.csproj
-          dotnet publish UABEA.Android/UABEA.Android.csproj \\
-            -c Release \\
-            -f net8.0-android31.0 \\
-            -r android-arm64 \\
-            -p:AndroidPackageFormat=apk \\
-            -p:AndroidKeyStore=true \\
-            -p:AndroidSigningKeyStore="$RUNNER_TEMP/uabea-release.keystore" \\
-            -p:AndroidSigningKeyAlias="$ANDROID_KEY_ALIAS" \\
-            -p:AndroidSigningStorePass="$ANDROID_KEYSTORE_PASSWORD" \\
-            -p:AndroidSigningKeyPass="$ANDROID_KEY_PASSWORD" \\
-            -p:PublishTrimmed=false \\
-            -p:RunAOTCompilation=false
+          dotnet publish UABEA.Android/UABEA.Android.csproj -c Release -f net8.0-android31.0 -r android-arm64 -p:AndroidPackageFormat=apk -p:AndroidKeyStore=true -p:AndroidSigningKeyStore="$RUNNER_TEMP/uabea-release.keystore" -p:AndroidSigningKeyAlias="$ANDROID_KEY_ALIAS" -p:AndroidSigningStorePass="$ANDROID_KEYSTORE_PASSWORD" -p:AndroidSigningKeyPass="$ANDROID_KEY_PASSWORD" -p:PublishTrimmed=false -p:RunAOTCompilation=false
 
           APK="$(find UABEA.Android/bin/Release/net8.0-android31.0/android-arm64/publish -maxdepth 1 -type f -iname '*signed.apk' | head -n 1)"
           if [ -z "$APK" ]; then
