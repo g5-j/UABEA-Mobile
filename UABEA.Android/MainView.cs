@@ -82,6 +82,7 @@ public sealed class MainView : UserControl
     private DispatcherTimer? _audioProgressTimer;
     private string? _audioTempPath;
     private readonly List<string> _sessionResourcePaths = new();
+    private bool _sessionResourceWasExplicitlySelected;
 
     private enum BrowserPage { Home, Bundle, Assets, EntryDetails, AssetDetails }
 
@@ -321,6 +322,7 @@ public sealed class MainView : UserControl
         if (file is null) return;
         _isBusy = true;
         _sessionResourcePaths.Clear();
+        _sessionResourceWasExplicitlySelected = false;
         SetLoading(true, $"Copying {file.Name}...");
         _items.Children.Clear();
         _searchBox.IsVisible = false;
@@ -1765,6 +1767,7 @@ public sealed class MainView : UserControl
             _sessionResourcePaths.RemoveAll(path =>
                 string.Equals(Path.GetFileName(path), expectedName, StringComparison.OrdinalIgnoreCase));
             _sessionResourcePaths.Add(destination);
+            _sessionResourceWasExplicitlySelected = true;
             return true;
         }
         catch (Exception ex)
@@ -2708,10 +2711,12 @@ public sealed class MainView : UserControl
             }
         }
 
-        // If Unity uses a virtual archive path with no filename match, reuse
-        // an imported session resource only when there is exactly one valid
-        // candidate. Never guess between multiple resource files by byte range.
-        if (fullPath == null)
+        // A resource imported alongside the .assets file is not proof that
+        // it belongs to this Texture2D. Only permit a differently named session
+        // file after the user explicitly selected it in the resource picker.
+        // Otherwise a .resource audio file can be mistaken for the missing .resS
+        // texture stream simply because its byte range happens to fit.
+        if (fullPath == null && _sessionResourceWasExplicitlySelected)
         {
             var validSessionFiles = _sessionResourcePaths
                 .Where(File.Exists)
@@ -2723,7 +2728,7 @@ public sealed class MainView : UserControl
                 fullPath = validSessionFiles[0];
             else if (validSessionFiles.Count > 1)
                 throw new FileNotFoundException(
-                    "The texture resource path does not match any imported file, and multiple resource files are available. Select the matching resource file.");
+                    "Several imported resource files could match this stream. Select the exact matching .resource or .resS file.");
         }
 
         if (fullPath == null)
