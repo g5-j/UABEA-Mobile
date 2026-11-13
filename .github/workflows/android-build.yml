@@ -50,20 +50,21 @@ jobs:
       - name: Build AssetStudio decoder for Android ARM64
         run: |
           set -euo pipefail
-          NDK_DIR="$(find "$ANDROID_HOME/ndk" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -n 1)"
-          if [ -z "$NDK_DIR" ] || [ ! -f "$NDK_DIR/build/cmake/android.toolchain.cmake" ]; then
-            echo "::error::Android NDK CMake toolchain was not found."
+          NDK_DIR="$ANDROID_HOME/ndk/27.2.12479018"
+          if [ ! -f "$NDK_DIR/build/cmake/android.toolchain.cmake" ]; then
+            echo "::error::Pinned Android NDK 27.2.12479018 CMake toolchain was not found at $NDK_DIR."
+            find "$ANDROID_HOME/ndk" -mindepth 1 -maxdepth 1 -type d -print
             exit 1
           fi
-          cmake -S Texture2DDecoderNative -B "$RUNNER_TEMP/t2d-android" \\
-            -DCMAKE_TOOLCHAIN_FILE="$NDK_DIR/build/cmake/android.toolchain.cmake" \\
-            -DANDROID_ABI=arm64-v8a \\
-            -DANDROID_PLATFORM=android-23 \\
-            -DANDROID_STL=c++_static \\
+          cmake -S Texture2DDecoderNative -B "$RUNNER_TEMP/t2d-android" \
+            -DCMAKE_TOOLCHAIN_FILE="$NDK_DIR/build/cmake/android.toolchain.cmake" \
+            -DANDROID_ABI=arm64-v8a \
+            -DANDROID_PLATFORM=android-23 \
+            -DANDROID_STL=c++_static \
             -DCMAKE_BUILD_TYPE=Release
           cmake --build "$RUNNER_TEMP/t2d-android" --config Release --parallel 2
           mkdir -p UABEA.Android/runtimes/android-arm64/native
-          cp "$RUNNER_TEMP/t2d-android/libTexture2DDecoderNative.so" \\
+          cp "$RUNNER_TEMP/t2d-android/libTexture2DDecoderNative.so" \
             UABEA.Android/runtimes/android-arm64/native/libTexture2DDecoderNative.so
           test -s UABEA.Android/runtimes/android-arm64/native/libTexture2DDecoderNative.so
 
