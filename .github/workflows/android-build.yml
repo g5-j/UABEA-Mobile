@@ -31,6 +31,23 @@ jobs:
       - name: Install Android workload
         run: dotnet workload install android
 
+      - name: Install Android NDK and CMake
+        run: |
+          set -euo pipefail
+          SDK_ROOT="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-}}"
+          if [ -z "$SDK_ROOT" ]; then
+            echo "::error::Android SDK root is not configured."
+            exit 1
+          fi
+          SDKMANAGER="$(find "$SDK_ROOT/cmdline-tools" -type f -name sdkmanager | head -n 1)"
+          if [ -z "$SDKMANAGER" ]; then
+            echo "::error::Android sdkmanager was not found."
+            exit 1
+          fi
+          yes | "$SDKMANAGER" --licenses >/dev/null
+          "$SDKMANAGER" "ndk;27.2.12479018" "cmake;3.22.1"
+          test -f "$SDK_ROOT/ndk/27.2.12479018/build/cmake/android.toolchain.cmake"
+
       - name: Build AssetStudio decoder for Linux fixture tests
         run: |
           set -euo pipefail
