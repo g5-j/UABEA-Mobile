@@ -39,6 +39,12 @@ internal sealed class CubemapPreviewControl : Control, IDisposable
         set { _brightness = Math.Clamp(value, 0.15, 2.5); InvalidateVisual(); }
     }
 
+    public double Zoom
+    {
+        get => _zoom;
+        set { _zoom = Math.Clamp(value, 0.55, 2.8); InvalidateVisual(); }
+    }
+
     public CubemapPreviewControl(int[][] faces, int width, int height)
     {
         if (faces == null || faces.Length != 6 || faces.Any(f => f == null || f.Length != checked(width * height)))
