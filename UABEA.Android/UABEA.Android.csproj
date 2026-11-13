@@ -39,4 +39,9 @@
     <EmbeddedResource Include="..\ReleaseFiles\classdata.tpk"
                       LogicalName="UABEA.Mobile.classdata.tpk" />
   </ItemGroup>
+
+  <ItemGroup>
+    <AndroidNativeLibrary Include="runtimes/android-arm64/native/libTexture2DDecoderNative.so"
+                           Abi="arm64-v8a" />
+  </ItemGroup>
 </Project>
