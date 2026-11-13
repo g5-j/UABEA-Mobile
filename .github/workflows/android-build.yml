@@ -15,14 +15,6 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Preserve uploaded sharedassets test fixture
-        uses: actions/upload-artifact@v4
-        with:
-          name: sharedassets-test-fixture
-          path: sharedassets.zip
-          if-no-files-found: error
-          compression-level: 0
-
       - name: Setup .NET 8
         uses: actions/setup-dotnet@v4
         with:
@@ -86,14 +78,6 @@ jobs:
             exit 1
           fi
           dotnet run --project TexturePreviewSmokeTest/TexturePreviewSmokeTest.csproj -- "$ASSETS_FILE" ReleaseFiles/classdata.tpk
-      - name: Upload sharedassets validation report
-        uses: actions/upload-artifact@v4
-        with:
-          name: sharedassets-validation-report
-          path: texture-preview-output/
-          if-no-files-found: error
-          compression-level: 0
-
       - name: Prepare stable release signing key
         env:
           ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
@@ -145,10 +129,11 @@ jobs:
           APKSIGNER="$(find "$ANDROID_HOME/build-tools" -type f -name apksigner | sort -V | tail -n 1)"
           "$APKSIGNER" verify --verbose UABEA-Mobile.apk
 
-      - name: Upload APK only
+      - name: Upload APK only (Ultra ZIP)
         uses: actions/upload-artifact@v4
         with:
-          name: uabea-mobile-apk
+          name: UABEA-Mobile-${{ github.sha }}.zip
           path: UABEA-Mobile.apk
           if-no-files-found: error
-          compression-level: 0
+          compression-level: 9
+          retention-days: 30
