@@ -1265,7 +1265,12 @@ public sealed class MainView : UserControl
             throw new InvalidDataException("Texture dimensions are invalid or unsupported.");
 
         int pixelCount = checked(width * height);
-        byte[] decoded = TextureFile.DecodeManaged(encodedData, format, width, height);
+        // Prefer AssetStudio's native decoder for block-compressed formats
+        // (ETC/ETC2, ASTC, PVRTC, BCn and ATC). DecodeManaged is only a fallback
+        // for formats that AssetStudio's native decoder does not implement.
+        byte[]? decoded = AssetStudioTextureDecoder.TryDecode(
+            encodedData, format, width, height);
+        decoded ??= TextureFile.DecodeManaged(encodedData, format, width, height);
         int requiredBytes = checked(pixelCount * 4);
         if (decoded == null || decoded.Length < requiredBytes)
             throw new NotSupportedException(
