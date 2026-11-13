@@ -31,6 +31,25 @@ jobs:
       - name: Install Android workload
         run: dotnet workload install android
 
+      - name: Test Texture2D and Sprite data from sharedassets fixture
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/sharedassets-fixture"
+          unzip -q sharedassets.zip -d "$RUNNER_TEMP/sharedassets-fixture"
+          ASSETS_FILE="$(find "$RUNNER_TEMP/sharedassets-fixture" -type f -iname '*.assets' | head -n 1)"
+          if [ -z "$ASSETS_FILE" ]; then
+            echo "::error::No .assets file found in sharedassets.zip"
+            exit 1
+          fi
+          dotnet run --project TexturePreviewSmokeTest/TexturePreviewSmokeTest.csproj -- "$ASSETS_FILE" ReleaseFiles/classdata.tpk
+      - name: Upload decoded fixture previews
+        uses: actions/upload-artifact@v4
+        with:
+          name: sharedassets-decoded-previews
+          path: TexturePreviewSmokeTest/texture-preview-output/
+          if-no-files-found: error
+          compression-level: 0
+
       - name: Prepare stable release signing key
         env:
           ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
