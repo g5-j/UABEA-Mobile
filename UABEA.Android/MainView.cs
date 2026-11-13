@@ -2599,11 +2599,12 @@ public sealed class MainView : UserControl
         candidates.Add(Path.Combine(root, relative));
         candidates.Add(Path.Combine(root, Path.GetFileName(normalized)));
         string? fullPath = candidates.FirstOrDefault(File.Exists);
-        // Prefer a resource explicitly imported into this open session whenever
-        // the requested range fits. The metadata path can point to a stale or
-        // differently named sibling file, so it must not override the user's
-        // selected session resource.
-        if (!string.IsNullOrWhiteSpace(_sessionResourcePath) &&
+        // Prefer the exact resource resolved from Unity's metadata path.
+        // A session-imported resource is only a fallback when no matching
+        // sibling/path candidate exists; otherwise an unrelated file with a
+        // sufficiently large length can supply the wrong image bytes.
+        if (fullPath == null &&
+            !string.IsNullOrWhiteSpace(_sessionResourcePath) &&
             File.Exists(_sessionResourcePath))
         {
             var sessionInfo = new FileInfo(_sessionResourcePath);
