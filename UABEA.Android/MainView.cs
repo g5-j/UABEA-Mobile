@@ -855,8 +855,9 @@ public sealed class MainView : UserControl
     private async Task ShowCubemapPreviewAsync(
         AssetsManager manager, AssetsFileInstance instance, AssetFileInfo asset)
     {
-        var loadingCard = AddPreviewLoadingCard("Cubemap preview", MaterialIconKind.Image);
-        var faceBitmaps = new List<(string Name, Avalonia.Media.Imaging.Bitmap Bitmap)>();
+        var loadingCard = AddPreviewLoadingCard("360° Cubemap preview", MaterialIconKind.Image);
+        int[][]? faces = null;
+        Avalonia.Media.Imaging.Bitmap[] faceBitmaps = Array.Empty<Avalonia.Media.Imaging.Bitmap>();
         string? error = null;
         string? resourceSource = null;
         bool needsExternalResource = false;
@@ -865,18 +866,17 @@ public sealed class MainView : UserControl
 
         try
         {
-            var result = await Task.Run(() =>
+            var decoded = await Task.Run(() =>
             {
                 var field = ReadTextureFieldForPreview(manager, instance, asset);
                 if (field == null)
                     throw new InvalidDataException("Cubemap data could not be read.");
 
-                width = (int)ReadFieldInt64(GetChildField(field, "m_Width"));
-                height = (int)ReadFieldInt64(GetChildField(field, "m_Height"));
+                int w = (int)ReadFieldInt64(GetChildField(field, "m_Width"));
+                int h = (int)ReadFieldInt64(GetChildField(field, "m_Height"));
                 int formatValue = (int)ReadFieldInt64(GetChildField(field, "m_TextureFormat"));
                 var format = (TextureFormat)formatValue;
-                formatName = format.ToString();
-                if (width <= 0 || height <= 0 || width > 4096 || height > 4096)
+                if (w <= 0 || h <= 0 || w > 4096 || h > 4096)
                     throw new InvalidDataException("Cubemap dimensions are invalid or unsupported.");
 
                 var imageField = GetChildField(field, "m_ImageData") ??
@@ -887,65 +887,76 @@ public sealed class MainView : UserControl
                 var streamData = GetChildField(field, "m_StreamData");
                 ulong streamOffset = ReadUnsignedField(GetChildField(streamData, "offset"));
                 ulong streamSize = ReadUnsignedField(GetChildField(streamData, "size"));
-                resourceSource = ReadFieldString(GetChildField(streamData, "path"));
-                if (streamSize > 0 && !string.IsNullOrWhiteSpace(resourceSource))
+                string streamPath = ReadFieldString(GetChildField(streamData, "path"));
+                if (streamSize > 0 && !string.IsNullOrWhiteSpace(streamPath))
                 {
                     try
                     {
                         imageData = instance.parentBundle != null
-                            ? ReadBundleResource(instance.parentBundle, resourceSource, streamOffset, streamSize)
-                            : ReadExternalResource(instance, resourceSource, streamOffset, streamSize);
+                            ? ReadBundleResource(instance.parentBundle, streamPath, streamOffset, streamSize)
+                            : ReadExternalResource(instance, streamPath, streamOffset, streamSize);
                     }
                     catch (FileNotFoundException)
                     {
-                        needsExternalResource = instance.parentBundle == null;
-                        throw;
+                        throw new FileNotFoundException("The Cubemap's matching external texture stream is missing.", streamPath);
                     }
                 }
-                if (imageData.Length < 6)
-                    throw new InvalidDataException("Cubemap image data is empty or incomplete.");
-                if (imageData.Length % 6 != 0)
-                    throw new InvalidDataException("Cubemap face data is not evenly divided into six faces; this layout is not supported yet.");
+
+                if (imageData.Length < 6 || imageData.Length % 6 != 0)
+                    throw new InvalidDataException("The Cubemap payload cannot be split into six equal face payloads. This serialized layout is not supported yet.");
 
                 int faceSize = imageData.Length / 6;
-                string[] names = { "+X (Right)", "-X (Left)", "+Y (Top)", "-Y (Bottom)", "+Z (Front)", "-Z (Back)" };
-                var decodedFaces = new List<(string Name, byte[] Png)>(6);
+                var decodedFaces = new int[6][];
                 for (int faceIndex = 0; faceIndex < 6; faceIndex++)
                 {
                     var faceData = new byte[faceSize];
                     Buffer.BlockCopy(imageData, faceIndex * faceSize, faceData, 0, faceSize);
-                    int[] pixels = DecodeTexturePixelsToArgb(faceData, format, width, height);
-                    using var bitmap = global::Android.Graphics.Bitmap.CreateBitmap(
-                        width, height, global::Android.Graphics.Bitmap.Config.Argb8888!);
-                    bitmap.SetPixels(pixels, 0, width, 0, 0, width, height);
-                    using var png = new MemoryStream();
-                    bitmap.Compress(global::Android.Graphics.Bitmap.CompressFormat.Png!, 100, png);
-                    decodedFaces.Add((names[faceIndex], png.ToArray()));
+                    decodedFaces[faceIndex] = DecodeTexturePixelsToArgb(faceData, format, w, h);
                 }
-                return decodedFaces;
+                return (Faces: decodedFaces, Width: w, Height: h, Format: format.ToString(), StreamPath: streamPath);
             });
 
-            foreach (var face in result)
+            faces = decoded.Faces;
+            width = decoded.Width;
+            height = decoded.Height;
+            formatName = decoded.Format;
+            resourceSource = decoded.StreamPath;
+            faceBitmaps = await Task.Run(() =>
             {
-                using var stream = new MemoryStream(face.Png);
-                faceBitmaps.Add((face.Name, new Avalonia.Media.Imaging.Bitmap(stream)));
-            }
+                var result = new Avalonia.Media.Imaging.Bitmap[6];
+                for (int i = 0; i < 6; i++)
+                {
+                    using var bitmap = global::Android.Graphics.Bitmap.CreateBitmap(
+                        width, height, global::Android.Graphics.Bitmap.Config.Argb8888!);
+                    bitmap.SetPixels(faces[i], 0, width, 0, 0, width, height);
+                    using var png = new MemoryStream();
+                    bitmap.Compress(global::Android.Graphics.Bitmap.CompressFormat.Png!, 100, png);
+                    png.Position = 0;
+                    result[i] = new Avalonia.Media.Imaging.Bitmap(png);
+                }
+                return result;
+            });
+        }
+        catch (FileNotFoundException ex)
+        {
+            error = ex.Message;
+            needsExternalResource = instance.parentBundle == null && !string.IsNullOrWhiteSpace(ex.FileName);
+            resourceSource = ex.FileName;
         }
         catch (Exception ex)
         {
-            error = ex.Message;
+            error = $"{ex.GetType().Name}: {ex.Message}";
         }
 
         if (_currentAssets != instance || _currentPage != BrowserPage.AssetDetails)
         {
             RemovePreviewLoadingCard(loadingCard);
-            foreach (var face in faceBitmaps) face.Bitmap.Dispose();
+            foreach (var bitmap in faceBitmaps) bitmap.Dispose();
             return;
         }
 
         RemovePreviewLoadingCard(loadingCard);
-        if (faceBitmaps.Count == 0 && needsExternalResource &&
-            !string.IsNullOrWhiteSpace(resourceSource))
+        if (faces == null && needsExternalResource && !string.IsNullOrWhiteSpace(resourceSource))
         {
             bool selected = await ChooseSessionResourceAsync(resourceSource, instance);
             if (selected && _currentAssets == instance && _currentPage == BrowserPage.AssetDetails)
@@ -956,56 +967,200 @@ public sealed class MainView : UserControl
             error = $"Cubemap requires its matching external stream: {resourceSource}";
         }
 
-        if (faceBitmaps.Count == 6)
+        if (faces == null || faceBitmaps.Length != 6)
         {
-            var grid = new Grid
-            {
-                ColumnDefinitions = new ColumnDefinitions("*,*,*"),
-                RowDefinitions = new RowDefinitions("Auto,Auto")
-            };
-            for (int i = 0; i < faceBitmaps.Count; i++)
-            {
-                var item = faceBitmaps[i];
-                var cell = new StackPanel { Spacing = 4, Margin = new Thickness(3) };
-                cell.Children.Add(new Image
-                {
-                    Source = item.Bitmap,
-                    Stretch = Stretch.Uniform,
-                    MaxHeight = 112,
-                    HorizontalAlignment = HorizontalAlignment.Stretch
-                });
-                cell.Children.Add(new TextBlock
-                {
-                    Text = item.Name,
-                    FontSize = 10,
-                    Foreground = TextBrush,
-                    HorizontalAlignment = HorizontalAlignment.Center
-                });
-                Grid.SetColumn(cell, i % 3);
-                Grid.SetRow(cell, i / 3);
-                grid.Children.Add(cell);
-            }
-
-            var content = new StackPanel { Spacing = 8 };
-            content.Children.Add(new TextBlock
-            {
-                Text = $"{width} × {height} px per face • {formatName}",
-                Foreground = MutedBrush,
-                FontSize = 12
-            });
-            content.Children.Add(grid);
-            _items.Children.Add(CreatePreviewCard("Cubemap • six faces", content, MaterialIconKind.Image));
-        }
-        else
-        {
-            _items.Children.Add(CreatePreviewCard("Cubemap preview",
+            _items.Children.Add(CreatePreviewCard("360° Cubemap preview",
                 new TextBlock
                 {
                     Text = "Preview unavailable: " + (error ?? "The six Cubemap faces could not be decoded."),
                     Foreground = TextBrush,
                     TextWrapping = TextWrapping.Wrap
                 }, MaterialIconKind.Image));
+            return;
         }
+
+        var inlineViewer = new CubemapPreviewControl(faces, width, height)
+        {
+            HorizontalAlignment = HorizontalAlignment.Stretch,
+            Height = 280
+        };
+        var openFullscreen = new Button
+        {
+            Content = CreateIcon(MaterialIconKind.ArrowExpand, 18, TextBrush),
+            Background = SurfaceHighBrush,
+            Foreground = TextBrush,
+            CornerRadius = new CornerRadius(10),
+            Width = 42,
+            Height = 40,
+            Padding = new Thickness(0),
+            HorizontalAlignment = HorizontalAlignment.Right
+        };
+        openFullscreen.Click += (_, _) =>
+        {
+            CubemapPreviewControl? largeViewer = null;
+            try
+            {
+                largeViewer = new CubemapPreviewControl(faces, width, height)
+                {
+                    HorizontalAlignment = HorizontalAlignment.Stretch,
+                    VerticalAlignment = VerticalAlignment.Stretch,
+                    MinHeight = 0,
+                    Height = double.NaN
+                };
+
+                var overlay = new Border
+                {
+                    Background = BackgroundBrush,
+                    Padding = new Thickness(10),
+                    HorizontalAlignment = HorizontalAlignment.Stretch,
+                    VerticalAlignment = VerticalAlignment.Stretch
+                };
+                var close = new Button
+                {
+                    Content = "Close",
+                    Background = SurfaceHighBrush,
+                    Foreground = TextBrush,
+                    CornerRadius = new CornerRadius(10),
+                    MinHeight = 42,
+                    MinWidth = 76
+                };
+                close.Click += (_, _) =>
+                {
+                    largeViewer.Dispose();
+                    _pageLayers.Children.Remove(overlay);
+                    foreach (var bitmap in faceBitmaps) bitmap.Dispose();
+                };
+
+                var facePanel = new Grid
+                {
+                    ColumnDefinitions = new ColumnDefinitions("*,*,*"),
+                    RowDefinitions = new RowDefinitions("Auto,Auto"),
+                    ColumnSpacing = 5,
+                    RowSpacing = 5
+                };
+                string[] faceNames = { "+X Right", "-X Left", "+Y Top", "-Y Bottom", "+Z Front", "-Z Back" };
+                for (int i = 0; i < 6; i++)
+                {
+                    var cell = new StackPanel { Spacing = 3 };
+                    cell.Children.Add(new Image
+                    {
+                        Source = faceBitmaps[i],
+                        Stretch = Stretch.Uniform,
+                        MaxHeight = 76,
+                        HorizontalAlignment = HorizontalAlignment.Stretch
+                    });
+                    cell.Children.Add(new TextBlock
+                    {
+                        Text = faceNames[i],
+                        FontSize = 10,
+                        Foreground = MutedBrush,
+                        HorizontalAlignment = HorizontalAlignment.Center
+                    });
+                    Grid.SetColumn(cell, i % 3);
+                    Grid.SetRow(cell, i / 3);
+                    facePanel.Children.Add(cell);
+                }
+
+                var brightnessLabel = new TextBlock
+                {
+                    Text = "Lighting · 100%",
+                    Foreground = TextBrush,
+                    VerticalAlignment = VerticalAlignment.Center
+                };
+                var brightness = new Slider
+                {
+                    Minimum = 0.15,
+                    Maximum = 2.5,
+                    Value = 1,
+                    MinWidth = 130
+                };
+                brightness.PropertyChanged += (_, args) =>
+                {
+                    if (args.Property == RangeBase.ValueProperty && largeViewer != null)
+                    {
+                        largeViewer.Brightness = brightness.Value;
+                        brightnessLabel.Text = $"Lighting · {(int)(brightness.Value * 100)}%";
+                    }
+                };
+                var reset = new Button
+                {
+                    Content = "Reset view",
+                    Background = SurfaceHighBrush,
+                    Foreground = TextBrush,
+                    CornerRadius = new CornerRadius(10),
+                    MinHeight = 42
+                };
+                reset.Click += (_, _) =>
+                {
+                    largeViewer.ResetView();
+                    brightness.Value = 1;
+                };
+
+                var header = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto") };
+                header.Children.Add(new TextBlock
+                {
+                    Text = $"Cubemap · {width} × {height} · {formatName}",
+                    Foreground = TextBrush,
+                    FontSize = 14,
+                    VerticalAlignment = VerticalAlignment.Center
+                });
+                Grid.SetColumn(close, 1);
+                header.Children.Add(close);
+
+                var controls = new StackPanel { Spacing = 8 };
+                controls.Children.Add(new Grid
+                {
+                    ColumnDefinitions = new ColumnDefinitions("Auto,*,Auto"),
+                    Children =
+                    {
+                        brightnessLabel,
+                        brightness,
+                        reset
+                    }
+                });
+                Grid.SetColumn(brightness, 1);
+                Grid.SetColumn(reset, 2);
+                controls.Children.Add(facePanel);
+
+                var layout = new Grid { RowDefinitions = new RowDefinitions("Auto,*,Auto") };
+                layout.Children.Add(header);
+                Grid.SetRow(largeViewer, 1);
+                layout.Children.Add(largeViewer);
+                Grid.SetRow(controls, 2);
+                layout.Children.Add(controls);
+                overlay.Child = layout;
+                _pageLayers.Children.Add(overlay);
+            }
+            catch (Exception ex)
+            {
+                largeViewer?.Dispose();
+                _items.Children.Add(CreatePreviewCard("Cubemap fullscreen",
+                    new TextBlock { Text = "Could not open fullscreen viewer: " + ex.Message, Foreground = TextBrush }));
+            }
+        };
+
+        var top = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto") };
+        top.Children.Add(new TextBlock
+        {
+            Text = $"360° environment · {width} × {height} per face · {formatName}",
+            Foreground = MutedBrush,
+            FontSize = 11,
+            VerticalAlignment = VerticalAlignment.Center
+        });
+        Grid.SetColumn(openFullscreen, 1);
+        top.Children.Add(openFullscreen);
+
+        var content = new StackPanel { Spacing = 8 };
+        content.Children.Add(top);
+        content.Children.Add(inlineViewer);
+        content.Children.Add(new TextBlock
+        {
+            Text = "Drag to look around · Pinch to zoom · Fullscreen includes lighting and all six faces",
+            Foreground = MutedBrush,
+            FontSize = 11,
+            TextWrapping = TextWrapping.Wrap
+        });
+        _items.Children.Add(CreatePreviewCard("Cubemap • 360° viewer", content, MaterialIconKind.Image));
     }
 
     private async Task ShowGameObjectPreviewAsync(
