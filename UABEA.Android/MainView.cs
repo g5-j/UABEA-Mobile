@@ -858,6 +858,8 @@ public sealed class MainView : UserControl
         var loadingCard = AddPreviewLoadingCard("Cubemap preview", MaterialIconKind.Image);
         var faceBitmaps = new List<(string Name, Avalonia.Media.Imaging.Bitmap Bitmap)>();
         string? error = null;
+        string? resourceSource = null;
+        bool needsExternalResource = false;
         int width = 0, height = 0;
         string formatName = "Unknown";
 
@@ -882,6 +884,24 @@ public sealed class MainView : UserControl
                 if (imageField == null)
                     throw new InvalidDataException("This Cubemap does not contain readable image data.");
                 byte[] imageData = imageField.AsByteArray ?? Array.Empty<byte>();
+                var streamData = GetChildField(field, "m_StreamData");
+                ulong streamOffset = ReadUnsignedField(GetChildField(streamData, "offset"));
+                ulong streamSize = ReadUnsignedField(GetChildField(streamData, "size"));
+                resourceSource = ReadFieldString(GetChildField(streamData, "path"));
+                if (streamSize > 0 && !string.IsNullOrWhiteSpace(resourceSource))
+                {
+                    try
+                    {
+                        imageData = instance.parentBundle != null
+                            ? ReadBundleResource(instance.parentBundle, resourceSource, streamOffset, streamSize)
+                            : ReadExternalResource(instance, resourceSource, streamOffset, streamSize);
+                    }
+                    catch (FileNotFoundException)
+                    {
+                        needsExternalResource = instance.parentBundle == null;
+                        throw;
+                    }
+                }
                 if (imageData.Length < 6)
                     throw new InvalidDataException("Cubemap image data is empty or incomplete.");
                 if (imageData.Length % 6 != 0)
@@ -924,6 +944,18 @@ public sealed class MainView : UserControl
         }
 
         RemovePreviewLoadingCard(loadingCard);
+        if (faceBitmaps.Count == 0 && needsExternalResource &&
+            !string.IsNullOrWhiteSpace(resourceSource))
+        {
+            bool selected = await ChooseSessionResourceAsync(resourceSource, instance);
+            if (selected && _currentAssets == instance && _currentPage == BrowserPage.AssetDetails)
+            {
+                await ShowCubemapPreviewAsync(manager, instance, asset);
+                return;
+            }
+            error = $"Cubemap requires its matching external stream: {resourceSource}";
+        }
+
         if (faceBitmaps.Count == 6)
         {
             var grid = new Grid
