@@ -2669,39 +2669,100 @@ public sealed class MainView : UserControl
         AssetsManager manager, AssetsFileInstance instance, AssetFileInfo asset)
     {
         var loadingCard = AddPreviewLoadingCard("Text preview", MaterialIconKind.FileDocumentOutline);
-
         string preview;
+        string previewInfo = "";
+
         try
         {
-            preview = await Task.Run(() =>
+            var result = await Task.Run(() =>
             {
                 var field = manager.GetBaseField(instance, asset);
                 var bytes = field["m_Script"].AsByteArray ?? Array.Empty<byte>();
-                const int maxPreviewBytes = 1024 * 1024;
-                bool truncated = bytes.Length > maxPreviewBytes;
-                int length = Math.Min(bytes.Length, maxPreviewBytes);
+                const int maxTextBytes = 1024 * 1024;
+                const int maxHexBytes = 4096;
+                int length = Math.Min(bytes.Length, maxTextBytes);
+                var sampleLength = Math.Min(length, 4096);
+                int controlCount = 0;
+                for (int i = 0; i < sampleLength; i++)
+                {
+                    byte value = bytes[i];
+                    if (value == 0 || (value < 32 && value != 9 && value != 10 && value != 13))
+                        controlCount++;
+                }
+
+                bool binary = sampleLength > 0 &&
+                    (bytes.Take(sampleLength).Contains((byte)0) ||
+                     controlCount > Math.Max(4, sampleLength / 20));
+
+                if (binary)
+                {
+                    int hexLength = Math.Min(bytes.Length, maxHexBytes);
+                    var hex = new StringBuilder(hexLength * 4);
+                    for (int offset = 0; offset < hexLength; offset += 16)
+                    {
+                        int count = Math.Min(16, hexLength - offset);
+                        hex.Append(offset.ToString("X8")).Append("  ");
+                        for (int i = 0; i < 16; i++)
+                        {
+                            if (i < count)
+                                hex.Append(bytes[offset + i].ToString("X2")).Append(' ');
+                            else
+                                hex.Append("   ");
+                            if (i == 7) hex.Append(' ');
+                        }
+                        hex.Append(" |");
+                        for (int i = 0; i < count; i++)
+                        {
+                            byte value = bytes[offset + i];
+                            hex.Append(value >= 32 && value <= 126 ? (char)value : '.');
+                        }
+                        hex.AppendLine("|");
+                    }
+
+                    if (bytes.Length > hexLength)
+                        hex.AppendLine().Append($"[Hex preview limited to the first {hexLength:N0} bytes.]");
+                    return (Content: hex.ToString(), Info: $"{bytes.Length:N0} bytes • Binary data • Hex view");
+                }
 
                 string text;
+                string encodingName;
                 if (length >= 2 && bytes[0] == 0xFF && bytes[1] == 0xFE)
+                {
                     text = Encoding.Unicode.GetString(bytes, 2, length - 2);
+                    encodingName = "UTF-16 LE";
+                }
                 else if (length >= 2 && bytes[0] == 0xFE && bytes[1] == 0xFF)
+                {
                     text = Encoding.BigEndianUnicode.GetString(bytes, 2, length - 2);
+                    encodingName = "UTF-16 BE";
+                }
                 else if (length >= 3 && bytes[0] == 0xEF && bytes[1] == 0xBB && bytes[2] == 0xBF)
+                {
                     text = Encoding.UTF8.GetString(bytes, 3, length - 3);
+                    encodingName = "UTF-8 with BOM";
+                }
                 else
+                {
                     text = Encoding.UTF8.GetString(bytes, 0, length);
+                    encodingName = "UTF-8";
+                    if (text.Contains('\uFFFD'))
+                    {
+                        text = Encoding.Latin1.GetString(bytes, 0, length);
+                        encodingName = "Latin-1 fallback";
+                    }
+                }
 
-                return truncated
-                    ? text + "\\n\\n[Preview limited to the first 1 MB. Export the asset to view the complete content.]"
-                    : text;
+                if (bytes.Length > maxTextBytes)
+                    text += $"\\n\\n[Text preview limited to the first {maxTextBytes:N0} bytes. Export the asset to view the complete content.]";
+                return (Content: text, Info: $"{bytes.Length:N0} bytes • {encodingName}");
             });
+
+            preview = result.Content;
+            previewInfo = result.Info;
         }
         catch (Exception ex)
         {
             preview = $"Could not read TextAsset content: {ex.Message}";
-        }
-        finally
-        {
         }
 
         if (_currentAssets != instance || _currentPage != BrowserPage.AssetDetails)
@@ -2711,7 +2772,17 @@ public sealed class MainView : UserControl
         }
 
         RemovePreviewLoadingCard(loadingCard);
-        var textContent = new ScrollViewer
+        var textContent = new StackPanel { Spacing = 6 };
+        if (!string.IsNullOrEmpty(previewInfo))
+        {
+            textContent.Children.Add(new TextBlock
+            {
+                Text = previewInfo,
+                FontSize = 11,
+                Foreground = MutedBrush
+            });
+        }
+        textContent.Children.Add(new ScrollViewer
         {
             MaxHeight = 520,
             VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
@@ -2724,7 +2795,7 @@ public sealed class MainView : UserControl
                 Foreground = TextBrush,
                 TextWrapping = TextWrapping.NoWrap
             }
-        };
+        });
         _items.Children.Add(CreatePreviewCard("TextAsset preview", textContent, MaterialIconKind.FileDocumentOutline));
     }
 
