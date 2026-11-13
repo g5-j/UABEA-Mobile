@@ -81,7 +81,7 @@ public sealed class MainView : UserControl
     private global::Android.Media.MediaPlayer? _audioPlayer;
     private DispatcherTimer? _audioProgressTimer;
     private string? _audioTempPath;
-    private string? _sessionResourcePath;
+    private readonly List<string> _sessionResourcePaths = new();
 
     private enum BrowserPage { Home, Bundle, Assets, EntryDetails, AssetDetails }
 
@@ -320,7 +320,7 @@ public sealed class MainView : UserControl
             ?? selected.FirstOrDefault(x => !IsResourceFileName(x.Name));
         if (file is null) return;
         _isBusy = true;
-        _sessionResourcePath = null;
+        _sessionResourcePaths.Clear();
         SetLoading(true, $"Copying {file.Name}...");
         _items.Children.Clear();
         _searchBox.IsVisible = false;
@@ -335,7 +335,7 @@ public sealed class MainView : UserControl
             tempDirectory = Path.Combine(Path.GetTempPath(), "uabea-mobile-" + Guid.NewGuid().ToString("N"));
             Directory.CreateDirectory(tempDirectory);
             string? primaryPath = null;
-            string? selectedResourcePath = null;
+            var selectedResourcePaths = new List<string>();
             foreach (var selectedFile in selected)
             {
                 string safeName = Path.GetFileName(selectedFile.Name);
@@ -345,8 +345,8 @@ public sealed class MainView : UserControl
                 await using var destination = File.Create(destinationPath);
                 await source.CopyToAsync(destination);
                 if (ReferenceEquals(selectedFile, file)) primaryPath = destinationPath;
-                if (selectedResourcePath == null && IsResourceFileName(selectedFile.Name))
-                    selectedResourcePath = destinationPath;
+                if (IsResourceFileName(selectedFile.Name))
+                    selectedResourcePaths.Add(destinationPath);
             }
             if (primaryPath is null) throw new InvalidDataException("The selected assets file could not be copied.");
             SetLoading(true, $"Analyzing {file.Name}...");
@@ -354,7 +354,8 @@ public sealed class MainView : UserControl
             _assetsManager?.UnloadAllAssetsFiles(true);
             if (_currentTempDirectory is not null) { try { Directory.Delete(_currentTempDirectory, true); } catch { } }
             _assetsManager = result.Manager;
-            _sessionResourcePath = selectedResourcePath;
+            _sessionResourcePaths.Clear();
+            _sessionResourcePaths.AddRange(selectedResourcePaths);
             _currentTempDirectory = tempDirectory;
             tempDirectory = null;
             _currentBundle = result.Bundle;
@@ -1717,7 +1718,9 @@ public sealed class MainView : UserControl
             await using var input = await selected[0].OpenReadAsync();
             await using var output = File.Create(destination);
             await input.CopyToAsync(output);
-            _sessionResourcePath = destination;
+            _sessionResourcePaths.RemoveAll(path =>
+                string.Equals(Path.GetFileName(path), expectedName, StringComparison.OrdinalIgnoreCase));
+            _sessionResourcePaths.Add(destination);
             return true;
         }
         catch (Exception ex)
@@ -2591,6 +2594,9 @@ public sealed class MainView : UserControl
 
     private byte[] ReadExternalResource(AssetsFileInstance instance, string source, ulong offset, ulong size)
     {
+        if (size == 0 || size > int.MaxValue)
+            throw new InvalidDataException("The external texture/audio resource size is invalid.");
+
         string root = GetExternalResourceDirectory(instance);
         string normalized = NormalizeResourcePath(source);
         string relative = normalized.Replace('/', Path.DirectorySeparatorChar);
@@ -2598,37 +2604,106 @@ public sealed class MainView : UserControl
         if (Path.IsPathRooted(source)) candidates.Add(source);
         candidates.Add(Path.Combine(root, relative));
         candidates.Add(Path.Combine(root, Path.GetFileName(normalized)));
-        string? fullPath = candidates.FirstOrDefault(File.Exists);
-        // Prefer the exact resource resolved from Unity's metadata path.
-        // A session-imported resource is only a fallback when no matching
-        // sibling/path candidate exists; otherwise an unrelated file with a
-        // sufficiently large length can supply the wrong image bytes.
-        if (fullPath == null &&
-            !string.IsNullOrWhiteSpace(_sessionResourcePath) &&
-            File.Exists(_sessionResourcePath))
+
+        bool HasValidRange(string path)
         {
-            var sessionInfo = new FileInfo(_sessionResourcePath);
-            if (offset <= (ulong)sessionInfo.Length && size <= (ulong)sessionInfo.Length - offset)
-                fullPath = _sessionResourcePath;
+            try
+            {
+                long length = new FileInfo(path).Length;
+                return offset <= (ulong)length && size <= (ulong)length - offset;
+            }
+            catch
+            {
+                return false;
+            }
         }
+
+        // Resolve the resource by its actual metadata name first. Never choose
+        // an arbitrary imported resource merely because its length is large
+        // enough to contain the requested byte range.
+        string? fullPath = candidates
+            .Where(File.Exists)
+            .FirstOrDefault(HasValidRange);
+
+        if (fullPath == null)
+        {
+            string expectedName = Path.GetFileName(normalized);
+            var namedSessionFiles = _sessionResourcePaths
+                .Where(File.Exists)
+                .Where(path => string.Equals(
+                    Path.GetFileName(path), expectedName,
+                    StringComparison.OrdinalIgnoreCase))
+                .Where(HasValidRange)
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList();
+
+            if (namedSessionFiles.Count == 1)
+            {
+                fullPath = namedSessionFiles[0];
+            }
+            else if (namedSessionFiles.Count > 1)
+            {
+                throw new FileNotFoundException(
+                    "More than one imported resource matches this texture path. Import only the matching resource file.");
+            }
+        }
+
+        // A single imported resource can be used as a fallback when Unity's
+        // source path is virtual (for example archive:/...) and has no matching
+        // filename. If several resources were imported, the correct one must
+        // be identified by name rather than guessing from the byte range.
+        if (fullPath == null)
+        {
+            var validSessionFiles = _sessionResourcePaths
+                .Where(File.Exists)
+                .Where(HasValidRange)
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList();
+
+            if (validSessionFiles.Count == 1)
+                fullPath = validSessionFiles[0];
+            else if (validSessionFiles.Count > 1)
+                throw new FileNotFoundException(
+                    "The texture resource path does not match any imported file, and multiple resource files are available. Select the matching resource file.");
+        }
+
+        // Android filesystems are case-sensitive, so perform one final
+        // case-insensitive filename lookup without accepting unrelated files.
         if (fullPath == null && Directory.Exists(root))
         {
             var sameName = Directory.EnumerateFiles(root, "*", SearchOption.TopDirectoryOnly)
-                .Where(x => string.Equals(Path.GetFileName(x), Path.GetFileName(normalized), StringComparison.OrdinalIgnoreCase)).ToList();
-            if (sameName.Count == 1) fullPath = sameName[0];
+                .Where(path => string.Equals(
+                    Path.GetFileName(path), Path.GetFileName(normalized),
+                    StringComparison.OrdinalIgnoreCase))
+                .Where(HasValidRange)
+                .ToList();
+
+            if (sameName.Count == 1)
+                fullPath = sameName[0];
+            else if (sameName.Count > 1)
+                throw new FileNotFoundException(
+                    "Multiple resource files match this texture path. Select the matching resource file.");
         }
+
         if (fullPath == null)
-            throw new FileNotFoundException("The external resource file was not found. If it is a separate .resource/.resources/.resS file, select it together with the .assets file.");
+        {
+            bool matchingFileExists = candidates.Any(File.Exists);
+            if (matchingFileExists)
+                throw new InvalidDataException(
+                    "The matching resource file exists, but the requested offset and size are outside that file.");
+            throw new FileNotFoundException(
+                "The matching external resource file was not found. Select the correct .resource or .resS file with the assets file.");
+        }
+
         using var stream = File.OpenRead(fullPath);
-        if (offset > (ulong)stream.Length || size > (ulong)stream.Length - offset)
-            throw new InvalidDataException("The requested resource range is outside the external resource file.");
-        stream.Position = (long)offset;
+        stream.Position = checked((long)offset);
         byte[] data = new byte[checked((int)size)];
         int read = 0;
         while (read < data.Length)
         {
             int count = stream.Read(data, read, data.Length - read);
-            if (count == 0) throw new EndOfStreamException("The external resource file ended unexpectedly.");
+            if (count == 0)
+                throw new EndOfStreamException("The external resource file ended unexpectedly.");
             read += count;
         }
         return data;
