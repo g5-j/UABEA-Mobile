@@ -46,7 +46,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: sharedassets-decoded-previews
-          path: TexturePreviewSmokeTest/texture-preview-output/
+          path: texture-preview-output/
           if-no-files-found: error
           compression-level: 0
 
