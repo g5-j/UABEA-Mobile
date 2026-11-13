@@ -984,6 +984,11 @@ public sealed class MainView : UserControl
             HorizontalAlignment = HorizontalAlignment.Stretch,
             Height = 280
         };
+        inlineViewer.DetachedFromVisualTree += (_, _) =>
+        {
+            inlineViewer.Dispose();
+            foreach (var bitmap in faceBitmaps) bitmap.Dispose();
+        };
         var openFullscreen = new Button
         {
             Content = CreateIcon(MaterialIconKind.ArrowExpand, 18, TextBrush),
@@ -1028,7 +1033,6 @@ public sealed class MainView : UserControl
                 {
                     largeViewer.Dispose();
                     _pageLayers.Children.Remove(overlay);
-                    foreach (var bitmap in faceBitmaps) bitmap.Dispose();
                 };
 
                 var facePanel = new Grid
