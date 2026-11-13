@@ -31,6 +31,33 @@ jobs:
       - name: Install Android workload
         run: dotnet workload install android
 
+      - name: Build AssetStudio decoder for Linux fixture tests
+        run: |
+          set -euo pipefail
+          cmake -S Texture2DDecoderNative -B "$RUNNER_TEMP/t2d-linux" -DCMAKE_BUILD_TYPE=Release
+          cmake --build "$RUNNER_TEMP/t2d-linux" --config Release --parallel 2
+          echo "LD_LIBRARY_PATH=$RUNNER_TEMP/t2d-linux:${LD_LIBRARY_PATH:-}" >> "$GITHUB_ENV"
+
+      - name: Build AssetStudio decoder for Android ARM64
+        run: |
+          set -euo pipefail
+          NDK_DIR="$(find "$ANDROID_HOME/ndk" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -n 1)"
+          if [ -z "$NDK_DIR" ] || [ ! -f "$NDK_DIR/build/cmake/android.toolchain.cmake" ]; then
+            echo "::error::Android NDK CMake toolchain was not found."
+            exit 1
+          fi
+          cmake -S Texture2DDecoderNative -B "$RUNNER_TEMP/t2d-android" \
+            -DCMAKE_TOOLCHAIN_FILE="$NDK_DIR/build/cmake/android.toolchain.cmake" \
+            -DANDROID_ABI=arm64-v8a \
+            -DANDROID_PLATFORM=android-23 \
+            -DANDROID_STL=c++_static \
+            -DCMAKE_BUILD_TYPE=Release
+          cmake --build "$RUNNER_TEMP/t2d-android" --config Release --parallel 2
+          mkdir -p UABEA.Android/runtimes/android-arm64/native
+          cp "$RUNNER_TEMP/t2d-android/libTexture2DDecoderNative.so" \
+            UABEA.Android/runtimes/android-arm64/native/libTexture2DDecoderNative.so
+          test -s UABEA.Android/runtimes/android-arm64/native/libTexture2DDecoderNative.so
+
       - name: Test Texture2D and Sprite data from sharedassets fixture
         run: |
           set -euo pipefail
