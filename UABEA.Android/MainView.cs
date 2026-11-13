@@ -1011,8 +1011,7 @@ public sealed class MainView : UserControl
                     string objectName = ReadFieldString(GetChildField(gameObject, "m_Name"));
                     if (string.IsNullOrWhiteSpace(objectName))
                         objectName = $"GameObject {gameObjectPathId}";
-                    bool active = ReadFieldInt64(GetChildField(gameObject, "m_IsActive")) != 0;
-                    rows.Add((depth, (active ? "● " : "○ ") + objectName, false));
+                    rows.Add((depth, objectName, false));
 
                     long transformPathId = 0;
                     var components = GetChildField(GetChildField(gameObject, "m_Component"), "Array");
