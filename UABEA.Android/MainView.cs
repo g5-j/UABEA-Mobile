@@ -1038,14 +1038,12 @@ public sealed class MainView : UserControl
                 var facePanel = new Grid
                 {
                     ColumnDefinitions = new ColumnDefinitions("*,*,*"),
-                    RowDefinitions = new RowDefinitions("Auto,Auto"),
-                    ColumnSpacing = 5,
-                    RowSpacing = 5
+                    RowDefinitions = new RowDefinitions("Auto,Auto")
                 };
                 string[] faceNames = { "+X Right", "-X Left", "+Y Top", "-Y Bottom", "+Z Front", "-Z Back" };
                 for (int i = 0; i < 6; i++)
                 {
-                    var cell = new StackPanel { Spacing = 3 };
+                    var cell = new StackPanel { Spacing = 3, Margin = new Thickness(2) };
                     cell.Children.Add(new Image
                     {
                         Source = faceBitmaps[i],
