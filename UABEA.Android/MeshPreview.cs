@@ -729,7 +729,7 @@ internal sealed class MeshPreviewControl : Control, IDisposable
             if (_lastPinchDistance > 1)
                 _zoom = Math.Clamp(_zoom * (distance / _lastPinchDistance), 0.45, 2.0);
 
-            _yaw += (center.X - _lastPinchCenter.X) * 0.008;
+            _yaw -= (center.X - _lastPinchCenter.X) * 0.008;
             _pitch = Math.Clamp(_pitch + (center.Y - _lastPinchCenter.Y) * 0.008, -1.45, 1.45);
             _lastPinchDistance = distance;
             _lastPinchCenter = center;
@@ -750,7 +750,7 @@ internal sealed class MeshPreviewControl : Control, IDisposable
             _capturedPointers.Add(e.Pointer);
         }
 
-        _yaw += (current.X - previous.X) * 0.008;
+        _yaw -= (current.X - previous.X) * 0.008;
         _pitch = Math.Clamp(_pitch + (current.Y - previous.Y) * 0.008, -1.45, 1.45);
         InvalidateVisual();
         e.Handled = true;
