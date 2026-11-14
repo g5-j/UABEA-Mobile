@@ -816,8 +816,8 @@ public sealed class MainView : UserControl
             var texture = TextureFile.ReadTextureFile(field);
             byte[] data = texture.pictureData ?? Array.Empty<byte>();
             var streamData = GetChildField(field, "m_StreamData");
-            ulong offset = ReadUnsignedField(GetChildField(streamData, "offset"));
-            ulong size = ReadUnsignedField(GetChildField(streamData, "size"));
+            ulong offset = ReadUnsignedField(GetChildField(streamData, "offset")!);
+            ulong size = ReadUnsignedField(GetChildField(streamData, "size")!);
             string path = ReadFieldString(GetChildField(streamData, "path"));
             if (size > 0 && !string.IsNullOrWhiteSpace(path))
             {
@@ -851,15 +851,15 @@ public sealed class MainView : UserControl
                     : ReadExternalResource(instance, source, offset, size);
             }
             catch (FileNotFoundException ex) { throw new FileNotFoundException(ex.Message, source, ex); }
-            if (!FsbLoader.TryLoadFsbFromByteArray(fsbData, out FmodSoundBank bank) ||
-                bank.Samples == null || bank.Samples.Count == 0)
+            if (!FsbLoader.TryLoadFsbFromByteArray(fsbData, out FmodSoundBank? bank) ||
+                bank == null || bank.Samples == null || bank.Samples.Count == 0)
                 throw new InvalidDataException("The AudioClip FMOD sound bank could not be decoded.");
-            bank.Samples[0].RebuildAsStandardFileFormat(out byte[] sampleData, out string sampleExtension);
-            sampleExtension = (sampleExtension ?? "").Trim().TrimStart('.').ToLowerInvariant();
+            bank.Samples[0].RebuildAsStandardFileFormat(out var sampleData, out var sampleExtension);
             if (sampleData == null || sampleData.Length == 0 || string.IsNullOrWhiteSpace(sampleExtension))
                 throw new InvalidDataException("The audio decoder returned an empty or unsupported sample.");
-            if (sampleExtension == "wav") FixPreviewWav(ref sampleData);
-            return new AssetExportPayload(sampleData, "." + sampleExtension, false);
+            string extension = sampleExtension.Trim().TrimStart('.').ToLowerInvariant();
+            if (extension == "wav") FixPreviewWav(ref sampleData);
+            return new AssetExportPayload(sampleData, "." + extension, false);
         }
 
         if (typeId == (int)AssetClassID.Font)
@@ -936,8 +936,8 @@ public sealed class MainView : UserControl
             var imageField = GetChildField(field, "m_ImageData") ?? GetChildField(field, "image data");
             byte[] imageData = imageField?.AsByteArray ?? Array.Empty<byte>();
             var streamData = GetChildField(field, "m_StreamData");
-            ulong offset = ReadUnsignedField(GetChildField(streamData, "offset"));
-            ulong size = ReadUnsignedField(GetChildField(streamData, "size"));
+            ulong offset = ReadUnsignedField(GetChildField(streamData, "offset")!);
+            ulong size = ReadUnsignedField(GetChildField(streamData, "size")!);
             string path = ReadFieldString(GetChildField(streamData, "path"));
             if (size > 0 && !string.IsNullOrWhiteSpace(path))
             {
@@ -987,8 +987,8 @@ public sealed class MainView : UserControl
         var texture = TextureFile.ReadTextureFile(textureField);
         byte[] data = texture.pictureData ?? Array.Empty<byte>();
         var streamData = GetChildField(textureField, "m_StreamData");
-        ulong offset = ReadUnsignedField(GetChildField(streamData, "offset"));
-        ulong size = ReadUnsignedField(GetChildField(streamData, "size"));
+        ulong offset = ReadUnsignedField(GetChildField(streamData, "offset")!);
+        ulong size = ReadUnsignedField(GetChildField(streamData, "size")!);
         string path = ReadFieldString(GetChildField(streamData, "path"));
         if (size > 0 && !string.IsNullOrWhiteSpace(path))
         {
@@ -1291,8 +1291,8 @@ public sealed class MainView : UserControl
                     throw new InvalidDataException("This Cubemap does not contain readable image data.");
                 byte[] imageData = imageField.AsByteArray ?? Array.Empty<byte>();
                 var streamData = GetChildField(field, "m_StreamData");
-                ulong streamOffset = ReadUnsignedField(GetChildField(streamData, "offset"));
-                ulong streamSize = ReadUnsignedField(GetChildField(streamData, "size"));
+                ulong streamOffset = ReadUnsignedField(GetChildField(streamData, "offset")!);
+                ulong streamSize = ReadUnsignedField(GetChildField(streamData, "size")!);
                 string streamPath = ReadFieldString(GetChildField(streamData, "path"));
                 if (streamSize > 0 && !string.IsNullOrWhiteSpace(streamPath))
                 {
@@ -1744,8 +1744,8 @@ public sealed class MainView : UserControl
 
                 byte[] data = texture.pictureData ?? Array.Empty<byte>();
                 var streamData = GetChildField(field, "m_StreamData");
-                ulong streamOffset = ReadUnsignedField(GetChildField(streamData, "offset"));
-                ulong streamSize = ReadUnsignedField(GetChildField(streamData, "size"));
+                ulong streamOffset = ReadUnsignedField(GetChildField(streamData, "offset")!);
+                ulong streamSize = ReadUnsignedField(GetChildField(streamData, "size")!);
                 var streamPathField = GetChildField(streamData, "path");
                 string streamPath = streamPathField == null || streamPathField.IsDummy
                     ? texture.m_StreamData.path ?? ""
