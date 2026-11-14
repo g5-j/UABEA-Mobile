@@ -2722,7 +2722,13 @@ public sealed class MainView : UserControl
             if (meshTexturePathId == 0)
             {
                 textureToggle.IsChecked = false;
-                _status.Text = "No linked MeshRenderer Material with a Texture2D was found in the current assets file.";
+                _status.Text = "No linked MeshRenderer Material with a Texture2D was found in the current assets file."; 
+                return;
+            }
+            if (meshData.UVs == null || meshData.UVs.Length != meshData.Vertices.Length)
+            {
+                textureToggle.IsChecked = false;
+                _status.Text = "The Mesh does not expose a supported UV0 channel, so its Material texture cannot be mapped safely."; 
                 return;
             }
             textureToggle.IsEnabled = false;
