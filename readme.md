@@ -95,7 +95,7 @@ The Android application directly uses the following libraries and components:
 | Component | Use in this port | License / notice |
 |---|---|---|
 | Avalonia and Avalonia.Android | Android UI and platform host | MIT — https://github.com/AvaloniaUI/Avalonia |
-| Material.Icons.Avalonia | UI icons | MIT — https://github.com/AvaloniaUI/Material.Icons |
+| Material.Icons.Avalonia | UI icons | MIT — https://github.com/SKProCH/Material.Icons |
 | AssetsTools.NET and AssetsTools.NET.Texture | Unity serialized asset parsing and texture structures | MIT — https://github.com/nesrak1/AssetsTools.NET |
 | AssetRipper.TextureDecoder | Managed texture decoding | MIT — https://github.com/AssetRipper/TextureDecoder |
 | Fmod5Sharp | FMOD bank and sample decoding for AudioClip preview | MIT — https://github.com/SamboyCoding/Fmod5Sharp |
@@ -105,6 +105,6 @@ The Android app also uses Android platform APIs supplied by the Android SDK. NuG
 
 ## Copyright and license
 
-UABEA and this port retain the upstream MIT license and copyright notices. The repository's root `license` file is preserved. Third-party notices distributed with this project, including the AssetStudio native decoder notice, must remain available in source distributions and derived builds. Components with separate license terms remain subject to those terms.
+The upstream UABEA copyright notice is **Copyright (c) 2021 nesrak1**, and the repository's root `license` file preserves its MIT terms and notice. UABEA is a C# remake of the original UABE project by SeriousCache; the original project is attributed at https://github.com/SeriousCache/UABE. This Android port does not claim ownership of either upstream project. Third-party notices distributed with this project, including the AssetStudio native decoder notice, must remain available in source distributions and derived builds. Components with separate license terms remain subject to those terms.
 
 This software is provided "as is", without warranty. Unity is a trademark of Unity Technologies; Unity names are used only to identify supported file formats and technologies. This project is not affiliated with or endorsed by Unity Technologies.
