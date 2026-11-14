@@ -67,6 +67,19 @@ public sealed class MainView : UserControl
     private readonly DispatcherTimer _spinnerTimer;
     private readonly System.Threading.SemaphoreSlim _assetNameLock = new(1, 1);
 
+    // Temporary FPS diagnostics. The animation callback is active only while
+    // the user explicitly starts the test on the Assets list.
+    private bool _fpsTestEnabled;
+    private long _fpsTestStartTicks;
+    private long _fpsLastFrameTicks;
+    private long _fpsWindowStartTicks;
+    private int _fpsWindowFrames;
+    private long _fpsTotalFrames;
+    private double _fpsWorstFrameMs;
+    private Button? _fpsToggleButton;
+    private TextBlock? _fpsReadout;
+    private string _fpsReadoutText = "FPS test is off.";
+
     private AssetsManager? _assetsManager;
     private string? _currentTempDirectory;
     private Border _loadingOverlay = null!;
@@ -419,6 +432,7 @@ public sealed class MainView : UserControl
         _sessionResourcePaths.Clear();
         _sessionResourceWasExplicitlySelected = false;
         SetLoading(true, $"Copying {file.Name}...");
+        StopFpsTest();
         _items.Children.Clear();
         _displayedRows.Clear();
         _listHeader.Children.Clear();
@@ -625,6 +639,12 @@ public sealed class MainView : UserControl
         if (_assetListBox is null) return;
         _displayedRows.Clear();
         _listHeader.Children.Clear();
+        _fpsToggleButton = null;
+        _fpsReadout = null;
+        if (_currentPage == BrowserPage.Assets)
+            AddFpsDiagnosticControls();
+        else
+            StopFpsTest();
         _visibleRows = 0;
         var query = (_searchBox.Text ?? "").Trim();
 
@@ -702,6 +722,152 @@ public sealed class MainView : UserControl
         }
 
         RenderNextPage();
+    }
+
+    private void AddFpsDiagnosticControls()
+    {
+        _fpsToggleButton = new Button
+        {
+            Content = _fpsTestEnabled ? "Stop FPS test" : "Start FPS test",
+            MinHeight = 40,
+            MinWidth = 118,
+            Padding = new Thickness(10, 6),
+            Background = SurfaceHighBrush,
+            Foreground = TextBrush,
+            CornerRadius = new CornerRadius(12),
+            VerticalAlignment = VerticalAlignment.Center
+        };
+        _fpsToggleButton.Click += (_, _) =>
+        {
+            if (_fpsTestEnabled)
+                StopFpsTest();
+            else
+                StartFpsTest();
+        };
+
+        _fpsReadout = new TextBlock
+        {
+            Text = _fpsReadoutText,
+            Foreground = MutedBrush,
+            FontSize = 11,
+            TextWrapping = TextWrapping.Wrap,
+            VerticalAlignment = VerticalAlignment.Center
+        };
+
+        var diagnosticRow = new Grid
+        {
+            ColumnDefinitions = new ColumnDefinitions("Auto,*")
+        };
+        Grid.SetColumn(_fpsToggleButton, 0);
+        Grid.SetColumn(_fpsReadout, 1);
+        diagnosticRow.Children.Add(_fpsToggleButton);
+        diagnosticRow.Children.Add(_fpsReadout);
+
+        _listHeader.Children.Add(new Border
+        {
+            Background = SurfaceContainerBrush,
+            BorderBrush = OutlineBrush,
+            BorderThickness = new Thickness(1),
+            CornerRadius = new CornerRadius(13),
+            Padding = new Thickness(9),
+            Margin = new Thickness(0, 0, 0, 8),
+            Child = diagnosticRow
+        });
+    }
+
+    private void StartFpsTest()
+    {
+        if (_currentPage != BrowserPage.Assets || _fpsTestEnabled)
+            return;
+
+        var topLevel = TopLevel.GetTopLevel(this);
+        if (topLevel is null)
+        {
+            _fpsReadoutText = "FPS test unavailable: page is not attached.";
+            UpdateFpsDiagnosticDisplay();
+            return;
+        }
+
+        _fpsTestEnabled = true;
+        _fpsTestStartTicks = System.Diagnostics.Stopwatch.GetTimestamp();
+        _fpsLastFrameTicks = _fpsTestStartTicks;
+        _fpsWindowStartTicks = _fpsTestStartTicks;
+        _fpsWindowFrames = 0;
+        _fpsTotalFrames = 0;
+        _fpsWorstFrameMs = 0;
+        _fpsReadoutText = "Measuring… scroll through the assets list.";
+        UpdateFpsDiagnosticDisplay();
+        topLevel.RequestAnimationFrame(OnFpsAnimationFrame);
+    }
+
+    private void OnFpsAnimationFrame(TimeSpan elapsed)
+    {
+        if (!_fpsTestEnabled || _currentPage != BrowserPage.Assets)
+            return;
+
+        long now = System.Diagnostics.Stopwatch.GetTimestamp();
+        long deltaTicks = now - _fpsLastFrameTicks;
+        _fpsLastFrameTicks = now;
+
+        if (deltaTicks > 0)
+        {
+            double frameMs = deltaTicks * 1000.0 / System.Diagnostics.Stopwatch.Frequency;
+            _fpsWorstFrameMs = Math.Max(_fpsWorstFrameMs, frameMs);
+            _fpsWindowFrames++;
+            _fpsTotalFrames++;
+        }
+
+        double windowSeconds = (now - _fpsWindowStartTicks) /
+            (double)System.Diagnostics.Stopwatch.Frequency;
+        if (windowSeconds >= 0.5)
+        {
+            double currentFps = _fpsWindowFrames / windowSeconds;
+            double totalSeconds = (now - _fpsTestStartTicks) /
+                (double)System.Diagnostics.Stopwatch.Frequency;
+            double averageFps = totalSeconds > 0 ? _fpsTotalFrames / totalSeconds : 0;
+            double minimumFps = _fpsWorstFrameMs > 0 ? 1000.0 / _fpsWorstFrameMs : 0;
+            double frameTimeMs = currentFps > 0 ? 1000.0 / currentFps : 0;
+
+            _fpsReadoutText =
+                $"FPS now: {currentFps:0}  •  Min: {minimumFps:0}  •  Avg: {averageFps:0}\n" +
+                $"Frame time: {frameTimeMs:0.0} ms";
+            _fpsWindowFrames = 0;
+            _fpsWindowStartTicks = now;
+            UpdateFpsDiagnosticDisplay();
+        }
+
+        TopLevel.GetTopLevel(this)?.RequestAnimationFrame(OnFpsAnimationFrame);
+    }
+
+    private void StopFpsTest()
+    {
+        if (!_fpsTestEnabled)
+            return;
+
+        _fpsTestEnabled = false;
+        if (_fpsTotalFrames > 0)
+        {
+            double totalSeconds = (System.Diagnostics.Stopwatch.GetTimestamp() - _fpsTestStartTicks) /
+                (double)System.Diagnostics.Stopwatch.Frequency;
+            double averageFps = totalSeconds > 0 ? _fpsTotalFrames / totalSeconds : 0;
+            double minimumFps = _fpsWorstFrameMs > 0 ? 1000.0 / _fpsWorstFrameMs : 0;
+            _fpsReadoutText =
+                $"Test stopped  •  Min: {minimumFps:0}  •  Avg: {averageFps:0}\n" +
+                "Start again to reset the measurements.";
+        }
+        else
+        {
+            _fpsReadoutText = "Test stopped before enough frames were measured.";
+        }
+        UpdateFpsDiagnosticDisplay();
+    }
+
+    private void UpdateFpsDiagnosticDisplay()
+    {
+        if (_fpsToggleButton is not null)
+            _fpsToggleButton.Content = _fpsTestEnabled ? "Stop FPS test" : "Start FPS test";
+        if (_fpsReadout is not null)
+            _fpsReadout.Text = _fpsReadoutText;
     }
 
     private void RenderNextPage()
@@ -1401,6 +1567,7 @@ public sealed class MainView : UserControl
     private async void ShowAssetDetails(AssetFileInfo asset)
     {
         if (_currentAssets is null || _assetsManager is null) return;
+        StopFpsTest();
         StopAudioPlayback();
         var instance = _currentAssets;
         var manager = _assetsManager;
@@ -3893,6 +4060,7 @@ public sealed class MainView : UserControl
     private void ShowBundleContents()
     {
         if (_currentBundle is null) return;
+        StopFpsTest();
         _currentPage = BrowserPage.Bundle;
         _assetListBox.IsVisible = true;
         _searchBox.IsVisible = true;
