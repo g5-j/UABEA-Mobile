@@ -750,10 +750,11 @@ public sealed class MainView : UserControl
             int currentIndex = _currentRows.FindIndex(row => row.AssetInfo?.PathId == item.PathId);
             if (currentIndex < 0) continue;
             var oldRow = _currentRows[currentIndex];
+            string resolvedType = _assetRows.FirstOrDefault(x => x.Info.PathId == item.PathId)?.TypeName ?? "Unknown";
             var updated = oldRow with
             {
                 Title = item.Name,
-                Detail = $"{oldRow.AssetInfo is null ? "" : _assetRows.FirstOrDefault(x => x.Info.PathId == item.PathId)?.TypeName} • {FormatSize(oldRow.AssetInfo!.ByteSize)} • ID: {item.PathId}"
+                Detail = $"{resolvedType} • {FormatSize(oldRow.AssetInfo!.ByteSize)} • ID: {item.PathId}"
             };
             _currentRows[currentIndex] = updated;
             int visibleIndex = _displayedRows.ToList().FindIndex(row => row.AssetInfo?.PathId == item.PathId);
