@@ -665,6 +665,7 @@ internal static class MeshPreviewDataReader
 internal sealed class MeshPreviewControl : Control, IDisposable
 {
     private readonly bool _interactive;
+    private readonly bool _cameraInside;
     private readonly Color? _surfaceColor;
     private readonly Vector2[] _uvs;
     private int[]? _texturePixels;
@@ -696,9 +697,10 @@ internal sealed class MeshPreviewControl : Control, IDisposable
     private static readonly Vector3 LightDirection =
         Vector3.Normalize(new Vector3(-0.35f, 0.65f, 0.7f));
 
-    public MeshPreviewControl(Vector3[] vertices, int[] indices, bool interactive = false, Color? surfaceColor = null, Vector2[]? uvs = null)
+    public MeshPreviewControl(Vector3[] vertices, int[] indices, bool interactive = false, Color? surfaceColor = null, Vector2[]? uvs = null, bool cameraInside = false)
     {
         _interactive = interactive;
+        _cameraInside = cameraInside;
         _surfaceColor = surfaceColor;
         _uvs = uvs != null && uvs.Length == (vertices?.Length ?? 0) ? uvs : Array.Empty<Vector2>();
         _indices = indices ?? Array.Empty<int>();
@@ -888,8 +890,8 @@ internal sealed class MeshPreviewControl : Control, IDisposable
 
         double cy = Math.Cos(_yaw), sy = Math.Sin(_yaw);
         double cp = Math.Cos(_pitch), sp = Math.Sin(_pitch);
-        float cameraDistance = (float)(4.4 / _zoom);
-        float focal = Math.Min(width, height) * 1.05f;
+        float cameraDistance = _cameraInside ? 0f : (float)(4.4 / _zoom);
+        float focal = Math.Min(width, height) * 1.05f * (_cameraInside ? (float)_zoom : 1f);
         float centerX = width * 0.5f, centerY = height * 0.5f;
 
         for (int i = 0; i < _normalizedVertices.Length; i++)
