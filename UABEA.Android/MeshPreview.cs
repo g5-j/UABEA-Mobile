@@ -814,7 +814,7 @@ internal sealed class MeshPreviewControl : Control, IDisposable
                 _zoom = Math.Clamp(_zoom * (distance / _lastPinchDistance), 0.45, 2.0);
 
             _yaw += (center.X - _lastPinchCenter.X) * 0.008;
-            _pitch = Math.Clamp(_pitch + (center.Y - _lastPinchCenter.Y) * 0.008, -1.45, 1.45);
+            _pitch -= (center.Y - _lastPinchCenter.Y) * 0.008;
             _lastPinchDistance = distance;
             _lastPinchCenter = center;
             InvalidateVisual();
@@ -827,7 +827,7 @@ internal sealed class MeshPreviewControl : Control, IDisposable
             Point start = _gestureStarts[e.Pointer];
             double dx = current.X - start.X;
             double dy = current.Y - start.Y;
-            if (Math.Abs(dx) + Math.Abs(dy) < 7)
+            if (Math.Abs(dx) + Math.Abs(dy) < 2)
                 return;
 
             e.Pointer.Capture(this);
@@ -835,7 +835,7 @@ internal sealed class MeshPreviewControl : Control, IDisposable
         }
 
         _yaw += (current.X - previous.X) * 0.008;
-        _pitch = Math.Clamp(_pitch + (current.Y - previous.Y) * 0.008, -1.45, 1.45);
+        _pitch -= (current.Y - previous.Y) * 0.008;
         InvalidateVisual();
         e.Handled = true;
     }
