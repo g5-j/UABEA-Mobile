@@ -72,6 +72,22 @@ internal sealed class CubemapPreviewControl : Control, IDisposable
         InvalidateVisual();
     }
 
+    public void SetViewForFace(int face)
+    {
+        if (_disposed) return;
+        switch (face)
+        {
+            case 0: _yaw = Math.PI * 0.5; _pitch = 0; break;
+            case 1: _yaw = -Math.PI * 0.5; _pitch = 0; break;
+            case 2: _yaw = 0; _pitch = -Math.PI * 0.5; break;
+            case 3: _yaw = 0; _pitch = Math.PI * 0.5; break;
+            case 4: _yaw = 0; _pitch = 0; break;
+            case 5: _yaw = Math.PI; _pitch = 0; break;
+            default: return;
+        }
+        InvalidateVisual();
+    }
+
     protected override void OnPointerPressed(PointerPressedEventArgs e)
     {
         base.OnPointerPressed(e);
@@ -105,7 +121,7 @@ internal sealed class CubemapPreviewControl : Control, IDisposable
             Point center = Midpoint(pair[0], pair[1]);
             if (_lastPinchDistance > 1)
                 _zoom = Math.Clamp(_zoom * (distance / _lastPinchDistance), 0.55, 2.8);
-            _yaw += (center.X - _lastPinchCenter.X) * 0.006;
+            _yaw -= (center.X - _lastPinchCenter.X) * 0.006;
             _pitch = Math.Clamp(_pitch + (center.Y - _lastPinchCenter.Y) * 0.006, -1.48, 1.48);
             _lastPinchDistance = distance;
             _lastPinchCenter = center;
@@ -150,44 +166,52 @@ internal sealed class CubemapPreviewControl : Control, IDisposable
         context.FillRectangle(new SolidColorBrush(Color.FromRgb(8, 10, 14)), bounds);
         if (_disposed || Bounds.Width < 1 || Bounds.Height < 1) return;
 
-        double scale = Math.Min(1.0, MaxRenderDimension / Math.Max(Bounds.Width, Bounds.Height));
-        int width = Math.Max(1, (int)Math.Ceiling(Bounds.Width * scale));
-        int height = Math.Max(1, (int)Math.Ceiling(Bounds.Height * scale));
-        EnsureFrame(width, height);
-
-        double aspect = width / (double)height;
-        double tanHalfFov = 0.72 / _zoom;
+        // Orthographic projection of a sphere: only pixels inside the unit disk sample the environment.
+        double diameter = Math.Min(Bounds.Width, Bounds.Height);
+        double scale = Math.Min(1.0, MaxRenderDimension / diameter);
+        int size = Math.Max(1, (int)Math.Ceiling(diameter * scale));
+        EnsureFrame(size, size);
         double cy = Math.Cos(_yaw), sy = Math.Sin(_yaw);
         double cp = Math.Cos(_pitch), sp = Math.Sin(_pitch);
-        for (int y = 0; y < height; y++)
+        double radius = size * 0.47;
+        double center = (size - 1) * 0.5;
+
+        for (int y = 0; y < size; y++)
         {
-            double ny = (1.0 - 2.0 * (y + 0.5) / height) * tanHalfFov;
-            int row = y * width;
-            for (int x = 0; x < width; x++)
+            double ny = (center - y) / radius;
+            int row = y * size;
+            for (int x = 0; x < size; x++)
             {
-                double nx = (2.0 * (x + 0.5) / width - 1.0) * tanHalfFov * aspect;
-                // Camera looks along +Z. Apply pitch, then yaw to obtain world direction.
-                double py = ny * cp - sp;
-                double pz = ny * sp + cp;
+                double nx = (x - center) / radius;
+                double r2 = nx * nx + ny * ny;
+                if (r2 > 1.0)
+                {
+                    _pixels[row + x] = unchecked((int)0xFF080A0E);
+                    continue;
+                }
+
+                double nz = Math.Sqrt(Math.Max(0, 1.0 - r2));
+                double py = ny * cp - nz * sp;
+                double pz = ny * sp + nz * cp;
                 double dx = nx * cy + pz * sy;
                 double dz = -nx * sy + pz * cy;
                 SampleCube(dx, py, dz, out int color);
-                int r = (color >> 16) & 255;
-                int g = (color >> 8) & 255;
-                int b = color & 255;
-                r = Math.Clamp((int)(r * _brightness), 0, 255);
-                g = Math.Clamp((int)(g * _brightness), 0, 255);
-                b = Math.Clamp((int)(b * _brightness), 0, 255);
-                _pixels[row + x] = unchecked((int)(0xFF000000u | ((uint)r << 16) | ((uint)g << 8) | (uint)b));
+                double light = 0.72 + 0.28 * Math.Max(0, nz);
+                int red = Math.Clamp((int)(((color >> 16) & 255) * _brightness * light), 0, 255);
+                int green = Math.Clamp((int)(((color >> 8) & 255) * _brightness * light), 0, 255);
+                int blue = Math.Clamp((int)((color & 255) * _brightness * light), 0, 255);
+                _pixels[row + x] = unchecked((int)(0xFF000000u | ((uint)red << 16) | ((uint)green << 8) | (uint)blue));
             }
         }
 
         using (var locked = _frame!.Lock())
         {
-            for (int y = 0; y < height; y++)
-                Marshal.Copy(_pixels, y * width, IntPtr.Add(locked.Address, y * locked.RowBytes), width);
+            for (int y = 0; y < size; y++)
+                Marshal.Copy(_pixels, y * size, IntPtr.Add(locked.Address, y * locked.RowBytes), size);
         }
-        context.DrawImage(_frame!, new Rect(0, 0, width, height), bounds);
+        double left = (Bounds.Width - diameter) * 0.5;
+        double top = (Bounds.Height - diameter) * 0.5;
+        context.DrawImage(_frame!, new Rect(0, 0, size, size), new Rect(left, top, diameter, diameter));
     }
 
     private void SampleCube(double x, double y, double z, out int color)
