@@ -111,7 +111,7 @@ public sealed class MainView : UserControl
         });
         header.Children.Add(new TextBlock
         {
-            Text = "Unity Assets & AssetBundle Explorer",
+            Text = "Unity Assets & AssetBundle Explorer  •  v" + (typeof(MainView).Assembly.GetName().Version?.ToString(3) ?? "0.2.0"),
             FontSize = 13,
             Foreground = MutedBrush
         });
