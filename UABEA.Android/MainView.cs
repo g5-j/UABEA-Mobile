@@ -1174,18 +1174,6 @@ public sealed class MainView : UserControl
         if (selected.Count == 0) return;
 
         var instance = _currentAssets;
-        var bundle = _currentBundle;
-        string sourceName = bundle is null ? instance.name : _currentFileName;
-        string extension = Path.GetExtension(sourceName);
-        if (string.IsNullOrWhiteSpace(extension)) extension = bundle is null ? ".assets" : ".bundle";
-        var destination = await topLevel.StorageProvider.SaveFilePickerAsync(new FilePickerSaveOptions
-        {
-            Title = "Save modified Unity file",
-            SuggestedFileName = Path.GetFileNameWithoutExtension(sourceName) + "-modified" + extension,
-            FileTypeChoices = new[] { new FilePickerFileType("Modified Unity file") { Patterns = new[] { "*" + extension } } }
-        });
-        if (destination is null) return;
-
         _isBusy = true;
         SetLoading(true, "Decoding replacement image...");
         try
@@ -1280,18 +1268,6 @@ public sealed class MainView : UserControl
         if (selected.Count == 0) return;
 
         var instance = _currentAssets;
-        var bundle = _currentBundle;
-        string sourceName = bundle is null ? instance.name : _currentFileName;
-        string extension = Path.GetExtension(sourceName);
-        if (string.IsNullOrWhiteSpace(extension)) extension = bundle is null ? ".assets" : ".bundle";
-        var destination = await topLevel.StorageProvider.SaveFilePickerAsync(new FilePickerSaveOptions
-        {
-            Title = "Save modified Unity file",
-            SuggestedFileName = Path.GetFileNameWithoutExtension(sourceName) + "-modified" + extension,
-            FileTypeChoices = new[] { new FilePickerFileType("Modified Unity file") { Patterns = new[] { "*" + extension } } }
-        });
-        if (destination is null) return;
-
         _isBusy = true;
         SetLoading(true, "Importing TextAsset...");
         try
@@ -1335,18 +1311,6 @@ public sealed class MainView : UserControl
         if (selected.Count == 0) return;
 
         var instance = _currentAssets;
-        var bundle = _currentBundle;
-        string sourceName = bundle is null ? instance.name : _currentFileName;
-        string extension = Path.GetExtension(sourceName);
-        if (string.IsNullOrWhiteSpace(extension)) extension = bundle is null ? ".assets" : ".bundle";
-        var destination = await topLevel.StorageProvider.SaveFilePickerAsync(new FilePickerSaveOptions
-        {
-            Title = "Save modified Unity file",
-            SuggestedFileName = Path.GetFileNameWithoutExtension(sourceName) + "-modified" + extension,
-            FileTypeChoices = new[] { new FilePickerFileType("Modified Unity file") { Patterns = new[] { "*" + extension } } }
-        });
-        if (destination is null) return;
-
         _isBusy = true;
         SetLoading(true, "Importing font...");
         try
