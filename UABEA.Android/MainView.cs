@@ -323,9 +323,7 @@ public sealed class MainView : UserControl
             Background = Brushes.Transparent,
             BorderThickness = new Thickness(0),
             Padding = new Thickness(0),
-            SelectionMode = SelectionMode.None,
-            IsTabStop = false,
-            VirtualizationMode = ItemVirtualizationMode.Simple
+            IsTabStop = false
         };
         _assetListBox.ItemTemplate = new FuncDataTemplate<RowData>((row, _) =>
         {
