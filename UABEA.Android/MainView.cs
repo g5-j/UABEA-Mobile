@@ -1884,6 +1884,24 @@ public sealed class MainView : UserControl
                 var shader = GetChildField(field, "m_Shader");
                 long shaderPathId = ReadFieldInt64(GetChildField(shader, "m_PathID"));
                 string shaderLabel = shaderPathId == 0 ? "Built-in / missing shader reference" : $"Shader asset Path ID: {shaderPathId}";
+                if (shaderPathId != 0)
+                {
+                    var shaderAsset = instance.file.AssetInfos.FirstOrDefault(info => info.PathId == shaderPathId);
+                    if (shaderAsset != null)
+                    {
+                        try
+                        {
+                            var shaderField = manager.GetBaseField(instance, shaderAsset);
+                            string actualShaderName = ReadFieldString(GetChildField(shaderField, "m_Name"));
+                            if (!string.IsNullOrWhiteSpace(actualShaderName)) shaderLabel = $"{actualShaderName} • Path ID {shaderPathId}";
+                        }
+                        catch { }
+                    }
+                }
+                string shaderKeywords = ReadFieldString(GetChildField(field, "m_ShaderKeywords"));
+                if (!string.IsNullOrWhiteSpace(shaderKeywords)) properties.Add("Shader keywords: " + shaderKeywords);
+                long renderQueue = ReadFieldInt64(GetChildField(field, "m_CustomRenderQueue"));
+                if (renderQueue >= 0) properties.Add("Custom render queue: " + renderQueue);
 
                 var saved = GetChildField(field, "m_SavedProperties");
                 var colors = GetChildField(GetChildField(saved, "m_Colors"), "Array");
