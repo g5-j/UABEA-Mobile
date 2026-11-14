@@ -22,7 +22,10 @@ internal sealed class CubemapPreviewControl : Control, IDisposable
     private readonly int _faceWidth;
     private readonly int _faceHeight;
     private readonly Dictionary<IPointer, Point> _pointers = new();
+    private readonly Dictionary<IPointer, Point> _gestureStarts = new();
+    private readonly Dictionary<IPointer, int> _gestureAxes = new();
     private readonly HashSet<IPointer> _captured = new();
+    private int _pinchDragAxis;
     private WriteableBitmap? _frame;
     private int[] _pixels = Array.Empty<int>();
     private int _frameWidth, _frameHeight;
@@ -93,6 +96,7 @@ internal sealed class CubemapPreviewControl : Control, IDisposable
         base.OnPointerPressed(e);
         if (_disposed) return;
         _pointers[e.Pointer] = e.GetPosition(this);
+        _gestureStarts[e.Pointer] = _pointers[e.Pointer];
         if (_pointers.Count >= 2)
         {
             foreach (var pointer in _pointers.Keys)
@@ -121,8 +125,14 @@ internal sealed class CubemapPreviewControl : Control, IDisposable
             Point center = Midpoint(pair[0], pair[1]);
             if (_lastPinchDistance > 1)
                 _zoom = Math.Clamp(_zoom * (distance / _lastPinchDistance), 0.55, 2.8);
-            _yaw += (center.X - _lastPinchCenter.X) * 0.006;
-            _pitch = Math.Clamp(_pitch - (center.Y - _lastPinchCenter.Y) * 0.006, -1.48, 1.48);
+            double centerDx = center.X - _lastPinchCenter.X;
+            double centerDy = center.Y - _lastPinchCenter.Y;
+            if (_pinchDragAxis == 0 && Math.Abs(centerDx) + Math.Abs(centerDy) >= 1)
+                _pinchDragAxis = Math.Abs(centerDx) >= Math.Abs(centerDy) ? 1 : 2;
+            if (_pinchDragAxis == 1)
+                _yaw += centerDx * 0.006;
+            else if (_pinchDragAxis == 2)
+                _pitch = Math.Clamp(_pitch - centerDy * 0.006, -1.48, 1.48);
             _lastPinchDistance = distance;
             _lastPinchCenter = center;
             InvalidateVisual();
@@ -135,9 +145,14 @@ internal sealed class CubemapPreviewControl : Control, IDisposable
             if (Distance(previous, current) < 2) return;
             e.Pointer.Capture(this);
             _captured.Add(e.Pointer);
+            Point start = _gestureStarts.TryGetValue(e.Pointer, out Point gestureStart) ? gestureStart : previous;
+            _gestureAxes[e.Pointer] = Math.Abs(current.X - start.X) >= Math.Abs(current.Y - start.Y) ? 1 : 2;
         }
-        _yaw += (current.X - previous.X) * 0.006;
-        _pitch = Math.Clamp(_pitch - (current.Y - previous.Y) * 0.006, -1.48, 1.48);
+        int dragAxis = _gestureAxes.TryGetValue(e.Pointer, out int selectedAxis) ? selectedAxis : 0;
+        if (dragAxis == 1)
+            _yaw += (current.X - previous.X) * 0.006;
+        else if (dragAxis == 2)
+            _pitch = Math.Clamp(_pitch - (current.Y - previous.Y) * 0.006, -1.48, 1.48);
         InvalidateVisual();
         e.Handled = true;
     }
@@ -146,17 +161,29 @@ internal sealed class CubemapPreviewControl : Control, IDisposable
     {
         base.OnPointerReleased(e);
         _pointers.Remove(e.Pointer);
+        _gestureStarts.Remove(e.Pointer);
+        _gestureAxes.Remove(e.Pointer);
         if (_captured.Remove(e.Pointer)) e.Pointer.Capture(null);
         _lastPinchDistance = 0;
-        if (_pointers.Count == 1) _lastPinchCenter = _pointers.Values.First();
+        _pinchDragAxis = 0;
+        if (_pointers.Count == 1)
+        {
+            IPointer remaining = _pointers.Keys.First();
+            _lastPinchCenter = _pointers[remaining];
+            _gestureStarts[remaining] = _pointers[remaining];
+            _gestureAxes.Remove(remaining);
+        }
     }
 
     protected override void OnPointerCaptureLost(PointerCaptureLostEventArgs e)
     {
         base.OnPointerCaptureLost(e);
         _pointers.Clear();
+        _gestureStarts.Clear();
+        _gestureAxes.Clear();
         _captured.Clear();
         _lastPinchDistance = 0;
+        _pinchDragAxis = 0;
     }
 
     public override void Render(DrawingContext context)
