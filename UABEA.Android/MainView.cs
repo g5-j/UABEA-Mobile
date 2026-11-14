@@ -783,74 +783,101 @@ public sealed class MainView : UserControl
 
         SetLoading(true, $"Exporting {assets.Count} assets...");
         int exported = 0;
+        var failedAssets = new List<string>();
         var usedNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         try
         {
             await using var output = await destination.OpenWriteAsync();
             using (var archive = new ZipArchive(output, ZipArchiveMode.Create, true))
             {
-                foreach (var asset in assets)
+                for (int index = 0; index < assets.Count; index++)
                 {
-                    int typeId = asset.GetTypeId(instance.file);
-                    string typeName = Enum.GetName(typeof(AssetClassID), typeId) ?? $"Type_{typeId}";
-                    string name = await Task.Run(() => TryReadAssetName(manager, instance, asset, typeName));
-                    AssetExportPayload payload;
-
+                    var asset = assets[index];
+                    string name = $"Asset_{index + 1}";
                     try
                     {
-                        payload = await Task.Run(() => BuildAssetExportPayload(manager, instance, asset, typeId));
-                    }
-                    catch (FileNotFoundException ex) when (!string.IsNullOrWhiteSpace(ex.FileName))
-                    {
-                        SetLoading(false);
-                        _status.Text = $"Resource required for {name}: {Path.GetFileName(ex.FileName)}";
-                        if (!await ChooseSessionResourceAsync(ex.FileName!, instance))
-                            throw new OperationCanceledException("The required external resource was not selected.");
-                        SetLoading(true, $"Retrying {name}...");
-                        payload = await Task.Run(() => BuildAssetExportPayload(manager, instance, asset, typeId));
-                    }
+                        int typeId = asset.GetTypeId(instance.file);
+                        string typeName = Enum.GetName(typeof(AssetClassID), typeId) ?? $"Type_{typeId}";
+                        name = await Task.Run(() => TryReadAssetName(manager, instance, asset, typeName));
+                        AssetExportPayload payload;
 
-                    // Export using the Unity asset's own name only.
-                    // Keep PathID/source names out of the filename; disambiguate
-                    // collisions below so assets with identical names are preserved.
-                    string baseName = $"{SanitizeExportName(name)}{payload.Extension}";
-                    string entryName = baseName;
-                    int duplicate = 2;
-                    while (!usedNames.Add(entryName))
-                    {
-                        string stem = Path.GetFileNameWithoutExtension(baseName);
-                        entryName = $"{stem}_{duplicate++}{payload.Extension}";
-                    }
+                        try
+                        {
+                            payload = await Task.Run(() => BuildAssetExportPayload(manager, instance, asset, typeId));
+                        }
+                        catch (FileNotFoundException ex) when (!string.IsNullOrWhiteSpace(ex.FileName))
+                        {
+                            SetLoading(false);
+                            _status.Text = $"Resource required for {name}: {Path.GetFileName(ex.FileName)}";
+                            bool selected = await ChooseSessionResourceAsync(ex.FileName!, instance);
+                            if (!selected)
+                                throw new InvalidOperationException("Required external resource was not selected; this asset was skipped.");
+                            SetLoading(true, $"Retrying {name} ({index + 1}/{assets.Count})...");
+                            payload = await Task.Run(() => BuildAssetExportPayload(manager, instance, asset, typeId));
+                        }
 
-                    var zipEntry = archive.CreateEntry(entryName, CompressionLevel.Optimal);
-                    using var entryStream = zipEntry.Open();
-                    if (payload.IsRaw)
-                    {
-                        long start = asset.GetAbsoluteByteStart(instance.file);
-                        using var source = new SegmentStream(instance.file.Reader.BaseStream, start, asset.ByteSize);
-                        await source.CopyToAsync(entryStream);
-                    }
-                    else
-                    {
-                        if (payload.Data is null)
+                        // Export using the Unity asset's own name only.
+                        // Keep PathID/source names out of the filename; disambiguate collisions.
+                        string baseName = $"{SanitizeExportName(name)}{payload.Extension}";
+                        string entryName = baseName;
+                        int duplicate = 2;
+                        while (usedNames.Contains(entryName))
+                        {
+                            string stem = Path.GetFileNameWithoutExtension(baseName);
+                            entryName = $"{stem}_{duplicate++}{payload.Extension}";
+                        }
+
+                        // Build/validate the payload before creating the ZIP entry so a
+                        // failed asset does not leave an empty or partial entry behind.
+                        if (!payload.IsRaw && payload.Data is null)
                             throw new InvalidDataException($"No export data was produced for {name}.");
-                        await entryStream.WriteAsync(payload.Data);
-                    }
 
-                    exported++;
-                    _status.Text = $"Exported {exported}/{assets.Count}\n{name}";
+                        var zipEntry = archive.CreateEntry(entryName, CompressionLevel.Optimal);
+                        using (var entryStream = zipEntry.Open())
+                        {
+                            if (payload.IsRaw)
+                            {
+                                long rawStart = asset.GetAbsoluteByteStart(instance.file);
+                                using var source = new SegmentStream(instance.file.Reader.BaseStream, rawStart, asset.ByteSize);
+                                await source.CopyToAsync(entryStream);
+                            }
+                            else
+                            {
+                                await entryStream.WriteAsync(payload.Data!);
+                            }
+                        }
+
+                        usedNames.Add(entryName);
+                        exported++;
+                        _status.Text = $"Exported {exported}/{assets.Count}\n{name}";
+                    }
+                    catch (Exception ex)
+                    {
+                        string reason = ex.Message.Replace("\\r", " ").Replace("\\n", " ");
+                        if (reason.Length > 180) reason = reason.Substring(0, 180) + "...";
+                        failedAssets.Add($"{name}: {reason}");
+                        _status.Text = $"Skipped {failedAssets.Count} failed asset(s)\nContinuing: {index + 1}/{assets.Count}";
+                    }
                 }
             }
+
             await output.FlushAsync();
-            _status.Text = $"Export completed\n{exported} assets saved to ZIP.";
-        }
-        catch (OperationCanceledException)
-        {
-            _status.Text = $"Export cancelled after {exported}/{assets.Count} assets.";
+            if (failedAssets.Count == 0)
+            {
+                _status.Text = $"Export completed\n{exported} assets saved to ZIP.";
+            }
+            else
+            {
+                var shownFailures = failedAssets.Take(12);
+                string failureSummary = string.Join("\n", shownFailures);
+                if (failedAssets.Count > 12)
+                    failureSummary += $"\n...and {failedAssets.Count - 12} more.";
+                _status.Text = $"Export completed with warnings\nSucceeded: {exported}/{assets.Count}\nSkipped: {failedAssets.Count}\n\nFailed assets:\n{failureSummary}";
+            }
         }
         catch (Exception ex)
         {
-            _status.Text = $"Could not export asset archive:\n{ex.Message}\nCompleted: {exported}/{assets.Count}";
+            _status.Text = $"Could not create asset archive:\n{ex.Message}\nCompleted: {exported}/{assets.Count}";
         }
         finally
         {
