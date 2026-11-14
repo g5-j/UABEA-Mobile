@@ -4,7 +4,7 @@
   <uses-sdk android:minSdkVersion="31" android:targetSdkVersion="34" />
   <application
       android:allowBackup="false"
-      android:label="UABEA Mobile"
+      android:label="UABE Avalonia"
       android:theme="@style/UABEATheme"
       android:supportsRtl="true" />
 </manifest>
