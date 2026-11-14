@@ -110,8 +110,7 @@ public sealed class MainView : UserControl
         var root = new Grid
         {
             Margin = new Thickness(18, 18, 18, 18),
-            RowDefinitions = new RowDefinitions("Auto,Auto,Auto,Auto,Auto,*,Auto"),
-            RowSpacing = 10
+            RowDefinitions = new RowDefinitions("Auto,Auto,Auto,Auto,Auto,*,Auto")
         };
         void AddRoot(Control control, int row)
         {
@@ -319,7 +318,6 @@ public sealed class MainView : UserControl
             ItemsSource = _displayedRows,
             HorizontalAlignment = HorizontalAlignment.Stretch,
             VerticalAlignment = VerticalAlignment.Stretch,
-            HorizontalContentAlignment = HorizontalAlignment.Stretch,
             Background = Brushes.Transparent,
             BorderThickness = new Thickness(0),
             Padding = new Thickness(0),
@@ -329,11 +327,20 @@ public sealed class MainView : UserControl
         {
             bool isBundleEntry = _currentPage == BrowserPage.Bundle && _currentBundle is not null;
             bool isAssetEntry = _currentPage == BrowserPage.Assets && row.AssetInfo is not null;
+            Action? exportAction = null;
+            Action? openAction = null;
+            if (isBundleEntry)
+            {
+                exportAction = () => _ = ExportBundleEntryAsync(row.Title);
+                openAction = () => _ = OpenBundleEntryAsync(row.Title);
+            }
+            else if (isAssetEntry)
+            {
+                exportAction = () => _ = ExportAssetAsync(row.AssetInfo!);
+                openAction = () => ShowAssetDetails(row.AssetInfo!);
+            }
             return CreateActionRow(row.Title, row.Detail, row.Icon, row.Action,
-                isBundleEntry ? () => _ = ExportBundleEntryAsync(row.Title) :
-                    isAssetEntry ? () => _ = ExportAssetAsync(row.AssetInfo!) : null,
-                isBundleEntry ? () => _ = OpenBundleEntryAsync(row.Title) :
-                    isAssetEntry ? () => ShowAssetDetails(row.AssetInfo!) : null);
+                exportAction, openAction);
         }, supportsRecycling: true);
         var listBody = new Grid { RowDefinitions = new RowDefinitions("Auto,*") };
         listBody.Children.Add(_listHeader);
