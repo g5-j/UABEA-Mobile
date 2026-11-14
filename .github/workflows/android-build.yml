@@ -1,4 +1,4 @@
-name: UABEA Android Build
+name: UABE Avalonia Android Release
 
 on:
   push:
@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   android:
@@ -106,8 +106,10 @@ jobs:
             fi
           done
 
+          VERSION="0.2.${GITHUB_RUN_NUMBER}"
+          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
           dotnet restore UABEA.Android/UABEA.Android.csproj
-          dotnet publish UABEA.Android/UABEA.Android.csproj -c Release -f net8.0-android31.0 -r android-arm64 -p:AndroidPackageFormat=apk -p:AndroidKeyStore=true -p:AndroidSigningKeyStore="$RUNNER_TEMP/uabea-release.keystore" -p:AndroidSigningKeyAlias="$ANDROID_KEY_ALIAS" -p:AndroidSigningStorePass="$ANDROID_KEYSTORE_PASSWORD" -p:AndroidSigningKeyPass="$ANDROID_KEY_PASSWORD" -p:PublishTrimmed=false -p:RunAOTCompilation=false
+          dotnet publish UABEA.Android/UABEA.Android.csproj -c Release -f net8.0-android31.0 -r android-arm64 -p:AndroidPackageFormat=apk -p:AndroidKeyStore=true -p:AndroidSigningKeyStore="$RUNNER_TEMP/uabea-release.keystore" -p:AndroidSigningKeyAlias="$ANDROID_KEY_ALIAS" -p:AndroidSigningStorePass="$ANDROID_KEYSTORE_PASSWORD" -p:AndroidSigningKeyPass="$ANDROID_KEY_PASSWORD" -p:PublishTrimmed=false -p:RunAOTCompilation=false -p:ApplicationDisplayVersion="$VERSION" -p:ApplicationVersion="$GITHUB_RUN_NUMBER" -p:Version="$VERSION" -p:InformationalVersion="$VERSION"
 
           APK="$(find UABEA.Android/bin/Release/net8.0-android31.0/android-arm64/publish -maxdepth 1 -type f -iname '*signed.apk' | head -n 1)"
           if [ -z "$APK" ]; then
@@ -116,9 +118,11 @@ jobs:
             exit 1
           fi
 
-          cp "$APK" UABEA-Mobile.apk
+          cp "$APK" "UABE-Avalonia-${VERSION}.apk"
           APKSIGNER="$(find "$ANDROID_HOME/build-tools" -type f -name apksigner | sort -V | tail -n 1)"
-          "$APKSIGNER" verify --verbose UABEA-Mobile.apk
+          "$APKSIGNER" verify --verbose "UABE-Avalonia-${VERSION}.apk"
+          "$APKSIGNER" verify --print-certs "UABE-Avalonia-${VERSION}.apk"
+          echo "APK_PATH=UABE-Avalonia-${VERSION}.apk" >> "$GITHUB_ENV"
 
       - name: Install 7-Zip
         run: |
@@ -132,17 +136,34 @@ jobs:
         run: |
           set -euo pipefail
           SHORT_SHA="${GITHUB_SHA:0:7}"
-          ARCHIVE="UABEA-Mobile-${SHORT_SHA}.7z"
-          7z a -t7z -mx=9 -m0=lzma2 -mmt=on "$ARCHIVE" UABEA-Mobile.apk
+          ARCHIVE="UABE-Avalonia-${VERSION}-${SHORT_SHA}.7z"
+          7z a -t7z -mx=9 -m0=lzma2 -mmt=on "$ARCHIVE" "$APK_PATH"
           7z t "$ARCHIVE"
-          7z l "$ARCHIVE" | grep -F "UABEA-Mobile.apk"
+          7z l "$ARCHIVE" | grep -F "$APK_PATH"
           echo "ARCHIVE=$ARCHIVE" >> "$GITHUB_ENV"
 
       - name: Upload 7z build artifact
         uses: actions/upload-artifact@v4
         with:
-          name: UABEA-Mobile-${{ github.sha }}
+          name: UABE-Avalonia-${{ github.sha }}
           path: ${{ env.ARCHIVE }}
           if-no-files-found: error
           compression-level: 0
           retention-days: 30
+
+      - name: Publish GitHub Release with plain APK
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ env.VERSION }}
+          name: UABE Avalonia v${{ env.VERSION }}
+          target_commitish: ${{ github.sha }}
+          generate_release_notes: true
+          fail_on_unmatched_files: true
+          files: ${{ env.APK_PATH }}
+          body: |
+            Android ARM64 release for UABE Avalonia.
+
+            - Minimum Android version: 12 (API 31)
+            - Package: com.g5j.uabeamobile
+            - Signed APK attached as a plain `.apk` file.
+            - A separately compressed Ultra 7z archive is available from the workflow artifact.
