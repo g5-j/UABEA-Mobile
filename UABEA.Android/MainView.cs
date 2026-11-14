@@ -982,13 +982,12 @@ public sealed class MainView : UserControl
         RemovePreviewLoadingCard(loadingCard);
         if (faces == null && needsExternalResource && !string.IsNullOrWhiteSpace(resourceSource))
         {
-            bool selected = await ChooseSessionResourceAsync(resourceSource, instance);
-            if (selected && _currentAssets == instance && _currentPage == BrowserPage.AssetDetails)
-            {
-                await ShowCubemapPreviewAsync(manager, instance, asset);
-                return;
-            }
-            error = $"Cubemap requires its matching external stream: {resourceSource}";
+            AddResourceRequestCard("360° Cubemap preview", resourceSource,
+                "This Cubemap needs an external image stream. The file is requested only after you press the button.",
+                MaterialIconKind.Image,
+                () => ChooseSessionResourceAsync(resourceSource, instance),
+                () => ShowCubemapPreviewAsync(manager, instance, asset));
+            return;
         }
 
         if (faces == null || faceBitmaps.Length != 6)
@@ -1067,21 +1066,12 @@ public sealed class MainView : UserControl
                 string[] faceNames = { "+X Right", "-X Left", "+Y Top", "-Y Bottom", "+Z Front", "-Z Back" };
                 for (int i = 0; i < 6; i++)
                 {
-                    var cell = new StackPanel { Spacing = 3, Margin = new Thickness(2) };
-                    cell.Children.Add(new Image
-                    {
-                        Source = faceBitmaps[i],
-                        Stretch = Stretch.Uniform,
-                        MaxHeight = 76,
-                        HorizontalAlignment = HorizontalAlignment.Stretch
-                    });
-                    cell.Children.Add(new TextBlock
-                    {
-                        Text = faceNames[i],
-                        FontSize = 10,
-                        Foreground = MutedBrush,
-                        HorizontalAlignment = HorizontalAlignment.Center
-                    });
+                    int faceIndex = i;
+                    var cellContent = new StackPanel { Spacing = 3, Margin = new Thickness(2) };
+                    cellContent.Children.Add(new Image { Source = faceBitmaps[i], Stretch = Stretch.Uniform, MaxHeight = 76, HorizontalAlignment = HorizontalAlignment.Stretch });
+                    cellContent.Children.Add(new TextBlock { Text = faceNames[i], FontSize = 10, Foreground = MutedBrush, HorizontalAlignment = HorizontalAlignment.Center });
+                    var cell = new Button { Content = cellContent, Background = SurfaceHighBrush, Foreground = TextBrush, Padding = new Thickness(3), CornerRadius = new CornerRadius(10), MinHeight = 96 };
+                    cell.Click += (_, _) => largeViewer.SetViewForFace(faceIndex);
                     Grid.SetColumn(cell, i % 3);
                     Grid.SetRow(cell, i / 3);
                     facePanel.Children.Add(cell);
@@ -1447,18 +1437,11 @@ public sealed class MainView : UserControl
         }
         else if (needsExternalResource && !string.IsNullOrWhiteSpace(textureResourceSource))
         {
-            bool selected = await ChooseSessionResourceAsync(textureResourceSource, instance);
-            if (selected && _currentAssets == instance && _currentPage == BrowserPage.AssetDetails)
-            {
-                await ShowTexturePreviewAsync(manager, instance, asset);
-                return;
-            }
-            _items.Children.Add(CreatePreviewCard("Image preview", new TextBlock
-            {
-                Text = "Select the matching .resource file to preview this image.",
-                Foreground = TextBrush,
-                TextWrapping = TextWrapping.Wrap
-            }, MaterialIconKind.Image));
+            AddResourceRequestCard("Image preview", textureResourceSource,
+                "This texture is stored in an external Unity resource. Select it only when you want to view the image.",
+                MaterialIconKind.Image,
+                () => ChooseSessionResourceAsync(textureResourceSource, instance),
+                () => ShowTexturePreviewAsync(manager, instance, asset));
         }
         else
         {
@@ -1674,15 +1657,11 @@ public sealed class MainView : UserControl
         }
         else if (needsExternalResource && !string.IsNullOrWhiteSpace(resourceSource))
         {
-            bool selected = await ChooseSessionResourceAsync(resourceSource, instance);
-            if (selected && _currentAssets == instance && _currentPage == BrowserPage.AssetDetails)
-                await ShowSpritePreviewAsync(manager, instance, spriteAsset);
-            else
-                _items.Children.Add(CreatePreviewCard("Sprite preview", new TextBlock
-                {
-                    Text = "Select the matching .resource or .resS file to preview this Sprite.",
-                    Foreground = TextBrush, TextWrapping = TextWrapping.Wrap
-                }, MaterialIconKind.Image));
+            AddResourceRequestCard("Sprite preview", resourceSource,
+                "This Sprite uses an external texture stream. Select the matching file only when you want to preview it.",
+                MaterialIconKind.Image,
+                () => ChooseSessionResourceAsync(resourceSource, instance),
+                () => ShowSpritePreviewAsync(manager, instance, spriteAsset));
         }
         else
         {
@@ -2172,50 +2151,13 @@ public sealed class MainView : UserControl
             // first preview attempt instead of presenting an error first.
             if (needsExternalResource && !string.IsNullOrWhiteSpace(audioResourceSource))
             {
-                bool selected = await ChooseAudioResourceAsync(
-                    audioResourceSource, instance, asset);
-
-                if (!selected && _currentAssets == instance &&
-                    _currentPage == BrowserPage.AssetDetails)
-                {
-                    var promptContent = new StackPanel { Spacing = 10 };
-                    promptContent.Children.Add(new TextBlock
-                    {
-                        Text = "Select the matching .resource file to preview this AudioClip.",
-                        Foreground = TextBrush,
-                        TextWrapping = TextWrapping.Wrap
-                    });
-
-                    var chooseResourceButton = new Button
-                    {
-                        Content = "Select .resource file",
-                        MinHeight = 44,
-                        HorizontalAlignment = HorizontalAlignment.Stretch,
-                        Background = PrimaryBrush,
-                        Foreground = OnPrimaryBrush,
-                        CornerRadius = new CornerRadius(13),
-                        FontWeight = FontWeight.SemiBold
-                    };
-                    var promptCard = CreatePreviewCard("Audio preview", promptContent, MaterialIconKind.MusicNote);
-                    chooseResourceButton.Click += async (_, _) =>
-                    {
-                        chooseResourceButton.IsEnabled = false;
-                        _items.Children.Remove(promptCard);
-                        bool retried = await ChooseAudioResourceAsync(
-                            audioResourceSource, instance, asset);
-                        if (!retried && _currentAssets == instance &&
-                            _currentPage == BrowserPage.AssetDetails)
-                        {
-                            _items.Children.Add(promptCard);
-                            chooseResourceButton.IsEnabled = true;
-                        }
-                    };
-                    promptContent.Children.Add(chooseResourceButton);
-                    _items.Children.Add(promptCard);
-                }
+                AddResourceRequestCard("Audio preview", audioResourceSource,
+                    "This AudioClip is stored in an external FMOD resource. Select the matching file only when you want to listen to it.",
+                    MaterialIconKind.MusicNote,
+                    () => ChooseSessionResourceAsync(audioResourceSource, instance),
+                    () => ShowAudioClipPreviewAsync(manager, instance, asset));
                 return;
             }
-
             var errorContent = new StackPanel { Spacing = 10 };
             errorContent.Children.Add(new TextBlock
             {
@@ -2609,19 +2551,11 @@ public sealed class MainView : UserControl
 
         if (meshData == null && needsExternalResource && !string.IsNullOrWhiteSpace(streamSource))
         {
-            bool selected = await ChooseSessionResourceAsync(streamSource, instance);
-            if (selected && _currentAssets == instance && _currentPage == BrowserPage.AssetDetails)
-            {
-                await ShowMeshPreviewAsync(manager, instance, asset);
-                return;
-            }
-
-            _items.Children.Add(CreatePreviewCard("3D Mesh preview", new TextBlock
-            {
-                Text = "This Mesh uses external vertex data. Select its matching .resource or .resS file to preview it.",
-                Foreground = TextBrush,
-                TextWrapping = TextWrapping.Wrap
-            }, MaterialIconKind.Image));
+            AddResourceRequestCard("3D Mesh preview", streamSource,
+                "This Mesh stores vertex or index data externally. Select the matching file only when you want to view the model.",
+                MaterialIconKind.Image,
+                () => ChooseSessionResourceAsync(streamSource, instance),
+                () => ShowMeshPreviewAsync(manager, instance, asset));
             return;
         }
 
@@ -3331,6 +3265,50 @@ public sealed class MainView : UserControl
             read += count;
         }
         return data;
+    }
+    private void AddResourceRequestCard(
+        string title, string source, string description, MaterialIconKind iconKind,
+        Func<Task<bool>> chooseResource, Func<Task> retryPreview)
+    {
+        string expectedName = Path.GetFileName(NormalizeResourcePath(source));
+        if (string.IsNullOrWhiteSpace(expectedName)) expectedName = "the matching Unity resource file";
+        var content = new StackPanel { Spacing = 10 };
+        content.Children.Add(new TextBlock
+        {
+            Text = description + "\nRequired file: " + expectedName,
+            Foreground = TextBrush, TextWrapping = TextWrapping.Wrap
+        });
+        var button = new Button
+        {
+            Content = "Select file and show preview", MinHeight = 44,
+            HorizontalAlignment = HorizontalAlignment.Stretch,
+            Background = PrimaryBrush, Foreground = OnPrimaryBrush,
+            CornerRadius = new CornerRadius(13), FontWeight = FontWeight.SemiBold
+        };
+        var card = CreatePreviewCard(title, content, iconKind);
+        button.Click += async (_, _) =>
+        {
+            if (_currentAssets != null && _currentPage == BrowserPage.AssetDetails)
+            {
+                button.IsEnabled = false;
+                try
+                {
+                    bool selected = await chooseResource();
+                    if (selected && _currentAssets != null && _currentPage == BrowserPage.AssetDetails)
+                    {
+                        _items.Children.Remove(card);
+                        await retryPreview();
+                    }
+                }
+                catch (Exception ex)
+                {
+                    content.Children.Add(new TextBlock { Text = "Resource selection failed: " + ex.Message, Foreground = TextBrush, TextWrapping = TextWrapping.Wrap });
+                }
+                finally { button.IsEnabled = true; }
+            }
+        };
+        content.Children.Add(button);
+        _items.Children.Add(card);
     }
     private Border CreatePreviewCard(string title, Control content, MaterialIconKind iconKind = MaterialIconKind.Image)
     {
