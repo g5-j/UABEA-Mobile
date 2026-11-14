@@ -677,7 +677,11 @@ internal sealed class MeshPreviewControl : Control, IDisposable
     private readonly float[] _cameraDepths;
     private readonly Dictionary<IPointer, Point> _pointers = new();
     private readonly Dictionary<IPointer, Point> _gestureStarts = new();
+    // Lock each one-finger drag to one axis so a diagonal/finger-noise movement
+    // cannot rotate yaw and pitch together or make the controls fight each other.
+    private readonly Dictionary<IPointer, int> _gestureAxes = new();
     private readonly HashSet<IPointer> _capturedPointers = new();
+    private int _pinchDragAxis;
 
     private WriteableBitmap? _frameBitmap;
     private int[] _colorBuffer = Array.Empty<int>();
@@ -813,8 +817,14 @@ internal sealed class MeshPreviewControl : Control, IDisposable
             if (_lastPinchDistance > 1)
                 _zoom = Math.Clamp(_zoom * (distance / _lastPinchDistance), 0.45, 2.0);
 
-            _yaw += (center.X - _lastPinchCenter.X) * 0.008;
-            _pitch -= (center.Y - _lastPinchCenter.Y) * 0.008;
+            double centerDx = center.X - _lastPinchCenter.X;
+            double centerDy = center.Y - _lastPinchCenter.Y;
+            if (_pinchDragAxis == 0 && Math.Abs(centerDx) + Math.Abs(centerDy) >= 1)
+                _pinchDragAxis = Math.Abs(centerDx) >= Math.Abs(centerDy) ? 1 : 2;
+            if (_pinchDragAxis == 1)
+                _yaw += centerDx * 0.008;
+            else if (_pinchDragAxis == 2)
+                _pitch -= centerDy * 0.008;
             _lastPinchDistance = distance;
             _lastPinchCenter = center;
             InvalidateVisual();
@@ -832,10 +842,14 @@ internal sealed class MeshPreviewControl : Control, IDisposable
 
             e.Pointer.Capture(this);
             _capturedPointers.Add(e.Pointer);
+            _gestureAxes[e.Pointer] = Math.Abs(dx) >= Math.Abs(dy) ? 1 : 2;
         }
 
-        _yaw += (current.X - previous.X) * 0.008;
-        _pitch -= (current.Y - previous.Y) * 0.008;
+        int dragAxis = _gestureAxes.TryGetValue(e.Pointer, out int selectedAxis) ? selectedAxis : 0;
+        if (dragAxis == 1)
+            _yaw += (current.X - previous.X) * 0.008;
+        else if (dragAxis == 2)
+            _pitch -= (current.Y - previous.Y) * 0.008;
         InvalidateVisual();
         e.Handled = true;
     }
@@ -848,15 +862,18 @@ internal sealed class MeshPreviewControl : Control, IDisposable
 
         _pointers.Remove(e.Pointer);
         _gestureStarts.Remove(e.Pointer);
+        _gestureAxes.Remove(e.Pointer);
         bool captured = _capturedPointers.Remove(e.Pointer);
         if (captured)
             e.Pointer.Capture(null);
 
         _lastPinchDistance = 0;
+        _pinchDragAxis = 0;
         if (_pointers.Count == 1)
         {
             IPointer remaining = _pointers.Keys.First();
             _gestureStarts[remaining] = _pointers[remaining];
+            _gestureAxes.Remove(remaining);
         }
         if (captured)
             e.Handled = true;
@@ -867,6 +884,7 @@ internal sealed class MeshPreviewControl : Control, IDisposable
         base.OnPointerCaptureLost(e);
         _pointers.Clear();
         _gestureStarts.Clear();
+        _gestureAxes.Clear();
         _capturedPointers.Clear();
         _lastPinchDistance = 0;
     }
