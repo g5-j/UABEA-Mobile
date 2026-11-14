@@ -1782,6 +1782,83 @@ public sealed class MainView : UserControl
         return pixels;
     }
 
+    private static long FindMaterialForMesh(AssetsManager manager, AssetsFileInstance instance, long meshPathId)
+    {
+        long gameObjectPathId = 0;
+        foreach (var info in instance.file.AssetInfos)
+        {
+            if (!string.Equals(Enum.GetName(typeof(AssetClassID), info.GetTypeId(instance.file)), "MeshFilter", StringComparison.Ordinal)) continue;
+            try
+            {
+                var filter = manager.GetBaseField(instance, info);
+                long linkedMesh = ReadFieldInt64(GetChildField(GetChildField(filter, "m_Mesh"), "m_PathID"));
+                if (linkedMesh != meshPathId) continue;
+                gameObjectPathId = ReadFieldInt64(GetChildField(GetChildField(filter, "m_GameObject"), "m_PathID"));
+                if (gameObjectPathId != 0) break;
+            }
+            catch { }
+        }
+        if (gameObjectPathId == 0) return 0;
+        foreach (var info in instance.file.AssetInfos)
+        {
+            if (!string.Equals(Enum.GetName(typeof(AssetClassID), info.GetTypeId(instance.file)), "MeshRenderer", StringComparison.Ordinal)) continue;
+            try
+            {
+                var renderer = manager.GetBaseField(instance, info);
+                long rendererGameObject = ReadFieldInt64(GetChildField(GetChildField(renderer, "m_GameObject"), "m_PathID"));
+                if (rendererGameObject != gameObjectPathId) continue;
+                var materials = GetChildField(GetChildField(renderer, "m_Materials"), "Array");
+                if (materials == null || materials.IsDummy) continue;
+                foreach (var material in materials.Children)
+                {
+                    long materialId = ReadFieldInt64(GetChildField(material, "m_PathID"));
+                    if (materialId != 0) return materialId;
+                }
+            }
+            catch { }
+        }
+        return 0;
+    }
+
+    private static long FindFirstMaterialTexturePathId(AssetsManager manager, AssetsFileInstance instance, long materialPathId)
+    {
+        if (materialPathId == 0) return 0;
+        var materialAsset = instance.file.AssetInfos.FirstOrDefault(info => info.PathId == materialPathId);
+        if (materialAsset == null) return 0;
+        var material = manager.GetBaseField(instance, materialAsset);
+        var saved = GetChildField(material, "m_SavedProperties");
+        var textures = GetChildField(GetChildField(saved, "m_TexEnvs"), "Array");
+        if (textures == null || textures.IsDummy) return 0;
+        foreach (var item in textures.Children)
+        {
+            var env = GetChildField(item, "second");
+            long textureId = ReadFieldInt64(GetChildField(GetChildField(env, "m_Texture"), "m_PathID"));
+            if (textureId != 0) return textureId;
+        }
+        return 0;
+    }
+
+    private static (int[] Pixels, int Width, int Height, string ResourcePath) ReadMaterialTexturePixels(
+        AssetsManager manager, AssetsFileInstance instance, long texturePathId)
+    {
+        var textureAsset = instance.file.AssetInfos.FirstOrDefault(info =>
+            info.PathId == texturePathId && info.GetTypeId(instance.file) == (int)AssetClassID.Texture2D);
+        if (textureAsset == null) throw new InvalidDataException("The referenced Texture2D is not in the current assets file.");
+        var textureField = ReadTextureFieldForPreview(manager, instance, textureAsset);
+        var textureFile = TextureFile.ReadTextureFile(textureField);
+        int width = textureFile.m_Width, height = textureFile.m_Height;
+        if (width <= 0 || height <= 0 || width > 8192 || height > 8192)
+            throw new InvalidDataException("Material texture dimensions are invalid.");
+        byte[] bytes = textureFile.pictureData ?? Array.Empty<byte>();
+        var stream = GetChildField(textureField, "m_StreamData");
+        ulong offset = ReadUnsignedField(GetChildField(stream, "offset"));
+        ulong size = ReadUnsignedField(GetChildField(stream, "size"));
+        string path = ReadFieldString(GetChildField(stream, "path"));
+        if (size > 0 && !string.IsNullOrWhiteSpace(path))
+            bytes = instance.parentBundle != null ? ReadBundleResource(instance.parentBundle, path, offset, size) : ReadExternalResource(instance, path, offset, size);
+        if (bytes.Length == 0) throw new InvalidDataException("The referenced Texture2D contains no image data.");
+        return (DecodeTexturePixelsToArgb(bytes, (TextureFormat)textureFile.m_TextureFormat, width, height), width, height, path);
+    }
     private async Task ShowMaterialPreviewAsync(
         AssetsManager manager, AssetsFileInstance instance, AssetFileInfo asset)
     {
