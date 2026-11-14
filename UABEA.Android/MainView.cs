@@ -1792,6 +1792,8 @@ public sealed class MainView : UserControl
         string colorName = "";
         Color materialColor = Colors.White;
         var properties = new List<string>();
+        long materialTexturePathId = 0;
+        string materialTextureProperty = "";
 
         try
         {
@@ -1860,16 +1862,20 @@ public sealed class MainView : UserControl
                     long textureId = ReadFieldInt64(GetChildField(GetChildField(env, "m_Texture"), "m_PathID"));
                     if (!string.IsNullOrWhiteSpace(key))
                         properties.Add($"{FormatShaderPropertyLabel(key)}: {(textureId == 0 ? "No texture" : $"Texture Path ID {textureId}")}");
+                    if (textureId != 0 && materialTexturePathId == 0)
+                    { materialTexturePathId = textureId; materialTextureProperty = key; }
                 }
 
                 return (Name: string.IsNullOrWhiteSpace(name) ? "Material" : name,
                     Shader: shaderLabel, ColorName: selectedColorName,
-                    R: red, G: green, B: blue, A: alpha);
+                    R: red, G: green, B: blue, A: alpha, TexturePathId: materialTexturePathId, TextureProperty: materialTextureProperty);
             });
 
             materialName = data.Name;
             shaderName = data.Shader;
             colorName = data.ColorName;
+            materialTexturePathId = data.TexturePathId;
+            materialTextureProperty = data.TextureProperty;
             materialColor = Color.FromArgb(
                 (byte)Math.Clamp((int)Math.Round(data.A * 255), 0, 255),
                 (byte)Math.Clamp((int)Math.Round(data.R * 255), 0, 255),
@@ -1895,37 +1901,57 @@ public sealed class MainView : UserControl
             return;
         }
 
-        var sphereMesh = CreateMaterialSphereMesh(40, 28);
+        var sphereMesh = CreateMaterialSphereMesh(48, 32);
         var sphere = new MeshPreviewControl(sphereMesh.Vertices, sphereMesh.Indices,
-            interactive: true, surfaceColor: materialColor)
-        {
-            Width = 240,
-            Height = 240,
-            HorizontalAlignment = HorizontalAlignment.Center,
-            MinHeight = 220
-        };
+            interactive: true, surfaceColor: materialColor, uvs: sphereMesh.UVs)
+        { Width = 260, Height = 260, HorizontalAlignment = HorizontalAlignment.Center, MinHeight = 220 };
         var content = new StackPanel { Spacing = 8 };
         content.Children.Add(sphere);
-        content.Children.Add(new TextBlock
-        {
-            Text = "Drag to rotate • Pinch to zoom",
-            FontSize = 11,
-            Foreground = MutedBrush,
-            HorizontalAlignment = HorizontalAlignment.Center
-        });
+        content.Children.Add(new TextBlock { Text = "Drag to rotate • Pinch to zoom", FontSize = 11, Foreground = MutedBrush, HorizontalAlignment = HorizontalAlignment.Center });
         content.Children.Add(new TextBlock { Text = $"Shader: {shaderName}", Foreground = TextBrush, TextWrapping = TextWrapping.Wrap });
-        if (!string.IsNullOrEmpty(colorName))
-            content.Children.Add(new TextBlock { Text = $"Preview color: {colorName}", Foreground = MutedBrush, FontSize = 12 });
-        if (properties.Count > 0)
+        var textureToggle = new Avalonia.Controls.CheckBox { Content = "Use material texture", IsChecked = false, Foreground = TextBrush };
+        bool textureIsApplied = false;
+        textureToggle.Checked += async (_, _) =>
         {
-            content.Children.Add(new TextBlock { Text = $"Saved properties ({properties.Count})", Foreground = TextBrush, FontWeight = FontWeight.SemiBold });
-            foreach (string property in properties.Take(80))
-                content.Children.Add(new TextBlock { Text = property, Foreground = MutedBrush, FontSize = 12, TextWrapping = TextWrapping.Wrap });
-            if (properties.Count > 80)
-                content.Children.Add(new TextBlock { Text = $"{properties.Count - 80} more properties not shown.", Foreground = MutedBrush, FontSize = 11 });
-        }
-        else
-            content.Children.Add(new TextBlock { Text = "No saved shader properties were found.", Foreground = MutedBrush, FontSize = 12 });
+            if (textureIsApplied) return;
+            if (materialTexturePathId == 0) { textureToggle.IsChecked = false; content.Children.Add(new TextBlock { Text = "This Material has no texture assigned.", Foreground = MutedBrush, TextWrapping = TextWrapping.Wrap }); return; }
+            var textureAsset = instance.file.AssetInfos.FirstOrDefault(info => info.PathId == materialTexturePathId && info.GetTypeId(instance.file) == (int)AssetClassID.Texture2D);
+            if (textureAsset == null) { textureToggle.IsChecked = false; content.Children.Add(new TextBlock { Text = $"Texture Path ID {materialTexturePathId} is not in the currently opened assets file.", Foreground = MutedBrush, TextWrapping = TextWrapping.Wrap }); return; }
+            textureToggle.IsEnabled = false;
+            try
+            {
+                var decoded = await Task.Run(() =>
+                {
+                    var textureField = ReadTextureFieldForPreview(manager, instance, textureAsset);
+                    var textureFile = TextureFile.ReadTextureFile(textureField);
+                    int w = textureFile.m_Width, h = textureFile.m_Height;
+                    if (w <= 0 || h <= 0 || w > 8192 || h > 8192) throw new InvalidDataException("Material texture dimensions are invalid.");
+                    byte[] bytes = textureFile.pictureData ?? Array.Empty<byte>();
+                    var stream = GetChildField(textureField, "m_StreamData");
+                    ulong offset = ReadUnsignedField(GetChildField(stream, "offset"));
+                    ulong size = ReadUnsignedField(GetChildField(stream, "size"));
+                    string path = ReadFieldString(GetChildField(stream, "path"));
+                    if (size > 0 && !string.IsNullOrWhiteSpace(path)) bytes = instance.parentBundle != null ? ReadBundleResource(instance.parentBundle, path, offset, size) : ReadExternalResource(instance, path, offset, size);
+                    if (bytes.Length == 0) throw new InvalidDataException("The referenced texture contains no image data.");
+                    return (Pixels: DecodeTexturePixelsToArgb(bytes, (TextureFormat)textureFile.m_TextureFormat, w, h), Width: w, Height: h);
+                });
+                sphere.SetTexture(decoded.Pixels, decoded.Width, decoded.Height); textureIsApplied = true;
+                content.Children.Add(new TextBlock { Text = $"Texture applied: {materialTextureProperty} • {decoded.Width}×{decoded.Height}", Foreground = MutedBrush, FontSize = 11 });
+            }
+            catch (FileNotFoundException ex) when (!string.IsNullOrWhiteSpace(ex.FileName))
+            {
+                textureToggle.IsChecked = false;
+                AddResourceRequestCard("Material texture", ex.FileName!, "This Material texture needs an external stream. Import it only when enabling texture rendering.", MaterialIconKind.Image, () => ChooseSessionResourceAsync(ex.FileName!, instance), () => ShowMaterialPreviewAsync(manager, instance, asset));
+            }
+            catch (Exception ex) { textureToggle.IsChecked = false; content.Children.Add(new TextBlock { Text = "Texture could not be applied: " + ex.Message, Foreground = TextBrush, TextWrapping = TextWrapping.Wrap }); }
+            finally { textureToggle.IsEnabled = true; }
+        };
+        textureToggle.Unchecked += (_, _) => { if (textureIsApplied) { sphere.SetTexture(null, 0, 0); textureIsApplied = false; } };
+        content.Children.Add(textureToggle);
+        if (!string.IsNullOrEmpty(colorName)) content.Children.Add(new TextBlock { Text = $"Base color: {colorName}", Foreground = MutedBrush, FontSize = 12 });
+        content.Children.Add(new TextBlock { Text = $"Shader properties ({properties.Count})", Foreground = TextBrush, FontWeight = FontWeight.SemiBold });
+        foreach (string property in properties.Take(120)) content.Children.Add(new TextBlock { Text = property, Foreground = MutedBrush, FontSize = 12, TextWrapping = TextWrapping.Wrap });
+        if (properties.Count > 120) content.Children.Add(new TextBlock { Text = $"{properties.Count - 120} additional properties not shown.", Foreground = MutedBrush, FontSize = 11 });
         _items.Children.Add(CreatePreviewCard(materialName, content, MaterialIconKind.PaletteOutline));
     }
 
