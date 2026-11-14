@@ -1,6 +1,8 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.IO.Compression;
+using System.Globalization;
 using System.Linq;
 using System.Reflection;
 using System.Text;
@@ -91,6 +93,7 @@ public sealed class MainView : UserControl
         AssetsFileInstance? Assets, List<RowData> Rows, List<AssetRow> AssetRows,
         string Summary, BrowserPage Page);
     private sealed record AssetRow(AssetFileInfo Info, string Name, string TypeName);
+    private sealed record AssetExportPayload(byte[]? Data, string Extension, bool IsRaw);
 
     public MainView()
     {
@@ -615,9 +618,12 @@ public sealed class MainView : UserControl
             {
                 var row = _currentRows[i];
                 var isBundleEntry = _currentPage == BrowserPage.Bundle && _currentBundle is not null;
+                var isAssetEntry = _currentPage == BrowserPage.Assets && row.AssetInfo is not null;
                 var control = CreateActionRow(row.Title, row.Detail, row.Icon, row.Action,
-                    isBundleEntry ? () => _ = ExportBundleEntryAsync(row.Title) : null,
-                    isBundleEntry ? () => _ = OpenBundleEntryAsync(row.Title) : null);
+                    isBundleEntry ? () => _ = ExportBundleEntryAsync(row.Title) :
+                        isAssetEntry ? () => _ = ExportAssetAsync(row.AssetInfo!) : null,
+                    isBundleEntry ? () => _ = OpenBundleEntryAsync(row.Title) :
+                        isAssetEntry ? () => ShowAssetDetails(row.AssetInfo!) : null);
                 _items.Children.Add(control);
                 if (row.AssetInfo is not null)
                     pendingAssetNames.Add((row.AssetInfo, control));
@@ -724,6 +730,354 @@ public sealed class MainView : UserControl
         {
             SetLoading(false);
         }
+    }
+
+
+    private async Task ExportAssetAsync(AssetFileInfo asset, bool resourceRetry = false)
+    {
+        if (_currentAssets is null || _assetsManager is null || _isBusy) return;
+        var instance = _currentAssets;
+        var manager = _assetsManager;
+        int typeId = asset.GetTypeId(instance.file);
+        string typeName = Enum.GetName(typeof(AssetClassID), typeId) ?? $"Type_{typeId}";
+        string assetName = "Asset";
+        SetLoading(true, $"Preparing {typeName} for export...");
+
+        try
+        {
+            assetName = await Task.Run(() => TryReadAssetName(manager, instance, asset, typeName));
+            var payload = await Task.Run(() => BuildAssetExportPayload(manager, instance, asset, typeId));
+            SetLoading(false);
+
+            string sourceName = Path.GetFileNameWithoutExtension(instance.name);
+            string safeName = SanitizeExportName(assetName);
+            string safeSource = SanitizeExportName(sourceName);
+            string suggestedName = $"{safeName}-{safeSource}-{asset.PathId}{payload.Extension}";
+            var destination = await TopLevel.GetTopLevel(this)!.StorageProvider.SaveFilePickerAsync(
+                new FilePickerSaveOptions
+                {
+                    Title = $"Export {typeName}",
+                    SuggestedFileName = suggestedName,
+                    DefaultExtension = payload.Extension.TrimStart('.'),
+                    FileTypeChoices = new[]
+                    {
+                        new FilePickerFileType($"{payload.Extension.TrimStart('.').ToUpperInvariant()} file")
+                        {
+                            Patterns = new[] { "*" + payload.Extension }
+                        },
+                        new FilePickerFileType("All files") { Patterns = new[] { "*.*" } }
+                    }
+                });
+            if (destination is null) return;
+
+            SetLoading(true, $"Exporting {assetName}...");
+            await using var output = await destination.OpenWriteAsync();
+            if (payload.IsRaw)
+            {
+                var reader = instance.file.Reader;
+                long start = asset.GetAbsoluteByteStart(instance.file);
+                using var source = new SegmentStream(reader.BaseStream, start, asset.ByteSize);
+                await source.CopyToAsync(output);
+            }
+            else
+            {
+                if (payload.Data is null || payload.Data.Length == 0)
+                    throw new InvalidDataException("The exported resource is empty.");
+                await output.WriteAsync(payload.Data);
+            }
+            await output.FlushAsync();
+            _status.Text = $"Export completed\n{assetName}\n{FormatSize(payload.IsRaw ? asset.ByteSize : payload.Data!.LongLength)}";
+        }
+        catch (FileNotFoundException ex) when (!resourceRetry && !string.IsNullOrWhiteSpace(ex.FileName))
+        {
+            SetLoading(false);
+            _status.Text = "The matching external Unity resource is required.";
+            if (await ChooseSessionResourceAsync(ex.FileName!, instance))
+                await ExportAssetAsync(asset, true);
+            else
+                _status.Text = "Export cancelled. The required resource file was not selected.";
+        }
+        catch (Exception ex)
+        {
+            _status.Text = $"Could not export {typeName}:\n{ex.Message}";
+        }
+        finally
+        {
+            SetLoading(false);
+        }
+    }
+
+    private AssetExportPayload BuildAssetExportPayload(
+        AssetsManager manager, AssetsFileInstance instance, AssetFileInfo asset, int typeId)
+    {
+        if (typeId == (int)AssetClassID.Texture2D)
+        {
+            var field = ReadTextureFieldForPreview(manager, instance, asset);
+            var texture = TextureFile.ReadTextureFile(field);
+            byte[] data = texture.pictureData ?? Array.Empty<byte>();
+            var streamData = GetChildField(field, "m_StreamData");
+            ulong offset = ReadUnsignedField(GetChildField(streamData, "offset"));
+            ulong size = ReadUnsignedField(GetChildField(streamData, "size"));
+            string path = ReadFieldString(GetChildField(streamData, "path"));
+            if (size > 0 && !string.IsNullOrWhiteSpace(path))
+            {
+                try { data = ReadResourceWithBundleFallback(instance, path, offset, size); }
+                catch (FileNotFoundException ex) { throw new FileNotFoundException(ex.Message, path, ex); }
+            }
+            int[] pixels = DecodeTexturePixelsToArgb(data, (TextureFormat)texture.m_TextureFormat,
+                texture.m_Width, texture.m_Height);
+            return new AssetExportPayload(EncodePixelsAsPng(pixels, texture.m_Width, texture.m_Height), ".png", false);
+        }
+
+        if (typeId == (int)AssetClassID.Sprite)
+        {
+            return new AssetExportPayload(ExportSpritePng(manager, instance, asset), ".png", false);
+        }
+
+        if (typeId == (int)AssetClassID.AudioClip)
+        {
+            var field = manager.GetBaseField(instance, asset)
+                ?? throw new InvalidDataException("AudioClip data could not be read.");
+            string source = ReadFieldString(field["m_Resource.m_Source"]);
+            ulong offset = ReadUnsignedField(field["m_Resource.m_Offset"]);
+            ulong size = ReadUnsignedField(field["m_Resource.m_Size"]);
+            if (string.IsNullOrWhiteSpace(source) || size == 0 || size > int.MaxValue)
+                throw new InvalidDataException("This AudioClip has no supported external FMOD stream.");
+            byte[] fsbData;
+            try
+            {
+                fsbData = instance.parentBundle != null
+                    ? ReadBundleResource(instance.parentBundle, source, offset, size)
+                    : ReadExternalResource(instance, source, offset, size);
+            }
+            catch (FileNotFoundException ex) { throw new FileNotFoundException(ex.Message, source, ex); }
+            if (!FsbLoader.TryLoadFsbFromByteArray(fsbData, out FmodSoundBank bank) ||
+                bank.Samples == null || bank.Samples.Count == 0)
+                throw new InvalidDataException("The AudioClip FMOD sound bank could not be decoded.");
+            bank.Samples[0].RebuildAsStandardFileFormat(out byte[] sampleData, out string sampleExtension);
+            sampleExtension = (sampleExtension ?? "").Trim().TrimStart('.').ToLowerInvariant();
+            if (sampleData == null || sampleData.Length == 0 || string.IsNullOrWhiteSpace(sampleExtension))
+                throw new InvalidDataException("The audio decoder returned an empty or unsupported sample.");
+            if (sampleExtension == "wav") FixPreviewWav(ref sampleData);
+            return new AssetExportPayload(sampleData, "." + sampleExtension, false);
+        }
+
+        if (typeId == (int)AssetClassID.Font)
+        {
+            var template = manager.GetTemplateBaseField(instance, asset)
+                ?? throw new InvalidDataException("Font type information could not be read.");
+            var fontDataTemplate = template.Children.FirstOrDefault(x => x.Name == "m_FontData");
+            if (fontDataTemplate == null || fontDataTemplate.Children.Count == 0)
+                throw new InvalidDataException("This Font has no embedded m_FontData.");
+            fontDataTemplate.Children[0].ValueType = AssetValueType.ByteArray;
+            AssetTypeValueField field;
+            var reader = instance.file.Reader;
+            lock (reader)
+                field = template.MakeValue(reader, asset.GetAbsoluteByteStart(instance.file), null);
+            byte[] bytes = field["m_FontData.Array"]?.AsByteArray ?? Array.Empty<byte>();
+            if (bytes.Length == 0)
+                throw new InvalidDataException("This Font uses external or built-in font data and cannot be exported as TTF/OTF.");
+            string extension = bytes.Length >= 4 && bytes[0] == 0x4F && bytes[1] == 0x54 &&
+                bytes[2] == 0x54 && bytes[3] == 0x4F ? ".otf" : ".ttf";
+            return new AssetExportPayload(bytes, extension, false);
+        }
+
+        if (typeId == (int)AssetClassID.TextAsset)
+        {
+            var field = manager.GetBaseField(instance, asset)
+                ?? throw new InvalidDataException("TextAsset data could not be read.");
+            byte[] bytes = field["m_Script"]?.AsByteArray ?? Array.Empty<byte>();
+            return new AssetExportPayload(bytes, ".txt", false);
+        }
+
+        if (typeId == (int)AssetClassID.Mesh)
+        {
+            var field = manager.GetBaseField(instance, asset)
+                ?? throw new InvalidDataException("Mesh data could not be read.");
+            MeshStreamInfo stream = MeshPreviewDataReader.ReadStreamInfo(field);
+            byte[]? streamedData = null;
+            if (stream.Size > 0 && !string.IsNullOrWhiteSpace(stream.Path))
+            {
+                try { streamedData = ReadResourceWithBundleFallback(instance, stream.Path, stream.Offset, stream.Size); }
+                catch (FileNotFoundException ex) { throw new FileNotFoundException(ex.Message, stream.Path, ex); }
+            }
+            var mesh = MeshPreviewDataReader.Read(field, streamedData);
+            var obj = new StringBuilder(Math.Max(256, mesh.Vertices.Length * 48));
+            obj.AppendLine("# Exported by UABE Avalonia");
+            foreach (var vertex in mesh.Vertices)
+                obj.Append("v ").Append(vertex.X.ToString("R", CultureInfo.InvariantCulture)).Append(' ')
+                    .Append(vertex.Y.ToString("R", CultureInfo.InvariantCulture)).Append(' ')
+                    .Append(vertex.Z.ToString("R", CultureInfo.InvariantCulture)).AppendLine();
+            if (mesh.UVs != null && mesh.UVs.Length == mesh.Vertices.Length)
+                foreach (var uv in mesh.UVs)
+                    obj.Append("vt ").Append(uv.X.ToString("R", CultureInfo.InvariantCulture)).Append(' ')
+                        .Append(uv.Y.ToString("R", CultureInfo.InvariantCulture)).AppendLine();
+            for (int i = 0; i + 2 < mesh.Indices.Length; i += 3)
+            {
+                int a = mesh.Indices[i] + 1, b = mesh.Indices[i + 1] + 1, c = mesh.Indices[i + 2] + 1;
+                if (a <= 0 || b <= 0 || c <= 0 ||
+                    a > mesh.Vertices.Length || b > mesh.Vertices.Length || c > mesh.Vertices.Length)
+                    continue;
+                if (mesh.UVs != null && mesh.UVs.Length == mesh.Vertices.Length)
+                    obj.Append("f ").Append(a).Append('/').Append(a).Append(' ')
+                        .Append(b).Append('/').Append(b).Append(' ').Append(c).Append('/').Append(c).AppendLine();
+                else
+                    obj.Append("f ").Append(a).Append(' ').Append(b).Append(' ').Append(c).AppendLine();
+            }
+            return new AssetExportPayload(Encoding.UTF8.GetBytes(obj.ToString()), ".obj", false);
+        }
+
+        if (typeId == (int)AssetClassID.Cubemap)
+        {
+            var field = ReadTextureFieldForPreview(manager, instance, asset);
+            int width = (int)ReadFieldInt64(GetChildField(field, "m_Width"));
+            int height = (int)ReadFieldInt64(GetChildField(field, "m_Height"));
+            var format = (TextureFormat)ReadFieldInt64(GetChildField(field, "m_TextureFormat"));
+            var imageField = GetChildField(field, "m_ImageData") ?? GetChildField(field, "image data");
+            byte[] imageData = imageField?.AsByteArray ?? Array.Empty<byte>();
+            var streamData = GetChildField(field, "m_StreamData");
+            ulong offset = ReadUnsignedField(GetChildField(streamData, "offset"));
+            ulong size = ReadUnsignedField(GetChildField(streamData, "size"));
+            string path = ReadFieldString(GetChildField(streamData, "path"));
+            if (size > 0 && !string.IsNullOrWhiteSpace(path))
+            {
+                try { imageData = ReadResourceWithBundleFallback(instance, path, offset, size); }
+                catch (FileNotFoundException ex) { throw new FileNotFoundException(ex.Message, path, ex); }
+            }
+            if (width <= 0 || height <= 0 || width > 4096 || height > 4096 ||
+                imageData.Length == 0 || imageData.Length % 6 != 0)
+                throw new InvalidDataException("The Cubemap payload cannot be safely split into six faces.");
+            int faceSize = imageData.Length / 6;
+            string[] names = { "PositiveX", "NegativeX", "PositiveY", "NegativeY", "PositiveZ", "NegativeZ" };
+            using var zipMemory = new MemoryStream();
+            using (var archive = new ZipArchive(zipMemory, ZipArchiveMode.Create, true))
+            {
+                for (int face = 0; face < 6; face++)
+                {
+                    var faceData = new byte[faceSize];
+                    Buffer.BlockCopy(imageData, face * faceSize, faceData, 0, faceSize);
+                    int[] pixels = DecodeTexturePixelsToArgb(faceData, format, width, height);
+                    byte[] png = EncodePixelsAsPng(pixels, width, height);
+                    var entry = archive.CreateEntry(names[face] + ".png", CompressionLevel.Optimal);
+                    using var entryStream = entry.Open();
+                    entryStream.Write(png, 0, png.Length);
+                }
+            }
+            return new AssetExportPayload(zipMemory.ToArray(), ".zip", false);
+        }
+
+        // Preserve every other Unity object as its original serialized payload.
+        return new AssetExportPayload(null, ".assetdata", true);
+    }
+
+    private byte[] ExportSpritePng(AssetsManager manager, AssetsFileInstance instance, AssetFileInfo spriteAsset)
+    {
+        var sprite = manager.GetBaseField(instance, spriteAsset)
+            ?? throw new InvalidDataException("Sprite data could not be read.");
+        var renderData = GetChildField(sprite, "m_RD");
+        var texturePointer = GetChildField(renderData, "texture");
+        if (texturePointer == null || texturePointer.IsDummy)
+            texturePointer = GetChildField(sprite, "m_Texture");
+        long texturePathId = ReadFieldInt64(GetChildField(texturePointer, "m_PathID"));
+        var textureAsset = instance.file.AssetInfos.FirstOrDefault(x =>
+            x.PathId == texturePathId && x.GetTypeId(instance.file) == (int)AssetClassID.Texture2D);
+        if (textureAsset == null)
+            throw new NotSupportedException("The Sprite's Texture2D is not in the currently opened assets file.");
+        var textureField = ReadTextureFieldForPreview(manager, instance, textureAsset);
+        var texture = TextureFile.ReadTextureFile(textureField);
+        byte[] data = texture.pictureData ?? Array.Empty<byte>();
+        var streamData = GetChildField(textureField, "m_StreamData");
+        ulong offset = ReadUnsignedField(GetChildField(streamData, "offset"));
+        ulong size = ReadUnsignedField(GetChildField(streamData, "size"));
+        string path = ReadFieldString(GetChildField(streamData, "path"));
+        if (size > 0 && !string.IsNullOrWhiteSpace(path))
+        {
+            try { data = ReadResourceWithBundleFallback(instance, path, offset, size); }
+            catch (FileNotFoundException ex) { throw new FileNotFoundException(ex.Message, path, ex); }
+        }
+        int width = texture.m_Width, height = texture.m_Height;
+        int[] pixels = DecodeTexturePixelsToArgb(data, (TextureFormat)texture.m_TextureFormat, width, height);
+
+        var rect = GetChildField(renderData, "textureRect");
+        float rx = ReadFieldFloat(GetChildField(rect, "x"), float.NaN);
+        float ry = ReadFieldFloat(GetChildField(rect, "y"), float.NaN);
+        float rw = ReadFieldFloat(GetChildField(rect, "width"), float.NaN);
+        float rh = ReadFieldFloat(GetChildField(rect, "height"), float.NaN);
+        if (!(rw > 0 && rh > 0) && TryReadSpriteUvRect(renderData, width, height,
+            out float uvX, out float uvY, out float uvWidth, out float uvHeight))
+        {
+            rx = uvX; ry = uvY; rw = uvWidth; rh = uvHeight;
+        }
+        else if (!(rw > 0 && rh > 0))
+        {
+            rect = GetChildField(sprite, "m_Rect");
+            rx = ReadFieldFloat(GetChildField(rect, "x"));
+            ry = ReadFieldFloat(GetChildField(rect, "y"));
+            rw = ReadFieldFloat(GetChildField(rect, "width"));
+            rh = ReadFieldFloat(GetChildField(rect, "height"));
+        }
+
+        int cropX = 0, cropY = 0, cropW = width, cropH = height;
+        if (rw > 0 && rh > 0)
+        {
+            int rectX = (int)Math.Floor(rx);
+            int rectY = (int)Math.Floor(ry);
+            int right = Math.Min((int)Math.Ceiling(rx + rw), width);
+            int bottom = Math.Min((int)Math.Ceiling(ry + rh), height);
+            cropX = Math.Clamp(rectX, 0, width - 1);
+            cropY = Math.Clamp(height - bottom, 0, height - 1);
+            cropW = Math.Clamp(right - rectX, 1, width - cropX);
+            cropH = Math.Clamp(bottom - rectY, 1, height - cropY);
+        }
+
+        using var decoded = global::Android.Graphics.Bitmap.CreateBitmap(
+            width, height, global::Android.Graphics.Bitmap.Config.Argb8888!);
+        decoded.SetPixels(pixels, 0, width, 0, 0, width, height);
+        using var cropped = global::Android.Graphics.Bitmap.CreateBitmap(decoded, cropX, cropY, cropW, cropH);
+        global::Android.Graphics.Bitmap finalSprite = cropped;
+        global::Android.Graphics.Bitmap? packedSprite = null;
+        var settings = GetChildField(renderData, "settingsRaw");
+        long packed = ReadFieldInt64(GetChildField(settings, "packed"));
+        long rotation = ReadFieldInt64(GetChildField(settings, "packingRotation"));
+        if (packed == 1 && rotation is >= 1 and <= 4)
+        {
+            using var matrix = new global::Android.Graphics.Matrix();
+            switch (rotation)
+            {
+                case 1: matrix.SetScale(-1f, 1f); matrix.PostTranslate(cropW, 0f); break;
+                case 2: matrix.SetScale(1f, -1f); matrix.PostTranslate(0f, cropH); break;
+                case 3: matrix.SetRotate(180f, cropW / 2f, cropH / 2f); break;
+                case 4: matrix.SetRotate(-90f, cropW / 2f, cropH / 2f); break;
+            }
+            packedSprite = global::Android.Graphics.Bitmap.CreateBitmap(cropped, 0, 0, cropW, cropH, matrix, true);
+            finalSprite = packedSprite;
+        }
+        using var output = new MemoryStream();
+        finalSprite.Compress(global::Android.Graphics.Bitmap.CompressFormat.Png!, 100, output);
+        packedSprite?.Dispose();
+        return output.ToArray();
+    }
+
+    private static byte[] EncodePixelsAsPng(int[] pixels, int width, int height)
+    {
+        if (width <= 0 || height <= 0 || pixels.Length != checked(width * height))
+            throw new InvalidDataException("Decoded image dimensions do not match the pixel data.");
+        using var bitmap = global::Android.Graphics.Bitmap.CreateBitmap(
+            width, height, global::Android.Graphics.Bitmap.Config.Argb8888!);
+        bitmap.SetPixels(pixels, 0, width, 0, 0, width, height);
+        using var output = new MemoryStream();
+        if (!bitmap.Compress(global::Android.Graphics.Bitmap.CompressFormat.Png!, 100, output))
+            throw new InvalidDataException("Android could not encode the PNG image.");
+        return output.ToArray();
+    }
+
+    private static string SanitizeExportName(string value)
+    {
+        if (string.IsNullOrWhiteSpace(value)) return "Asset";
+        var invalid = Path.GetInvalidFileNameChars();
+        var chars = value.Select(ch => invalid.Contains(ch) || ch == '/' || ch == '\\' ? '_' : ch).ToArray();
+        string result = new string(chars).Trim().Trim('.');
+        return string.IsNullOrWhiteSpace(result) ? "Asset" : result;
     }
 
     private async Task OpenBundleEntryAsync(string entryName)
@@ -852,6 +1206,19 @@ public sealed class MainView : UserControl
         AddDetail("Absolute file offset",
             asset.GetAbsoluteByteStart(instance.file).ToString("N0") + " bytes");
         AddDetail("Source file", instance.name);
+
+        var exportButton = new Button
+        {
+            Content = CreateIconLabel(MaterialIconKind.Export, "Export resource", OnPrimaryBrush, 15),
+            Background = PrimaryBrush,
+            Foreground = OnPrimaryBrush,
+            CornerRadius = new CornerRadius(12),
+            MinHeight = 46,
+            HorizontalAlignment = HorizontalAlignment.Stretch,
+            FontWeight = FontWeight.SemiBold
+        };
+        exportButton.Click += async (_, _) => await ExportAssetAsync(asset);
+        _items.Children.Add(exportButton);
 
         if (typeId == (int)AssetClassID.TextAsset)
         {
