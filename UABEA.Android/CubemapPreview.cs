@@ -122,7 +122,7 @@ internal sealed class CubemapPreviewControl : Control, IDisposable
             if (_lastPinchDistance > 1)
                 _zoom = Math.Clamp(_zoom * (distance / _lastPinchDistance), 0.55, 2.8);
             _yaw += (center.X - _lastPinchCenter.X) * 0.006;
-            _pitch = Math.Clamp(_pitch + (center.Y - _lastPinchCenter.Y) * 0.006, -1.48, 1.48);
+            _pitch = Math.Clamp(_pitch - (center.Y - _lastPinchCenter.Y) * 0.006, -1.48, 1.48);
             _lastPinchDistance = distance;
             _lastPinchCenter = center;
             InvalidateVisual();
@@ -137,7 +137,7 @@ internal sealed class CubemapPreviewControl : Control, IDisposable
             _captured.Add(e.Pointer);
         }
         _yaw += (current.X - previous.X) * 0.006;
-        _pitch = Math.Clamp(_pitch + (current.Y - previous.Y) * 0.006, -1.48, 1.48);
+        _pitch = Math.Clamp(_pitch - (current.Y - previous.Y) * 0.006, -1.48, 1.48);
         InvalidateVisual();
         e.Handled = true;
     }
