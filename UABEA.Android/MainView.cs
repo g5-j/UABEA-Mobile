@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Collections.ObjectModel;
 using System.IO;
 using System.IO.Compression;
 using System.Globalization;
@@ -15,6 +16,7 @@ using Fmod5Sharp.FmodTypes;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.Primitives;
+using Avalonia.Controls.Templates;
 using Avalonia.Layout;
 using Avalonia.Input;
 using Avalonia.Media;
@@ -31,6 +33,7 @@ namespace UABEA.Mobile;
 public sealed class MainView : UserControl
 {
     private const int PageSize = 150;
+    private const int AssetNameBatchSize = 32;
 
     private static readonly IBrush BackgroundBrush = Brush.Parse("#000000");
     private static readonly IBrush SurfaceBrush = Brush.Parse("#0D0D0D");
@@ -51,7 +54,10 @@ public sealed class MainView : UserControl
     private readonly TextBox _searchBox;
     private readonly ComboBox _filterBox;
     private readonly Button _filterButton;
-    private readonly ScrollViewer _scrollViewer;
+    private readonly ListBox _assetListBox;
+    private readonly ObservableCollection<RowData> _displayedRows = new();
+    private readonly StackPanel _listHeader;
+    private readonly TextBlock _listPlaceholder;
     private readonly Grid _pageLayers;
     private readonly Button _backButton;
     private readonly Button _loadMoreButton;
@@ -101,12 +107,17 @@ public sealed class MainView : UserControl
 
     public MainView()
     {
-        var root = new StackPanel
+        var root = new Grid
         {
-            Spacing = 16,
-            Margin = new Thickness(18, 18, 18, 24),
-            VerticalAlignment = VerticalAlignment.Stretch
+            Margin = new Thickness(18, 18, 18, 18),
+            RowDefinitions = new RowDefinitions("Auto,Auto,Auto,Auto,Auto,*,Auto"),
+            RowSpacing = 10
         };
+        void AddRoot(Control control, int row)
+        {
+            Grid.SetRow(control, row);
+            root.Children.Add(control);
+        }
 
         var header = new StackPanel { Spacing = 4 };
         header.Children.Add(new TextBlock
@@ -122,7 +133,7 @@ public sealed class MainView : UserControl
             FontSize = 13,
             Foreground = MutedBrush
         });
-        root.Children.Add(header);
+        AddRoot(header, 0);
 
         var toolbar = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto") };
         var openButton = new Button
@@ -156,7 +167,7 @@ public sealed class MainView : UserControl
         Grid.SetColumn(_backButton, 1);
         toolbar.Children.Add(openButton);
         toolbar.Children.Add(_backButton);
-        root.Children.Add(toolbar);
+        AddRoot(toolbar, 1);
 
         var searchToolbar = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto") };
         _searchBox = new TextBox
@@ -214,7 +225,7 @@ public sealed class MainView : UserControl
         searchToolbar.Children.Add(_searchBox);
         Grid.SetColumn(_filterButton, 1);
         searchToolbar.Children.Add(_filterButton);
-        root.Children.Add(searchToolbar);
+        AddRoot(searchToolbar, 2);
 
         _filterBox = new ComboBox
         {
@@ -240,7 +251,7 @@ public sealed class MainView : UserControl
                 _filterButton.IsEnabled = true;
             }
         };
-        root.Children.Add(_filterBox);
+        AddRoot(_filterBox, 3);
 
         _spinnerRotation = new RotateTransform();
         _spinnerGlyph = new TextBlock
@@ -288,10 +299,51 @@ public sealed class MainView : UserControl
             FontSize = 14
         };
         statusCard.Child = _status;
-        root.Children.Add(statusCard);
+        AddRoot(statusCard, 4);
 
         _items = new StackPanel { Spacing = 9 };
         _assetsListItems = _items;
+        _listHeader = new StackPanel { Spacing = 8 };
+        _listPlaceholder = new TextBlock
+        {
+            Text = "Open a Unity file to view its contents.",
+            Foreground = MutedBrush,
+            FontSize = 14,
+            TextWrapping = TextWrapping.Wrap,
+            HorizontalAlignment = HorizontalAlignment.Center,
+            VerticalAlignment = VerticalAlignment.Center,
+            IsVisible = true
+        };
+        _assetListBox = new ListBox
+        {
+            ItemsSource = _displayedRows,
+            HorizontalAlignment = HorizontalAlignment.Stretch,
+            VerticalAlignment = VerticalAlignment.Stretch,
+            HorizontalContentAlignment = HorizontalAlignment.Stretch,
+            Background = Brushes.Transparent,
+            BorderThickness = new Thickness(0),
+            Padding = new Thickness(0),
+            SelectionMode = SelectionMode.None,
+            IsTabStop = false,
+            VirtualizationMode = ItemVirtualizationMode.Simple
+        };
+        _assetListBox.ItemTemplate = new FuncDataTemplate<RowData>((row, _) =>
+        {
+            bool isBundleEntry = _currentPage == BrowserPage.Bundle && _currentBundle is not null;
+            bool isAssetEntry = _currentPage == BrowserPage.Assets && row.AssetInfo is not null;
+            return CreateActionRow(row.Title, row.Detail, row.Icon, row.Action,
+                isBundleEntry ? () => _ = ExportBundleEntryAsync(row.Title) :
+                    isAssetEntry ? () => _ = ExportAssetAsync(row.AssetInfo!) : null,
+                isBundleEntry ? () => _ = OpenBundleEntryAsync(row.Title) :
+                    isAssetEntry ? () => ShowAssetDetails(row.AssetInfo!) : null);
+        }, supportsRecycling: true);
+        var listBody = new Grid { RowDefinitions = new RowDefinitions("Auto,*") };
+        listBody.Children.Add(_listHeader);
+        Grid.SetRow(_assetListBox, 1);
+        listBody.Children.Add(_assetListBox);
+        var listContent = new Grid();
+        listContent.Children.Add(listBody);
+        listContent.Children.Add(_listPlaceholder);
         var listFrame = new Border
         {
             Background = SurfaceBrush,
@@ -299,9 +351,9 @@ public sealed class MainView : UserControl
             BorderThickness = new Thickness(1),
             CornerRadius = new CornerRadius(20),
             Padding = new Thickness(10),
-            Child = _items
+            Child = listContent
         };
-        root.Children.Add(listFrame);
+        AddRoot(listFrame, 5);
 
         _loadMoreButton = new Button
         {
@@ -314,17 +366,10 @@ public sealed class MainView : UserControl
             IsVisible = false
         };
         _loadMoreButton.Click += (_, _) => RenderNextPage();
-        root.Children.Add(_loadMoreButton);
+        AddRoot(_loadMoreButton, 6);
 
-        _scrollViewer = new ScrollViewer
-        {
-            Content = root,
-            VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
-            HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled
-        };
-        _scrollViewer.ScrollChanged += (_, _) => TryAutoLoadMore();
         _pageLayers = new Grid();
-        _pageLayers.Children.Add(_scrollViewer);
+        _pageLayers.Children.Add(root);
         _loadingOverlay = new Border { Background = Brush.Parse("#D9000000"), IsVisible = false, HorizontalAlignment = HorizontalAlignment.Stretch, VerticalAlignment = VerticalAlignment.Stretch, Child = _loadingIndicator };
         _loadingIndicator.HorizontalAlignment = HorizontalAlignment.Center;
         _loadingIndicator.VerticalAlignment = VerticalAlignment.Center;
@@ -370,6 +415,10 @@ public sealed class MainView : UserControl
         _sessionResourceWasExplicitlySelected = false;
         SetLoading(true, $"Copying {file.Name}...");
         _items.Children.Clear();
+        _displayedRows.Clear();
+        _listHeader.Children.Clear();
+        _listPlaceholder.IsVisible = true;
+        _assetListBox.IsVisible = false;
         _searchBox.IsVisible = false;
         _filterButton.IsVisible = false;
         _filterBox.IsVisible = false;
@@ -426,6 +475,10 @@ public sealed class MainView : UserControl
         {
             _status.Text = $"Could not open this file:\n{ex.Message}";
             _items.Children.Clear();
+            _displayedRows.Clear();
+            _listHeader.Children.Clear();
+            _listPlaceholder.IsVisible = true;
+            _assetListBox.IsVisible = false;
             _currentBundle = null;
             _currentAssets = null;
             _currentRows.Clear();
@@ -564,8 +617,9 @@ public sealed class MainView : UserControl
 
     private void RefreshCurrentList()
     {
-        if (_items is null) return;
-        _items.Children.Clear();
+        if (_assetListBox is null) return;
+        _displayedRows.Clear();
+        _listHeader.Children.Clear();
         _visibleRows = 0;
         var query = (_searchBox.Text ?? "").Trim();
 
@@ -598,15 +652,24 @@ public sealed class MainView : UserControl
                     GetAssetIcon(row.TypeName), () => ShowAssetDetails(row.Info), row.Info))
                 .ToList();
         }
+        else
+        {
+            _currentRows = new List<RowData>();
+        }
 
         if (_currentRows.Count == 0)
         {
-            AddEmptyMessage(string.IsNullOrEmpty(query)
+            _listPlaceholder.Text = string.IsNullOrEmpty(query)
                 ? "This file contains no displayable entries."
-                : "No items match this search.");
+                : "No items match this search.";
+            _listPlaceholder.IsVisible = true;
+            _assetListBox.IsVisible = false;
             _loadMoreButton.IsVisible = false;
             return;
         }
+
+        _listPlaceholder.IsVisible = false;
+        _assetListBox.IsVisible = true;
 
         if (_currentPage == BrowserPage.Assets)
         {
@@ -629,7 +692,7 @@ public sealed class MainView : UserControl
                     Margin = new Thickness(0, 0, 0, 8)
                 };
                 exportAllButton.Click += async (_, _) => await ExportAssetsArchiveAsync(exportItems);
-                _items.Children.Add(exportAllButton);
+                _listHeader.Children.Add(exportAllButton);
             }
         }
 
@@ -640,23 +703,17 @@ public sealed class MainView : UserControl
     {
         if (_isRendering || _visibleRows >= _currentRows.Count) return;
         _isRendering = true;
-        var pendingAssetNames = new List<(AssetFileInfo Info, Control Control)>();
+        var pendingAssetNames = new List<AssetFileInfo>();
         try
         {
             var end = Math.Min(_visibleRows + PageSize, _currentRows.Count);
             for (var i = _visibleRows; i < end; i++)
             {
                 var row = _currentRows[i];
-                var isBundleEntry = _currentPage == BrowserPage.Bundle && _currentBundle is not null;
-                var isAssetEntry = _currentPage == BrowserPage.Assets && row.AssetInfo is not null;
-                var control = CreateActionRow(row.Title, row.Detail, row.Icon, row.Action,
-                    isBundleEntry ? () => _ = ExportBundleEntryAsync(row.Title) :
-                        isAssetEntry ? () => _ = ExportAssetAsync(row.AssetInfo!) : null,
-                    isBundleEntry ? () => _ = OpenBundleEntryAsync(row.Title) :
-                        isAssetEntry ? () => ShowAssetDetails(row.AssetInfo!) : null);
-                _items.Children.Add(control);
-                if (row.AssetInfo is not null)
-                    pendingAssetNames.Add((row.AssetInfo, control));
+                _displayedRows.Add(row);
+                if (row.AssetInfo is not null &&
+                    string.Equals(row.Title, "Unnamed asset", StringComparison.Ordinal))
+                    pendingAssetNames.Add(row.AssetInfo);
             }
             _visibleRows = end;
             _loadMoreButton.IsVisible = _visibleRows < _currentRows.Count;
@@ -669,19 +726,17 @@ public sealed class MainView : UserControl
     }
 
     private async Task ResolveAssetNamesAsync(
-        List<(AssetFileInfo Info, Control Control)> pending,
-        AssetsFileInstance? instance, AssetsManager? manager)
+        List<AssetFileInfo> pending, AssetsFileInstance? instance, AssetsManager? manager)
     {
         if (instance is null || manager is null) return;
-        List<(Control Control, long PathId, string Name)> resolved;
+        List<(long PathId, string Name)> resolved;
         try
         {
             await _assetNameLock.WaitAsync();
             try
             {
-                resolved = await Task.Run(() => pending.Select(item =>
-                    (item.Control, item.Info.PathId,
-                     TryReadAssetName(manager, instance, item.Info, "Unnamed asset"))).ToList());
+                resolved = await Task.Run(() => pending.Select(info =>
+                    (info.PathId, TryReadAssetName(manager, instance, info, "Unnamed asset"))).ToList());
             }
             finally { _assetNameLock.Release(); }
         }
@@ -690,23 +745,29 @@ public sealed class MainView : UserControl
         if (_currentAssets != instance || _currentPage != BrowserPage.Assets) return;
         foreach (var item in resolved)
         {
-            _assetRows = _assetRows.Select(row => row.Info.PathId == item.PathId
-                ? row with { Name = item.Name } : row).ToList();
-            if (item.Control is not Button button || button.Content is not Grid grid ||
-                grid.Children.Count < 2 || grid.Children[1] is not StackPanel panel ||
-                panel.Children.Count == 0 || panel.Children[0] is not TextBlock title)
-                continue;
-            title.Text = item.Name;
+            int assetIndex = _assetRows.FindIndex(row => row.Info.PathId == item.PathId);
+            if (assetIndex >= 0)
+                _assetRows[assetIndex] = _assetRows[assetIndex] with { Name = item.Name };
+
+            int currentIndex = _currentRows.FindIndex(row => row.AssetInfo?.PathId == item.PathId);
+            if (currentIndex < 0) continue;
+            var oldRow = _currentRows[currentIndex];
+            var updated = oldRow with
+            {
+                Title = item.Name,
+                Detail = $"{oldRow.AssetInfo is null ? "" : _assetRows.FirstOrDefault(x => x.Info.PathId == item.PathId)?.TypeName} • {FormatSize(oldRow.AssetInfo!.ByteSize)} • ID: {item.PathId}"
+            };
+            _currentRows[currentIndex] = updated;
+            int visibleIndex = _displayedRows.ToList().FindIndex(row => row.AssetInfo?.PathId == item.PathId);
+            if (visibleIndex >= 0)
+                _displayedRows[visibleIndex] = updated;
         }
     }
 
     private void TryAutoLoadMore()
     {
-        if (_isRendering || !_loadMoreButton.IsVisible || _visibleRows >= _currentRows.Count)
-            return;
-
-        if (_scrollViewer.Offset.Y + _scrollViewer.Viewport.Height >= _scrollViewer.Extent.Height - 140)
-            RenderNextPage();
+        // The ListBox owns its scrolling surface. More rows are appended only
+        // when requested, while virtualization keeps realized controls bounded.
     }
 
     private void SetFilterOptions(IEnumerable<string> values)
@@ -3809,6 +3870,10 @@ public sealed class MainView : UserControl
                 _filterButton.IsVisible = false;
                 _filterBox.IsVisible = false;
                 _items.Children.Clear();
+                _displayedRows.Clear();
+                _listHeader.Children.Clear();
+                _listPlaceholder.IsVisible = true;
+                _assetListBox.IsVisible = false;
                 _currentRows.Clear();
                 _assetRows.Clear();
                 _loadMoreButton.IsVisible = false;
@@ -3823,6 +3888,7 @@ public sealed class MainView : UserControl
     {
         if (_currentBundle is null) return;
         _currentPage = BrowserPage.Bundle;
+        _assetListBox.IsVisible = true;
         _searchBox.IsVisible = true;
         _filterButton.IsVisible = true;
         _filterBox.IsVisible = false;
@@ -3838,6 +3904,7 @@ public sealed class MainView : UserControl
     {
         if (_currentAssets is null) return;
         _currentPage = BrowserPage.Assets;
+        _assetListBox.IsVisible = true;
         _searchBox.IsVisible = true;
         _filterButton.IsVisible = true;
         _filterBox.IsVisible = false;
