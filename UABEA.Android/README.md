@@ -1,37 +1,33 @@
-# UABEA Mobile (Android port - first milestone)
+# UABE Avalonia — Android application
 
-This folder contains the Android application host for the UABEA fork.
+This directory contains the Android host and phone-specific interface for the UABEA port. The desktop Avalonia application remains a separate project. The Android app reuses UABEA/AssetsTools.NET asset-reading code and adds Android file access, mobile preview controls, and ARM64 packaging.
 
-## Current status
+## Android application scope
 
-- Separate Android application project; the original desktop project is not modified.
-- Avalonia Android 11.0.1 and .NET 8 Android target.
-- ARM64 APK target for modern Android phones (minimum Android 12 / API 31).
-- Android Storage Access Framework file picker; selected content is copied into the app cache before parsing.
-- Opens supported UnityFS, UnityRaw, and UnityWeb bundles and displays their directory entries.
-- Selecting a bundle entry marked as a serialized file loads it from the bundle and displays its asset list.
-- Opens standalone serialized assets files and displays their asset list.
-- Asset lists show Path ID, Type ID, and data size. Selecting an asset shows its basic metadata and file offsets.
-- Bundle entries and asset lists have text filtering and a Back button for navigation.
-- Non-serialized bundle entries (including resource streams) are displayed as entries with basic metadata; their contents are not decoded.
+- .NET 8 Android with Avalonia 11.0.1.
+- ARM64 APK targeting Android 12 / API 31 and newer.
+- Android Storage Access Framework for opening Unity files and importing matching sidecar resources.
+- UnityFS, UnityRaw, and UnityWeb AssetBundle browsing.
+- Serialized `.assets` browsing, asset metadata, search, type filtering, and paged lists.
+- Supported previews for Texture2D, Sprite, Font, TextAsset, AudioClip, Mesh, Material, Cubemap, and GameObject/Prefab hierarchy data.
+- Mobile 3D rotation, pinch zoom, fullscreen viewing, Mesh wireframe, and Cubemap face navigation.
+- External `.resource` and `.resS` streams are requested from the preview card when the user asks to view the affected asset.
 
-## Not implemented yet
+Preview support depends on the asset's Unity version, serialized type tree, payload layout, texture format, and availability of its exact external resource. A successful APK build is not proof that every possible Unity asset layout is supported.
 
-This milestone is a read-only browser, not feature parity with desktop UABEA. It does not edit assets, decode serialized object fields, preview textures/audio/fonts, import/export resources, save changes, resolve external resource files automatically, or provide dependency browsing, plugins, Cpp2IL, and desktop multi-window workflows. Files with other bundle signatures or unsupported serialized formats may fail to open.
+## App identity
+
+- Display name: **UABE Avalonia**
+- Package ID: `com.g5j.uabeamobile` (kept stable for in-place updates)
+- Launcher icon: original UABEA Avalonia icon from `UABEAvalonia/Assets/uabeavalonia64.png`
 
 ## Build
 
-Install the .NET 8 SDK, Android SDK/JDK, and the .NET Android workload, then run:
-
 ```bash
 dotnet workload install android
-dotnet publish UABEA.Android/UABEA.Android.csproj -c Release -f net8.0-android31.0 -p:AndroidPackageFormat=apk -p:PublishTrimmed=false -p:RunAOTCompilation=false
+dotnet publish UABEA.Android/UABEA.Android.csproj -c Release -f net8.0-android31.0 -r android-arm64 -p:AndroidPackageFormat=apk -p:PublishTrimmed=false -p:RunAOTCompilation=false
 ```
 
-The Android build workflow runs on pushes to the `android-port` branch and uploads one artifact named `uabea-mobile-apk` containing only `UABEA-Mobile.apk`. GitHub Actions still wraps downloaded artifacts in a ZIP; the ZIP contains only the APK. A persistent release keystore must be configured in repository Actions secrets: `ANDROID_KEYSTORE_BASE64`, `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS`, and `ANDROID_KEY_PASSWORD`. Keep this keystore backed up and reuse it for every build so future APK updates retain the same signing identity.
+The release workflow signs the APK using the persistent repository Actions keystore secrets. Do not replace the signing keystore between releases.
 
-You can also start the same build manually from the repository's Actions tab using the **Android Build** workflow.
-
-## Licensing
-
-UABEA and this fork retain the upstream MIT license. Keep the root license and all third-party license notices with redistributed builds.
+See the repository root `readme.md` for the port overview, supported workflows, usage instructions, limitations, dependencies, and license notices.
