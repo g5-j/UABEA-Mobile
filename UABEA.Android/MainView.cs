@@ -770,7 +770,9 @@ public sealed class MainView : UserControl
         var destination = await topLevel.StorageProvider.SaveFilePickerAsync(new FilePickerSaveOptions
         {
             Title = "Export filtered Unity assets",
-            SuggestedFileName = "UABEA-Assets-Export.zip",
+            // Android save providers may append DefaultExtension automatically.
+            // Keep the suggested name extension-free to prevent ".zip.zip".
+            SuggestedFileName = "UABEA-Assets-Export",
             DefaultExtension = "zip",
             FileTypeChoices = new[]
             {
@@ -873,18 +875,22 @@ public sealed class MainView : UserControl
             string sourceName = Path.GetFileNameWithoutExtension(instance.name);
             string safeName = SanitizeExportName(assetName);
             string safeSource = SanitizeExportName(sourceName);
-            string suggestedName = $"{safeName}-{safeSource}-{asset.PathId}{payload.Extension}";
+            string suggestedName = $"{safeName}-{safeSource}-{asset.PathId}";
+            string normalizedExtension = NormalizeExportExtension(payload.Extension);
             var destination = await TopLevel.GetTopLevel(this)!.StorageProvider.SaveFilePickerAsync(
                 new FilePickerSaveOptions
                 {
                     Title = $"Export {typeName}",
+                    // Keep the extension in DefaultExtension only. Several Android
+                    // document providers append it themselves when SuggestedFileName
+                    // already contains it, producing names such as ".zip.zip".
                     SuggestedFileName = suggestedName,
-                    DefaultExtension = payload.Extension.TrimStart('.'),
+                    DefaultExtension = normalizedExtension.TrimStart('.'),
                     FileTypeChoices = new[]
                     {
                         new FilePickerFileType($"{payload.Extension.TrimStart('.').ToUpperInvariant()} file")
                         {
-                            Patterns = new[] { "*" + payload.Extension }
+                            Patterns = new[] { "*" + normalizedExtension }
                         },
                         new FilePickerFileType("All files") { Patterns = new[] { "*.*" } }
                     }
@@ -928,6 +934,21 @@ public sealed class MainView : UserControl
         }
     }
 
+    private static string NormalizeExportExtension(string extension)
+    {
+        if (string.IsNullOrWhiteSpace(extension))
+            throw new InvalidDataException("The export format did not provide a file extension.");
+
+        string normalized = extension.Trim();
+        if (!normalized.StartsWith(".", StringComparison.Ordinal))
+            normalized = "." + normalized;
+        if (normalized.Length < 2 || normalized.Any(ch =>
+            ch == '/' || ch == '\\\\' || ch == ':' || ch == '*' || ch == '?' ||
+            ch == '"' || ch == '<' || ch == '>' || ch == '|'))
+            throw new InvalidDataException("The export format returned an invalid file extension.");
+        return normalized;
+    }
+
     private AssetExportPayload BuildAssetExportPayload(
         AssetsManager manager, AssetsFileInstance instance, AssetFileInfo asset, int typeId)
     {
@@ -965,13 +986,25 @@ public sealed class MainView : UserControl
             if (string.IsNullOrWhiteSpace(source) || size == 0 || size > int.MaxValue)
                 throw new InvalidDataException("This AudioClip has no supported external FMOD stream.");
             byte[] fsbData;
-            try
+            if (instance.parentBundle != null)
             {
-                fsbData = instance.parentBundle != null
-                    ? ReadBundleResource(instance.parentBundle, source, offset, size)
-                    : ReadExternalResource(instance, source, offset, size);
+                // Match the working AudioClip preview path: try the bundle first,
+                // then use the matching external/session resource when the bundle
+                // does not contain the stream. Do not prompt to import a resource
+                // that the preview path can already resolve.
+                try
+                {
+                    fsbData = ReadBundleResource(instance.parentBundle, source, offset, size);
+                }
+                catch (FileNotFoundException)
+                {
+                    fsbData = ReadExternalResource(instance, source, offset, size);
+                }
             }
-            catch (FileNotFoundException ex) { throw new FileNotFoundException(ex.Message, source, ex); }
+            else
+            {
+                fsbData = ReadExternalResource(instance, source, offset, size);
+            }
             if (!FsbLoader.TryLoadFsbFromByteArray(fsbData, out FmodSoundBank? bank) ||
                 bank == null || bank.Samples == null || bank.Samples.Count == 0)
                 throw new InvalidDataException("The AudioClip FMOD sound bank could not be decoded.");
