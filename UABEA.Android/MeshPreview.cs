@@ -13,7 +13,7 @@ using System.Runtime.InteropServices;
 
 namespace UABEA.Mobile;
 
-internal sealed record MeshPreviewData(Vector3[] Vertices, int[] Indices);
+internal sealed record MeshPreviewData(Vector3[] Vertices, int[] Indices, Vector2[]? UVs = null);
 internal sealed record MeshStreamInfo(string Path, ulong Offset, ulong Size);
 
 internal static class MeshPreviewDataReader
@@ -65,7 +65,10 @@ internal static class MeshPreviewDataReader
         if (indices.Length < 3)
             throw new InvalidOperationException("This Mesh has no supported triangle index data. The preview stopped instead of drawing a fake sequential index list.");
 
-        return new MeshPreviewData(vertices, indices);
+        Vector2[] uvs = vertexData != null && !vertexData.IsDummy
+            ? ReadUvData(vertexData, streamedVertexData, vertices.Length)
+            : ReadLegacyUvs(mesh, vertices.Length);
+        return new MeshPreviewData(vertices, indices, uvs);
     }
 
     private static Vector3[] ReadLegacyVertices(AssetTypeValueField mesh)
@@ -166,6 +169,65 @@ internal static class MeshPreviewDataReader
         return result;
     }
 
+    private static Vector2[] ReadLegacyUvs(AssetTypeValueField mesh, int vertexCount)
+    {
+        var array = Child(Child(mesh, "m_UV0"), "Array");
+        if (array == null || array.IsDummy || array.Children.Count < vertexCount)
+            return Array.Empty<Vector2>();
+        var result = new Vector2[vertexCount];
+        for (int i = 0; i < vertexCount; i++)
+        {
+            var item = array.Children[i];
+            result[i] = new Vector2(ReadFloat(Child(item, "x"), 0), ReadFloat(Child(item, "y"), 0));
+        }
+        return result;
+    }
+
+    private static Vector2[] ReadUvData(AssetTypeValueField vertexData, byte[]? streamedVertexData, int vertexCount)
+    {
+        var channels = Child(Child(vertexData, "m_Channels"), "Array");
+        if (channels == null || channels.IsDummy || channels.Children.Count <= 4)
+            return Array.Empty<Vector2>();
+        var channelField = channels.Children[4];
+        var channel = new Channel(ReadInt(Child(channelField, "stream"), 0), ReadInt(Child(channelField, "offset"), 0),
+            ReadInt(Child(channelField, "format"), 0), ReadInt(Child(channelField, "dimension"), 0));
+        int componentSize = FormatSize(channel.Format);
+        if (channel.Dimension < 2 || componentSize <= 0)
+            return Array.Empty<Vector2>();
+        byte[] data = streamedVertexData ?? ReadBytes(Child(vertexData, "m_Data"));
+        if (data.Length == 0) data = ReadBytes(Child(vertexData, "_typelessdata"));
+        if (data.Length == 0) return Array.Empty<Vector2>();
+        var layouts = new Dictionary<int, StreamLayout>();
+        var streams = Child(Child(vertexData, "m_Streams"), "Array");
+        if (streams != null && !streams.IsDummy)
+        foreach (var stream in streams.Children)
+        {
+            int index = ReadInt(Child(stream, "stream"), layouts.Count);
+            int offset = ReadInt(Child(stream, "offset"), 0);
+            int stride = ReadInt(Child(stream, "stride"), 0);
+            if (stride > 0) layouts[index] = new StreamLayout(offset, stride);
+        }
+        if (!layouts.TryGetValue(channel.Stream, out var layout))
+        {
+            int stride = channels.Children.Where(item => ReadInt(Child(item, "stream"), 0) == channel.Stream)
+                .Select(item => ReadInt(Child(item, "offset"), 0) + FormatSize(ReadInt(Child(item, "format"), 0)) * ReadInt(Child(item, "dimension"), 0))
+                .DefaultIfEmpty(channel.Offset + componentSize * channel.Dimension).Max();
+            layout = new StreamLayout(0, stride);
+        }
+        if (layout.Stride <= 0) return Array.Empty<Vector2>();
+        var result = new Vector2[vertexCount];
+        try
+        {
+            for (int i = 0; i < vertexCount; i++)
+            {
+                long start = (long)layout.Offset + (long)i * layout.Stride + channel.Offset;
+                result[i] = new Vector2(ReadVertexComponent(data, start, channel.Format),
+                    ReadVertexComponent(data, start + componentSize, channel.Format));
+            }
+            return result;
+        }
+        catch { return Array.Empty<Vector2>(); }
+    }
     private static bool HasCompressedVertices(AssetTypeValueField mesh)
     {
         var packed = Child(Child(mesh, "m_CompressedMesh"), "m_Vertices");
@@ -604,6 +666,9 @@ internal sealed class MeshPreviewControl : Control, IDisposable
 {
     private readonly bool _interactive;
     private readonly Color? _surfaceColor;
+    private readonly Vector2[] _uvs;
+    private int[]? _texturePixels;
+    private int _textureWidth, _textureHeight;
     private readonly Vector3[] _normalizedVertices;
     private readonly int[] _indices;
     private readonly Vector3[] _cameraVertices;
@@ -631,10 +696,11 @@ internal sealed class MeshPreviewControl : Control, IDisposable
     private static readonly Vector3 LightDirection =
         Vector3.Normalize(new Vector3(-0.35f, 0.65f, 0.7f));
 
-    public MeshPreviewControl(Vector3[] vertices, int[] indices, bool interactive = false, Color? surfaceColor = null)
+    public MeshPreviewControl(Vector3[] vertices, int[] indices, bool interactive = false, Color? surfaceColor = null, Vector2[]? uvs = null)
     {
         _interactive = interactive;
         _surfaceColor = surfaceColor;
+        _uvs = uvs != null && uvs.Length == (vertices?.Length ?? 0) ? uvs : Array.Empty<Vector2>();
         _indices = indices ?? Array.Empty<int>();
         _normalizedVertices = NormalizeVertices(vertices ?? Array.Empty<Vector3>());
         _cameraVertices = new Vector3[_normalizedVertices.Length];
@@ -668,6 +734,22 @@ internal sealed class MeshPreviewControl : Control, IDisposable
         for (int i = 0; i < vertices.Length; i++)
             result[i] = (vertices[i] - center) * scale;
         return result;
+    }
+
+    public void SetTexture(int[]? pixels, int width, int height)
+    {
+        if (pixels != null && width > 0 && height > 0 && (long)width * height == pixels.Length)
+        {
+            _texturePixels = pixels;
+            _textureWidth = width;
+            _textureHeight = height;
+        }
+        else
+        {
+            _texturePixels = null;
+            _textureWidth = _textureHeight = 0;
+        }
+        InvalidateVisual();
     }
 
     public void ResetView()
@@ -846,6 +928,9 @@ internal sealed class MeshPreviewControl : Control, IDisposable
 
             RasterizeTriangle(_screenVertices[ia], _screenVertices[ib], _screenVertices[ic],
                 za, zb, zc, _cameraVertices[ia], _cameraVertices[ib], _cameraVertices[ic],
+                _uvs.Length == _normalizedVertices.Length ? _uvs[ia] : Vector2.Zero,
+                _uvs.Length == _normalizedVertices.Length ? _uvs[ib] : Vector2.Zero,
+                _uvs.Length == _normalizedVertices.Length ? _uvs[ic] : Vector2.Zero,
                 width, height);
         }
 
@@ -863,6 +948,7 @@ internal sealed class MeshPreviewControl : Control, IDisposable
         Point pa, Point pb, Point pc,
         float za, float zb, float zc,
         Vector3 va, Vector3 vb, Vector3 vc,
+        Vector2 uva, Vector2 uvb, Vector2 uvc,
         int width, int height)
     {
         float ax = (float)pa.X, ay = (float)pa.Y;
@@ -929,11 +1015,24 @@ internal sealed class MeshPreviewControl : Control, IDisposable
                             (float)(width * 0.5 - x), (float)(height * 0.5 - y), 180f));
                         Vector3 halfVector = Vector3.Normalize(LightDirection + viewDirection);
                         float specular = MathF.Pow(Math.Clamp(MathF.Abs(Vector3.Dot(smoothNormal, halfVector)), 0f, 1f), 28f) * 0.24f;
-                        int red = Math.Clamp((int)(surface.R * diffuse + 255f * specular), 0, 255);
-                        int green = Math.Clamp((int)(surface.G * diffuse + 255f * specular), 0, 255);
-                        int blue = Math.Clamp((int)(surface.B * diffuse + 255f * specular), 0, 255);
-                        _colorBuffer[pixel] = unchecked((int)(0xFF000000u |
-                            ((uint)red << 16) | ((uint)green << 8) | (uint)blue));
+                        if (_texturePixels != null && _textureWidth > 0 && _textureHeight > 0 && _uvs.Length == _normalizedVertices.Length)
+                        {
+                            float u = (float)((wa * uva.X * inverseZa + wb * uvb.X * inverseZb + wc * uvc.X * inverseZc) / inverseDepth);
+                            float v = (float)((wa * uva.Y * inverseZa + wb * uvb.Y * inverseZb + wc * uvc.Y * inverseZc) / inverseDepth);
+                            int texel = SampleTexture(u, v);
+                            int tr = (texel >> 16) & 255, tg = (texel >> 8) & 255, tb = texel & 255;
+                            int red = Math.Clamp((int)(tr * diffuse + 255f * specular), 0, 255);
+                            int green = Math.Clamp((int)(tg * diffuse + 255f * specular), 0, 255);
+                            int blue = Math.Clamp((int)(tb * diffuse + 255f * specular), 0, 255);
+                            _colorBuffer[pixel] = unchecked((int)(0xFF000000u | ((uint)red << 16) | ((uint)green << 8) | (uint)blue));
+                        }
+                        else
+                        {
+                            int red = Math.Clamp((int)(surface.R * diffuse + 255f * specular), 0, 255);
+                            int green = Math.Clamp((int)(surface.G * diffuse + 255f * specular), 0, 255);
+                            int blue = Math.Clamp((int)(surface.B * diffuse + 255f * specular), 0, 255);
+                            _colorBuffer[pixel] = unchecked((int)(0xFF000000u | ((uint)red << 16) | ((uint)green << 8) | (uint)blue));
+                        }
                     }
                     else
                     {
@@ -953,6 +1052,16 @@ internal sealed class MeshPreviewControl : Control, IDisposable
         }
     }
 
+    private int SampleTexture(float u, float v)
+    {
+        if (_texturePixels == null || _textureWidth <= 0 || _textureHeight <= 0)
+            return unchecked((int)0xFFFFFFFF);
+        u -= MathF.Floor(u);
+        v -= MathF.Floor(v);
+        int x = Math.Clamp((int)(u * (_textureWidth - 1)), 0, _textureWidth - 1);
+        int y = Math.Clamp((int)((1f - v) * (_textureHeight - 1)), 0, _textureHeight - 1);
+        return _texturePixels[y * _textureWidth + x];
+    }
     private void DrawDepthLine(Point start, Point end, float startDepth, float endDepth,
         int width, int height, int color)
     {
