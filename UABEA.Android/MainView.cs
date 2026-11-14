@@ -1055,6 +1055,7 @@ public sealed class MainView : UserControl
                 close.Click += (_, _) =>
                 {
                     largeViewer.Dispose();
+                    if (ReferenceEquals(fullscreenViewer, largeViewer)) fullscreenViewer = null;
                     _pageLayers.Children.Remove(overlay);
                 };
 
@@ -2601,6 +2602,8 @@ public sealed class MainView : UserControl
     {
         var loadingCard = AddPreviewLoadingCard("3D Mesh preview", MaterialIconKind.Image);
         MeshPreviewData? meshData = null;
+        long meshMaterialPathId = 0;
+        long meshTexturePathId = 0;
         string? error = null;
         bool needsExternalResource = false;
         string streamSource = "";
@@ -2672,6 +2675,16 @@ public sealed class MainView : UserControl
 
         RemovePreviewLoadingCard(loadingCard);
 
+        if (meshData != null)
+        {
+            try
+            {
+                meshMaterialPathId = await Task.Run(() => FindMaterialForMesh(manager, instance, asset.PathId));
+                meshTexturePathId = await Task.Run(() => FindFirstMaterialTexturePathId(manager, instance, meshMaterialPathId));
+            }
+            catch { meshMaterialPathId = meshTexturePathId = 0; }
+        }
+
         if (meshData == null && needsExternalResource && !string.IsNullOrWhiteSpace(streamSource))
         {
             AddResourceRequestCard("3D Mesh preview", streamSource,
@@ -2694,11 +2707,52 @@ public sealed class MainView : UserControl
         }
 
         // Inline preview is intentionally passive; camera controls exist only in fullscreen.
-        var viewer = new MeshPreviewControl(meshData.Vertices, meshData.Indices, interactive: false)
+        var viewer = new MeshPreviewControl(meshData.Vertices, meshData.Indices, interactive: false, uvs: meshData.UVs)
         {
             HorizontalAlignment = HorizontalAlignment.Stretch
         };
 
+        MeshPreviewControl? fullscreenViewer = null;
+        int[]? linkedTexturePixels = null;
+        int linkedTextureWidth = 0, linkedTextureHeight = 0;
+        bool linkedTextureApplied = false;
+        var textureToggle = new Avalonia.Controls.CheckBox { Content = "Use linked Material texture", IsChecked = false, Foreground = TextBrush };
+        textureToggle.Checked += async (_, _) =>
+        {
+            if (linkedTextureApplied) return;
+            if (meshTexturePathId == 0)
+            {
+                textureToggle.IsChecked = false;
+                _status.Text = "No linked MeshRenderer Material with a Texture2D was found in the current assets file.";
+                return;
+            }
+            textureToggle.IsEnabled = false;
+            try
+            {
+                var decoded = await Task.Run(() => ReadMaterialTexturePixels(manager, instance, meshTexturePathId));
+                linkedTexturePixels = decoded.Pixels; linkedTextureWidth = decoded.Width; linkedTextureHeight = decoded.Height;
+                viewer.SetTexture(linkedTexturePixels, linkedTextureWidth, linkedTextureHeight);
+                fullscreenViewer?.SetTexture(linkedTexturePixels, linkedTextureWidth, linkedTextureHeight);
+                linkedTextureApplied = true;
+            }
+            catch (FileNotFoundException ex) when (!string.IsNullOrWhiteSpace(ex.FileName))
+            {
+                textureToggle.IsChecked = false;
+                AddResourceRequestCard("Mesh Material texture", ex.FileName!, "The linked Material texture needs an external stream. Import it only when enabling texture rendering.", MaterialIconKind.Image,
+                    () => ChooseSessionResourceAsync(ex.FileName!, instance), () => ShowMeshPreviewAsync(manager, instance, asset));
+            }
+            catch (Exception ex)
+            {
+                textureToggle.IsChecked = false;
+                _status.Text = "Could not apply linked Material texture: " + ex.Message;
+            }
+            finally { textureToggle.IsEnabled = true; }
+        };
+        textureToggle.Unchecked += (_, _) =>
+        {
+            if (!linkedTextureApplied) return;
+            viewer.SetTexture(null, 0, 0); fullscreenViewer?.SetTexture(null, 0, 0); linkedTextureApplied = false;
+        };
         var fullscreenButton = new Button
         {
             Content = CreateIcon(MaterialIconKind.ArrowExpand, 18, TextBrush),
@@ -2714,13 +2768,16 @@ public sealed class MainView : UserControl
         {
             try
             {
-                var largeViewer = new MeshPreviewControl(meshData.Vertices, meshData.Indices, interactive: true)
+                var largeViewer = new MeshPreviewControl(meshData.Vertices, meshData.Indices, interactive: true, uvs: meshData.UVs)
                 {
                     HorizontalAlignment = HorizontalAlignment.Stretch,
                     VerticalAlignment = VerticalAlignment.Stretch,
                     MinHeight = 0,
                     Height = double.NaN
                 };
+
+                fullscreenViewer = largeViewer;
+                if (linkedTextureApplied && linkedTexturePixels != null) largeViewer.SetTexture(linkedTexturePixels, linkedTextureWidth, linkedTextureHeight);
 
                 var overlay = new Border
                 {
@@ -2845,6 +2902,7 @@ public sealed class MainView : UserControl
             Children =
             {
                 topBar,
+                textureToggle,
                 viewer,
                 new TextBlock
                 {
