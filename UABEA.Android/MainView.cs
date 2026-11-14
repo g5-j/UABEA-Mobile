@@ -104,7 +104,7 @@ public sealed class MainView : UserControl
         var header = new StackPanel { Spacing = 4 };
         header.Children.Add(new TextBlock
         {
-            Text = "UABEA Mobile",
+            Text = "UABE Avalonia",
             FontSize = 28,
             FontWeight = FontWeight.Bold,
             Foreground = TextBrush
