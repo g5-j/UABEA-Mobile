@@ -943,7 +943,7 @@ public sealed class MainView : UserControl
         if (!normalized.StartsWith(".", StringComparison.Ordinal))
             normalized = "." + normalized;
         if (normalized.Length < 2 || normalized.Any(ch =>
-            ch == '/' || ch == '\\\\' || ch == ':' || ch == '*' || ch == '?' ||
+            ch == '/' || ch == '\\' || ch == ':' || ch == '*' || ch == '?' ||
             ch == '"' || ch == '<' || ch == '>' || ch == '|'))
             throw new InvalidDataException("The export format returned an invalid file extension.");
         return normalized;
