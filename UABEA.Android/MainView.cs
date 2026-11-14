@@ -2000,6 +2000,7 @@ public sealed class MainView : UserControl
         segments = Math.Clamp(segments, 12, 96);
         rings = Math.Clamp(rings, 8, 64);
         var vertices = new System.Numerics.Vector3[(rings + 1) * (segments + 1)];
+        var uvs = new System.Numerics.Vector2[vertices.Length];
         for (int y = 0; y <= rings; y++)
         {
             float v = y / (float)rings;
@@ -2010,6 +2011,7 @@ public sealed class MainView : UserControl
             {
                 float u = x / (float)segments;
                 float longitude = u * MathF.PI * 2f;
+                uvs[y * (segments + 1) + x] = new System.Numerics.Vector2(u, 1f - v);
                 vertices[y * (segments + 1) + x] = new System.Numerics.Vector3(
                     ringRadius * MathF.Sin(longitude), py,
                     ringRadius * MathF.Cos(longitude));
@@ -2031,7 +2033,7 @@ public sealed class MainView : UserControl
             indices[cursor++] = b + 1;
         }
 
-        return new MeshPreviewData(vertices, indices);
+        return new MeshPreviewData(vertices, indices, uvs);
     }
 
     private static AssetTypeValueField? GetChildField(AssetTypeValueField? parent, string name)
