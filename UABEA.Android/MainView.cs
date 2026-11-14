@@ -2626,9 +2626,7 @@ public sealed class MainView : UserControl
                 {
                     try
                     {
-                        streamedData = instance.parentBundle != null
-                            ? ReadBundleResource(instance.parentBundle, stream.Path, stream.Offset, stream.Size)
-                            : ReadExternalResource(instance, stream.Path, stream.Offset, stream.Size);
+                        streamedData = ReadResourceWithBundleFallback(instance, stream.Path, stream.Offset, stream.Size);
                     }
                     catch (FileNotFoundException)
                     {
