@@ -14,7 +14,7 @@ namespace UABEA.Mobile;
 
 /// <summary>
 /// Software-rendered cubemap viewer. Face order is Unity's +X, -X, +Y, -Y, +Z, -Z.
-/// The viewer renders a perspective view from inside the cube and supports drag/pinch.
+/// The viewer renders a spherical environment projection and supports drag/pinch.
 /// </summary>
 internal sealed class CubemapPreviewControl : Control, IDisposable
 {
@@ -173,7 +173,7 @@ internal sealed class CubemapPreviewControl : Control, IDisposable
         EnsureFrame(size, size);
         double cy = Math.Cos(_yaw), sy = Math.Sin(_yaw);
         double cp = Math.Cos(_pitch), sp = Math.Sin(_pitch);
-        double radius = size * 0.47;
+        double radius = size * 0.47 * _zoom;
         double center = (size - 1) * 0.5;
 
         for (int y = 0; y < size; y++)
