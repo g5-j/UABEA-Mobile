@@ -1055,7 +1055,6 @@ public sealed class MainView : UserControl
                 close.Click += (_, _) =>
                 {
                     largeViewer.Dispose();
-                    if (ReferenceEquals(fullscreenViewer, largeViewer)) fullscreenViewer = null;
                     _pageLayers.Children.Remove(overlay);
                 };
 
@@ -1839,7 +1838,7 @@ public sealed class MainView : UserControl
         return 0;
     }
 
-    private static (int[] Pixels, int Width, int Height, string ResourcePath) ReadMaterialTexturePixels(
+    private (int[] Pixels, int Width, int Height, string ResourcePath) ReadMaterialTexturePixels(
         AssetsManager manager, AssetsFileInstance instance, long texturePathId)
     {
         var textureAsset = instance.file.AssetInfos.FirstOrDefault(info =>
@@ -2816,6 +2815,7 @@ public sealed class MainView : UserControl
                 closeButton.Click += (_, _) =>
                 {
                     largeViewer.Dispose();
+                    if (ReferenceEquals(fullscreenViewer, largeViewer)) fullscreenViewer = null;
                     _pageLayers.Children.Remove(overlay);
                 };
                 resetLarge.Click += (_, _) => largeViewer.ResetView();
