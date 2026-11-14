@@ -323,7 +323,7 @@ public sealed class MainView : UserControl
             Padding = new Thickness(0),
             IsTabStop = false
         };
-        _assetListBox.ItemTemplate = new FuncDataTemplate<RowData>((row, _) =>
+        _assetListBox.ItemTemplate = new FuncDataTemplate<RowData>((row, nameScope) =>
         {
             bool isBundleEntry = _currentPage == BrowserPage.Bundle && _currentBundle is not null;
             bool isAssetEntry = _currentPage == BrowserPage.Assets && row.AssetInfo is not null;
