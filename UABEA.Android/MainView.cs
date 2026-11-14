@@ -43,7 +43,11 @@ public sealed class MainView : UserControl
     private static readonly IBrush MutedBrush = Brush.Parse("#BDBDBD");
 
     private readonly TextBlock _status;
-    private readonly StackPanel _items;
+    private StackPanel _items;
+    private readonly StackPanel _assetsListItems;
+    private Border? _assetDetailsOverlay;
+    private Border? _fullscreenOverlay;
+    private Action? _fullscreenCleanup;
     private readonly TextBox _searchBox;
     private readonly ComboBox _filterBox;
     private readonly Button _filterButton;
@@ -287,6 +291,7 @@ public sealed class MainView : UserControl
         root.Children.Add(statusCard);
 
         _items = new StackPanel { Spacing = 9 };
+        _assetsListItems = _items;
         var listFrame = new Border
         {
             Background = SurfaceBrush,
@@ -343,9 +348,9 @@ public sealed class MainView : UserControl
 
     public bool HandleSystemBack()
     {
-        if (_currentPage == BrowserPage.Home)
-            return false;
-
+        if (CloseFullscreenOverlay()) return true;
+        if (_imageViewerOverlay.IsVisible) { CloseImageViewer(); return true; }
+        if (_currentPage == BrowserPage.Home) return false;
         GoBack();
         return true;
     }
@@ -783,7 +788,7 @@ public sealed class MainView : UserControl
 
         SetLoading(true, $"Exporting {assets.Count} assets...");
         int exported = 0;
-        var failedAssets = new List<string>();
+        int failedCount = 0;
         var usedNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         try
         {
@@ -849,35 +854,22 @@ public sealed class MainView : UserControl
 
                         usedNames.Add(entryName);
                         exported++;
-                        _status.Text = $"Exported {exported}/{assets.Count}\n{name}";
+                        _status.Text = $"Exporting assets...\nSucceeded: {exported}\nFailed: {failedCount}\nTotal: {assets.Count}";
                     }
-                    catch (Exception ex)
+                    catch
                     {
-                        string reason = ex.Message.Replace("\\r", " ").Replace("\\n", " ");
-                        if (reason.Length > 180) reason = reason.Substring(0, 180) + "...";
-                        failedAssets.Add($"{name}: {reason}");
-                        _status.Text = $"Skipped {failedAssets.Count} failed asset(s)\nContinuing: {index + 1}/{assets.Count}";
+                        failedCount++;
+                        _status.Text = $"Exporting assets...\nSucceeded: {exported}\nFailed: {failedCount}\nTotal: {assets.Count}";
                     }
                 }
             }
 
             await output.FlushAsync();
-            if (failedAssets.Count == 0)
-            {
-                _status.Text = $"Export completed\n{exported} assets saved to ZIP.";
-            }
-            else
-            {
-                var shownFailures = failedAssets.Take(12);
-                string failureSummary = string.Join("\n", shownFailures);
-                if (failedAssets.Count > 12)
-                    failureSummary += $"\n...and {failedAssets.Count - 12} more.";
-                _status.Text = $"Export completed with warnings\nSucceeded: {exported}/{assets.Count}\nSkipped: {failedAssets.Count}\n\nFailed assets:\n{failureSummary}";
-            }
+            _status.Text = $"Export completed\nSucceeded: {exported}\nFailed: {failedCount}\nTotal: {assets.Count}";
         }
         catch (Exception ex)
         {
-            _status.Text = $"Could not create asset archive:\n{ex.Message}\nCompleted: {exported}/{assets.Count}";
+            _status.Text = $"Archive export failed\nSucceeded: {exported}\nFailed: {assets.Count - exported}\nTotal: {assets.Count}";
         }
         finally
         {
@@ -1350,7 +1342,7 @@ public sealed class MainView : UserControl
         _searchBox.IsVisible = false;
         _filterBox.IsVisible = false;
         _filterButton.IsVisible = false;
-        _filterBox.IsVisible = false;
+        BeginAssetDetailsLayer();
         _items.Children.Clear();
         _loadMoreButton.IsVisible = false;
         UpdateNavigation();
@@ -1613,11 +1605,7 @@ public sealed class MainView : UserControl
                     MinHeight = 42,
                     MinWidth = 76
                 };
-                close.Click += (_, _) =>
-                {
-                    largeViewer.Dispose();
-                    _pageLayers.Children.Remove(overlay);
-                };
+                close.Click += (_, _) => CloseFullscreenOverlay();
 
                 var facePanel = new Grid
                 {
@@ -1727,7 +1715,7 @@ public sealed class MainView : UserControl
                 Grid.SetRow(controls, 2);
                 layout.Children.Add(controls);
                 overlay.Child = layout;
-                _pageLayers.Children.Add(overlay);
+                ShowFullscreenOverlay(overlay, () => largeViewer.Dispose());
             }
             catch (Exception ex)
             {
@@ -3385,12 +3373,7 @@ public sealed class MainView : UserControl
                     MinHeight = 42
                 };
 
-                closeButton.Click += (_, _) =>
-                {
-                    largeViewer.Dispose();
-                    if (ReferenceEquals(fullscreenViewer, largeViewer)) fullscreenViewer = null;
-                    _pageLayers.Children.Remove(overlay);
-                };
+                closeButton.Click += (_, _) => CloseFullscreenOverlay();
                 resetLarge.Click += (_, _) => largeViewer.ResetView();
                 wireframeLarge.Click += (_, _) => largeViewer.ToggleWireframe();
 
@@ -3445,7 +3428,11 @@ public sealed class MainView : UserControl
                 Grid.SetRow(footer, 2);
 
                 overlay.Child = layout;
-                _pageLayers.Children.Add(overlay);
+                ShowFullscreenOverlay(overlay, () =>
+                {
+                    largeViewer.Dispose();
+                    if (ReferenceEquals(fullscreenViewer, largeViewer)) fullscreenViewer = null;
+                });
             }
             catch (Exception ex)
             {
@@ -3720,26 +3707,101 @@ public sealed class MainView : UserControl
         _items.Children.Add(CreatePreviewCard("TextAsset preview", textContent, MaterialIconKind.FileDocumentOutline));
     }
 
+    private void BeginAssetDetailsLayer()
+    {
+        if (_assetDetailsOverlay != null) CloseAssetDetailsLayer();
+        _items = new StackPanel { Spacing = 9 };
+        var detailBack = new Button
+        {
+            Content = CreateIconLabel(MaterialIconKind.ChevronLeft, "Back to assets", TextBrush, 15),
+            Background = SurfaceHighBrush, Foreground = TextBrush,
+            CornerRadius = new CornerRadius(12), MinHeight = 44,
+            HorizontalAlignment = HorizontalAlignment.Stretch
+        };
+        detailBack.Click += (_, _) => GoBack();
+        var detailRoot = new StackPanel
+        {
+            Spacing = 12, Margin = new Thickness(14, 14, 14, 22),
+            Children =
+            {
+                detailBack,
+                new TextBlock { Text = "Asset details", FontSize = 19,
+                    FontWeight = FontWeight.SemiBold, Foreground = TextBrush,
+                    Margin = new Thickness(2, 2, 2, 4) },
+                _items
+            }
+        };
+        _assetDetailsOverlay = new Border
+        {
+            Background = BackgroundBrush,
+            HorizontalAlignment = HorizontalAlignment.Stretch,
+            VerticalAlignment = VerticalAlignment.Stretch,
+            Child = new ScrollViewer
+            {
+                Content = detailRoot,
+                VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+                HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled
+            }
+        };
+        _pageLayers.Children.Add(_assetDetailsOverlay);
+    }
+
+    private void CloseAssetDetailsLayer()
+    {
+        if (_assetDetailsOverlay != null)
+        {
+            _pageLayers.Children.Remove(_assetDetailsOverlay);
+            _assetDetailsOverlay = null;
+        }
+        _items = _assetsListItems;
+    }
+
+    private void ShowFullscreenOverlay(Border overlay, Action cleanup)
+    {
+        CloseFullscreenOverlay();
+        _fullscreenOverlay = overlay;
+        _fullscreenCleanup = cleanup;
+        _pageLayers.Children.Add(overlay);
+    }
+
+    private bool CloseFullscreenOverlay()
+    {
+        if (_fullscreenOverlay == null) return false;
+        var overlay = _fullscreenOverlay;
+        var cleanup = _fullscreenCleanup;
+        _fullscreenOverlay = null;
+        _fullscreenCleanup = null;
+        _pageLayers.Children.Remove(overlay);
+        cleanup?.Invoke();
+        return true;
+    }
+
     private async void GoBack()
     {
-        if (_currentPage == BrowserPage.Home || _isBusy)
+        if (CloseFullscreenOverlay()) return;
+        if (_imageViewerOverlay.IsVisible) { CloseImageViewer(); return; }
+        if (_currentPage == BrowserPage.Home || _isBusy) return;
+
+        if (_currentPage == BrowserPage.AssetDetails)
+        {
+            StopAudioPlayback();
+            CloseAssetDetailsLayer();
+            _currentPage = BrowserPage.Assets;
+            _searchBox.IsVisible = true;
+            _filterButton.IsVisible = true;
+            _filterBox.IsVisible = false;
+            _loadMoreButton.IsVisible = _visibleRows < _currentRows.Count;
+            UpdateNavigation();
             return;
+        }
 
         SetLoading(true, "Going back...");
         await Task.Yield();
-
-        if (_currentPage == BrowserPage.AssetDetails)
-            StopAudioPlayback();
         switch (_currentPage)
         {
             case BrowserPage.Assets when _currentBundle is not null:
-                ShowBundleContents();
-                break;
             case BrowserPage.EntryDetails when _currentBundle is not null:
                 ShowBundleContents();
-                break;
-            case BrowserPage.AssetDetails:
-                ShowAssetsContents();
                 break;
             default:
                 _currentPage = BrowserPage.Home;
