@@ -164,7 +164,11 @@ public sealed class MainView : UserControl
             VerticalContentAlignment = VerticalAlignment.Center,
             IsVisible = false
         };
-        _searchBox.TextChanged += (_, _) => RefreshCurrentList();
+        _searchBox.TextChanged += (_, _) =>
+        {
+            if (_currentPage is BrowserPage.Bundle or BrowserPage.Assets)
+                RefreshCurrentList();
+        };
 
         _filterButton = new Button
         {
@@ -178,7 +182,17 @@ public sealed class MainView : UserControl
             CornerRadius = new CornerRadius(16)
         };
         ToolTip.SetTip(_filterButton, "Filter by asset type");
-        _filterButton.Click += (_, _) => _filterBox.IsVisible = !_filterBox.IsVisible;
+        _filterButton.Click += (_, _) =>
+        {
+            // Dismiss Android IME and move focus before opening the ComboBox popup.
+            _searchBox.IsEnabled = false;
+            _filterButton.Focus();
+            _filterBox.IsVisible = !_filterBox.IsVisible;
+            if (_filterBox.IsVisible)
+                _filterBox.Focus();
+            else
+                _searchBox.IsEnabled = true;
+        };
 
         searchToolbar.Children.Add(_searchBox);
         Grid.SetColumn(_filterButton, 1);
@@ -195,7 +209,15 @@ public sealed class MainView : UserControl
             ItemsSource = new[] { "All types" },
             SelectedIndex = 0
         };
-        _filterBox.SelectionChanged += (_, _) => RefreshCurrentList();
+        _filterBox.SelectionChanged += (_, _) =>
+        {
+            try
+            {
+                if (_currentPage is BrowserPage.Bundle or BrowserPage.Assets)
+                    RefreshCurrentList();
+            }
+            finally { _searchBox.IsEnabled = true; }
+        };
         root.Children.Add(_filterBox);
 
         _spinnerRotation = new RotateTransform();
@@ -774,7 +796,9 @@ public sealed class MainView : UserControl
         var instance = _currentAssets;
         var manager = _assetsManager;
         _currentPage = BrowserPage.AssetDetails;
+        _searchBox.IsEnabled = true;
         _searchBox.IsVisible = false;
+        _filterBox.IsVisible = false;
         _filterButton.IsVisible = false;
         _filterBox.IsVisible = false;
         _items.Children.Clear();
