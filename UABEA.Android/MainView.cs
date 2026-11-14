@@ -1200,13 +1200,19 @@ public sealed class MainView : UserControl
                 var argb = new int[checked(width * height)];
                 bitmap.GetPixels(argb, 0, width, 0, 0, width, height);
                 var rgba = new byte[checked(width * height * 4)];
-                for (int i = 0, p = 0; i < argb.Length; i++, p += 4)
+                for (int y = 0; y < height; y++)
                 {
-                    int pixel = argb[i];
-                    rgba[p] = (byte)(pixel >> 16);
-                    rgba[p + 1] = (byte)(pixel >> 8);
-                    rgba[p + 2] = (byte)pixel;
-                    rgba[p + 3] = (byte)(pixel >> 24);
+                    int sourceRow = (height - 1 - y) * width;
+                    int targetRow = y * width * 4;
+                    for (int x = 0; x < width; x++)
+                    {
+                        int pixel = argb[sourceRow + x];
+                        int p = targetRow + x * 4;
+                        rgba[p] = (byte)(pixel >> 16);
+                        rgba[p + 1] = (byte)(pixel >> 8);
+                        rgba[p + 2] = (byte)pixel;
+                        rgba[p + 3] = (byte)(pixel >> 24);
+                    }
                 }
 
                 var template = _assetsManager.GetTemplateBaseField(instance, asset)
@@ -1233,7 +1239,6 @@ public sealed class MainView : UserControl
                 texture.m_StreamingMipmaps = false;
                 texture.pictureData = rgba;
                 texture.m_StreamData = new TextureFile.StreamingInfo { offset = 0, size = 0, path = "" };
-                texture.m_PlatformBlob = Array.Empty<byte>();
                 texture.WriteTo(field);
                 return field.WriteToByteArray(reader.BigEndian);
             });
