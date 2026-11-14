@@ -169,6 +169,12 @@ public sealed class MainView : UserControl
             if (_currentPage is BrowserPage.Bundle or BrowserPage.Assets)
                 RefreshCurrentList();
         };
+        _searchBox.GotFocus += (_, _) => _filterButton.IsEnabled = false;
+        _searchBox.LostFocus += (_, _) =>
+        {
+            if (!_filterBox.IsVisible)
+                _filterButton.IsEnabled = true;
+        };
 
         _filterButton = new Button
         {
@@ -184,14 +190,18 @@ public sealed class MainView : UserControl
         ToolTip.SetTip(_filterButton, "Filter by asset type");
         _filterButton.Click += (_, _) =>
         {
-            // Dismiss Android IME and move focus before opening the ComboBox popup.
+            if (_searchBox.IsFocused || !_filterButton.IsEnabled)
+                return;
             _searchBox.IsEnabled = false;
             _filterButton.Focus();
             _filterBox.IsVisible = !_filterBox.IsVisible;
             if (_filterBox.IsVisible)
                 _filterBox.Focus();
             else
+            {
                 _searchBox.IsEnabled = true;
+                _filterButton.IsEnabled = true;
+            }
         };
 
         searchToolbar.Children.Add(_searchBox);
@@ -216,7 +226,12 @@ public sealed class MainView : UserControl
                 if (_currentPage is BrowserPage.Bundle or BrowserPage.Assets)
                     RefreshCurrentList();
             }
-            finally { _searchBox.IsEnabled = true; }
+            finally
+            {
+                _filterBox.IsVisible = false;
+                _searchBox.IsEnabled = true;
+                _filterButton.IsEnabled = true;
+            }
         };
         root.Children.Add(_filterBox);
 
@@ -1990,53 +2005,58 @@ public sealed class MainView : UserControl
             return;
         }
 
-        var sphereMesh = CreateMaterialSphereMesh(48, 32);
-        var sphere = new MeshPreviewControl(sphereMesh.Vertices, sphereMesh.Indices,
-            interactive: true, surfaceColor: materialColor, uvs: sphereMesh.UVs)
-        { Width = 260, Height = 260, HorizontalAlignment = HorizontalAlignment.Center, MinHeight = 220 };
+        var cubeMesh = CreateMaterialCubeMesh();
+        var cube = new MeshPreviewControl(cubeMesh.Vertices, cubeMesh.Indices,
+            interactive: true, surfaceColor: materialColor, uvs: cubeMesh.UVs, cameraInside: true)
+        { Width = 280, Height = 280, HorizontalAlignment = HorizontalAlignment.Center, MinHeight = 240 };
         var content = new StackPanel { Spacing = 8 };
-        content.Children.Add(sphere);
-        content.Children.Add(new TextBlock { Text = "Drag to rotate • Pinch to zoom", FontSize = 11, Foreground = MutedBrush, HorizontalAlignment = HorizontalAlignment.Center });
+        content.Children.Add(cube);
+        content.Children.Add(new TextBlock { Text = "Drag to look around inside the cube • Pinch to zoom", FontSize = 11, Foreground = MutedBrush, HorizontalAlignment = HorizontalAlignment.Center });
         content.Children.Add(new TextBlock { Text = $"Shader: {shaderName}", Foreground = TextBrush, TextWrapping = TextWrapping.Wrap });
-        var textureToggle = new Avalonia.Controls.CheckBox { Content = "Use material texture", IsChecked = false, Foreground = TextBrush };
-        bool textureIsApplied = false;
-        textureToggle.Checked += async (_, _) =>
+
+        if (materialTexturePathId != 0)
         {
-            if (textureIsApplied) return;
-            if (materialTexturePathId == 0) { textureToggle.IsChecked = false; content.Children.Add(new TextBlock { Text = "This Material has no texture assigned.", Foreground = MutedBrush, TextWrapping = TextWrapping.Wrap }); return; }
-            var textureAsset = instance.file.AssetInfos.FirstOrDefault(info => info.PathId == materialTexturePathId && info.GetTypeId(instance.file) == (int)AssetClassID.Texture2D);
-            if (textureAsset == null) { textureToggle.IsChecked = false; content.Children.Add(new TextBlock { Text = $"Texture Path ID {materialTexturePathId} is not in the currently opened assets file.", Foreground = MutedBrush, TextWrapping = TextWrapping.Wrap }); return; }
-            textureToggle.IsEnabled = false;
-            try
+            var textureAsset = instance.file.AssetInfos.FirstOrDefault(info =>
+                info.PathId == materialTexturePathId && info.GetTypeId(instance.file) == (int)AssetClassID.Texture2D);
+            if (textureAsset != null)
             {
-                var decoded = await Task.Run(() =>
+                try
                 {
-                    var textureField = ReadTextureFieldForPreview(manager, instance, textureAsset);
-                    var textureFile = TextureFile.ReadTextureFile(textureField);
-                    int w = textureFile.m_Width, h = textureFile.m_Height;
-                    if (w <= 0 || h <= 0 || w > 8192 || h > 8192) throw new InvalidDataException("Material texture dimensions are invalid.");
-                    byte[] bytes = textureFile.pictureData ?? Array.Empty<byte>();
-                    var stream = GetChildField(textureField, "m_StreamData");
-                    ulong offset = ReadUnsignedField(GetChildField(stream, "offset"));
-                    ulong size = ReadUnsignedField(GetChildField(stream, "size"));
-                    string path = ReadFieldString(GetChildField(stream, "path"));
-                    if (size > 0 && !string.IsNullOrWhiteSpace(path)) bytes = ReadResourceWithBundleFallback(instance, path, offset, size);
-                    if (bytes.Length == 0) throw new InvalidDataException("The referenced texture contains no image data.");
-                    return (Pixels: DecodeTexturePixelsToArgb(bytes, (TextureFormat)textureFile.m_TextureFormat, w, h), Width: w, Height: h);
-                });
-                sphere.SetTexture(decoded.Pixels, decoded.Width, decoded.Height); textureIsApplied = true;
-                content.Children.Add(new TextBlock { Text = $"Texture applied: {materialTextureProperty} • {decoded.Width}×{decoded.Height}", Foreground = MutedBrush, FontSize = 11 });
+                    var decoded = await Task.Run(() => ReadMaterialTexturePixels(manager, instance, materialTexturePathId));
+                    cube.SetTexture(decoded.Pixels, decoded.Width, decoded.Height);
+                    content.Children.Add(new TextBlock
+                    {
+                        Text = $"Texture: {materialTextureProperty} • {decoded.Width}×{decoded.Height}",
+                        Foreground = MutedBrush, FontSize = 11
+                    });
+                }
+                catch (FileNotFoundException ex) when (!string.IsNullOrWhiteSpace(ex.FileName))
+                {
+                    AddResourceRequestCard("Material texture", ex.FileName!,
+                        "This Material texture needs an external stream. Select the matching resource file to finish the preview.",
+                        MaterialIconKind.Image,
+                        () => ChooseSessionResourceAsync(ex.FileName!, instance),
+                        () => ShowMaterialPreviewAsync(manager, instance, asset));
+                    return;
+                }
+                catch (Exception ex)
+                {
+                    content.Children.Add(new TextBlock
+                    {
+                        Text = "Texture could not be loaded: " + ex.Message,
+                        Foreground = MutedBrush, TextWrapping = TextWrapping.Wrap
+                    });
+                }
             }
-            catch (FileNotFoundException ex) when (!string.IsNullOrWhiteSpace(ex.FileName))
+            else
             {
-                textureToggle.IsChecked = false;
-                AddResourceRequestCard("Material texture", ex.FileName!, "This Material texture needs an external stream. Import it only when enabling texture rendering.", MaterialIconKind.Image, () => ChooseSessionResourceAsync(ex.FileName!, instance), () => ShowMaterialPreviewAsync(manager, instance, asset));
+                content.Children.Add(new TextBlock
+                {
+                    Text = $"Texture Path ID {materialTexturePathId} is not present in the currently opened assets file.",
+                    Foreground = MutedBrush, TextWrapping = TextWrapping.Wrap
+                });
             }
-            catch (Exception ex) { textureToggle.IsChecked = false; content.Children.Add(new TextBlock { Text = "Texture could not be applied: " + ex.Message, Foreground = TextBrush, TextWrapping = TextWrapping.Wrap }); }
-            finally { textureToggle.IsEnabled = true; }
-        };
-        textureToggle.Unchecked += (_, _) => { if (textureIsApplied) { sphere.SetTexture(null, 0, 0); textureIsApplied = false; } };
-        content.Children.Add(textureToggle);
+        }
         if (!string.IsNullOrEmpty(colorName)) content.Children.Add(new TextBlock { Text = $"Base color: {colorName}", Foreground = MutedBrush, FontSize = 12 });
         content.Children.Add(new TextBlock { Text = $"Shader properties ({properties.Count})", Foreground = TextBrush, FontWeight = FontWeight.SemiBold });
         foreach (string property in properties.Take(120)) content.Children.Add(new TextBlock { Text = property, Foreground = MutedBrush, FontSize = 12, TextWrapping = TextWrapping.Wrap });
@@ -2084,44 +2104,37 @@ public sealed class MainView : UserControl
         return cleaned.Length == 0 ? shaderPropertyName : cleaned;
     }
 
-    private static MeshPreviewData CreateMaterialSphereMesh(int segments, int rings)
+    private static MeshPreviewData CreateMaterialCubeMesh()
     {
-        segments = Math.Clamp(segments, 12, 96);
-        rings = Math.Clamp(rings, 8, 64);
-        var vertices = new System.Numerics.Vector3[(rings + 1) * (segments + 1)];
-        var uvs = new System.Numerics.Vector2[vertices.Length];
-        for (int y = 0; y <= rings; y++)
+        var vertices = new System.Numerics.Vector3[24];
+        var uvs = new System.Numerics.Vector2[24];
+        var indices = new int[36];
+        var faces = new[]
         {
-            float v = y / (float)rings;
-            float latitude = (v - 0.5f) * MathF.PI;
-            float ringRadius = MathF.Cos(latitude);
-            float py = MathF.Sin(latitude);
-            for (int x = 0; x <= segments; x++)
+            new[] { new System.Numerics.Vector3(1,-1,-1), new System.Numerics.Vector3(1,-1,1), new System.Numerics.Vector3(1,1,1), new System.Numerics.Vector3(1,1,-1) },
+            new[] { new System.Numerics.Vector3(-1,-1,1), new System.Numerics.Vector3(-1,-1,-1), new System.Numerics.Vector3(-1,1,-1), new System.Numerics.Vector3(-1,1,1) },
+            new[] { new System.Numerics.Vector3(-1,1,-1), new System.Numerics.Vector3(1,1,-1), new System.Numerics.Vector3(1,1,1), new System.Numerics.Vector3(-1,1,1) },
+            new[] { new System.Numerics.Vector3(-1,-1,1), new System.Numerics.Vector3(1,-1,1), new System.Numerics.Vector3(1,-1,-1), new System.Numerics.Vector3(-1,-1,-1) },
+            new[] { new System.Numerics.Vector3(1,-1,1), new System.Numerics.Vector3(-1,-1,1), new System.Numerics.Vector3(-1,1,1), new System.Numerics.Vector3(1,1,1) },
+            new[] { new System.Numerics.Vector3(-1,-1,-1), new System.Numerics.Vector3(1,-1,-1), new System.Numerics.Vector3(1,1,-1), new System.Numerics.Vector3(-1,1,-1) }
+        };
+        var faceUvs = new[]
+        {
+            new System.Numerics.Vector2(0,1), new System.Numerics.Vector2(1,1),
+            new System.Numerics.Vector2(1,0), new System.Numerics.Vector2(0,0)
+        };
+        for (int face = 0; face < 6; face++)
+        {
+            int offset = face * 4;
+            for (int corner = 0; corner < 4; corner++)
             {
-                float u = x / (float)segments;
-                float longitude = u * MathF.PI * 2f;
-                uvs[y * (segments + 1) + x] = new System.Numerics.Vector2(u, 1f - v);
-                vertices[y * (segments + 1) + x] = new System.Numerics.Vector3(
-                    ringRadius * MathF.Sin(longitude), py,
-                    ringRadius * MathF.Cos(longitude));
+                vertices[offset + corner] = faces[face][corner];
+                uvs[offset + corner] = faceUvs[corner];
             }
+            int index = face * 6;
+            indices[index] = offset; indices[index + 1] = offset + 2; indices[index + 2] = offset + 1;
+            indices[index + 3] = offset; indices[index + 4] = offset + 3; indices[index + 5] = offset + 2;
         }
-
-        var indices = new int[rings * segments * 6];
-        int cursor = 0;
-        for (int y = 0; y < rings; y++)
-        for (int x = 0; x < segments; x++)
-        {
-            int a = y * (segments + 1) + x;
-            int b = a + segments + 1;
-            indices[cursor++] = a;
-            indices[cursor++] = b;
-            indices[cursor++] = a + 1;
-            indices[cursor++] = a + 1;
-            indices[cursor++] = b;
-            indices[cursor++] = b + 1;
-        }
-
         return new MeshPreviewData(vertices, indices, uvs);
     }
 
@@ -2716,49 +2729,46 @@ public sealed class MainView : UserControl
         int[]? linkedTexturePixels = null;
         int linkedTextureWidth = 0, linkedTextureHeight = 0;
         bool linkedTextureApplied = false;
-        var textureToggle = new Avalonia.Controls.CheckBox { Content = "Use linked Material texture", IsChecked = false, Foreground = TextBrush };
-        textureToggle.Checked += async (_, _) =>
+        if (meshTexturePathId != 0)
         {
-            if (linkedTextureApplied) return;
-            if (meshTexturePathId == 0)
-            {
-                textureToggle.IsChecked = false;
-                _status.Text = "No linked MeshRenderer Material with a Texture2D was found in the current assets file."; 
-                return;
-            }
             if (meshData.UVs == null || meshData.UVs.Length != meshData.Vertices.Length)
             {
-                textureToggle.IsChecked = false;
-                _status.Text = "The Mesh does not expose a supported UV0 channel, so its Material texture cannot be mapped safely."; 
-                return;
+                _items.Children.Add(new TextBlock
+                {
+                    Text = "The linked Material texture was found, but this Mesh has no supported UV0 channel.",
+                    Foreground = MutedBrush, TextWrapping = TextWrapping.Wrap
+                });
             }
-            textureToggle.IsEnabled = false;
-            try
+            else
             {
-                var decoded = await Task.Run(() => ReadMaterialTexturePixels(manager, instance, meshTexturePathId));
-                linkedTexturePixels = decoded.Pixels; linkedTextureWidth = decoded.Width; linkedTextureHeight = decoded.Height;
-                viewer.SetTexture(linkedTexturePixels, linkedTextureWidth, linkedTextureHeight);
-                fullscreenViewer?.SetTexture(linkedTexturePixels, linkedTextureWidth, linkedTextureHeight);
-                linkedTextureApplied = true;
+                try
+                {
+                    var decoded = await Task.Run(() => ReadMaterialTexturePixels(manager, instance, meshTexturePathId));
+                    linkedTexturePixels = decoded.Pixels;
+                    linkedTextureWidth = decoded.Width;
+                    linkedTextureHeight = decoded.Height;
+                    viewer.SetTexture(linkedTexturePixels, linkedTextureWidth, linkedTextureHeight);
+                    linkedTextureApplied = true;
+                }
+                catch (FileNotFoundException ex) when (!string.IsNullOrWhiteSpace(ex.FileName))
+                {
+                    AddResourceRequestCard("Mesh Material texture", ex.FileName!,
+                        "The linked Material texture needs an external stream. Select the matching resource file to finish the preview.",
+                        MaterialIconKind.Image,
+                        () => ChooseSessionResourceAsync(ex.FileName!, instance),
+                        () => ShowMeshPreviewAsync(manager, instance, asset));
+                    return;
+                }
+                catch (Exception ex)
+                {
+                    _items.Children.Add(new TextBlock
+                    {
+                        Text = "Linked Material texture could not be loaded: " + ex.Message,
+                        Foreground = MutedBrush, TextWrapping = TextWrapping.Wrap
+                    });
+                }
             }
-            catch (FileNotFoundException ex) when (!string.IsNullOrWhiteSpace(ex.FileName))
-            {
-                textureToggle.IsChecked = false;
-                AddResourceRequestCard("Mesh Material texture", ex.FileName!, "The linked Material texture needs an external stream. Import it only when enabling texture rendering.", MaterialIconKind.Image,
-                    () => ChooseSessionResourceAsync(ex.FileName!, instance), () => ShowMeshPreviewAsync(manager, instance, asset));
-            }
-            catch (Exception ex)
-            {
-                textureToggle.IsChecked = false;
-                _status.Text = "Could not apply linked Material texture: " + ex.Message;
-            }
-            finally { textureToggle.IsEnabled = true; }
-        };
-        textureToggle.Unchecked += (_, _) =>
-        {
-            if (!linkedTextureApplied) return;
-            viewer.SetTexture(null, 0, 0); fullscreenViewer?.SetTexture(null, 0, 0); linkedTextureApplied = false;
-        };
+        }
         var fullscreenButton = new Button
         {
             Content = CreateIcon(MaterialIconKind.ArrowExpand, 18, TextBrush),
