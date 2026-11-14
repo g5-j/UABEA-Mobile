@@ -14,7 +14,7 @@ namespace UABEA.Mobile;
 
 /// <summary>
 /// Software-rendered cubemap viewer. Face order is Unity's +X, -X, +Y, -Y, +Z, -Z.
-/// The viewer renders a spherical environment projection and supports drag/pinch.
+/// The viewer places the camera at the center of the cube and renders its six interior faces with perspective projection.
 /// </summary>
 internal sealed class CubemapPreviewControl : Control, IDisposable
 {
@@ -166,40 +166,36 @@ internal sealed class CubemapPreviewControl : Control, IDisposable
         context.FillRectangle(new SolidColorBrush(Color.FromRgb(8, 10, 14)), bounds);
         if (_disposed || Bounds.Width < 1 || Bounds.Height < 1) return;
 
-        // Orthographic projection of a sphere: only pixels inside the unit disk sample the environment.
+        // Ray-cast from the center of the cubemap. The six square faces surround the camera.
         double diameter = Math.Min(Bounds.Width, Bounds.Height);
         double scale = Math.Min(1.0, MaxRenderDimension / diameter);
         int size = Math.Max(1, (int)Math.Ceiling(diameter * scale));
         EnsureFrame(size, size);
+
         double cy = Math.Cos(_yaw), sy = Math.Sin(_yaw);
         double cp = Math.Cos(_pitch), sp = Math.Sin(_pitch);
-        double radius = size * 0.47 * _zoom;
+        double tanHalfFov = 1.0 / _zoom;
         double center = (size - 1) * 0.5;
+        double inverseHalf = 2.0 / size;
 
         for (int y = 0; y < size; y++)
         {
-            double ny = (center - y) / radius;
+            double screenY = (center - y) * inverseHalf * tanHalfFov;
             int row = y * size;
             for (int x = 0; x < size; x++)
             {
-                double nx = (x - center) / radius;
-                double r2 = nx * nx + ny * ny;
-                if (r2 > 1.0)
-                {
-                    _pixels[row + x] = unchecked((int)0xFF080A0E);
-                    continue;
-                }
+                double screenX = (x - center) * inverseHalf * tanHalfFov;
 
-                double nz = Math.Sqrt(Math.Max(0, 1.0 - r2));
-                double py = ny * cp - nz * sp;
-                double pz = ny * sp + nz * cp;
-                double dx = nx * cy + pz * sy;
-                double dz = -nx * sy + pz * cy;
+                // Camera-space ray, rotated into the Cubemap's world axes.
+                double py = screenY * cp - sp;
+                double pz = screenY * sp + cp;
+                double dx = screenX * cy + pz * sy;
+                double dz = -screenX * sy + pz * cy;
                 SampleCube(dx, py, dz, out int color);
-                double light = 0.72 + 0.28 * Math.Max(0, nz);
-                int red = Math.Clamp((int)(((color >> 16) & 255) * _brightness * light), 0, 255);
-                int green = Math.Clamp((int)(((color >> 8) & 255) * _brightness * light), 0, 255);
-                int blue = Math.Clamp((int)((color & 255) * _brightness * light), 0, 255);
+
+                int red = Math.Clamp((int)(((color >> 16) & 255) * _brightness), 0, 255);
+                int green = Math.Clamp((int)(((color >> 8) & 255) * _brightness), 0, 255);
+                int blue = Math.Clamp((int)((color & 255) * _brightness), 0, 255);
                 _pixels[row + x] = unchecked((int)(0xFF000000u | ((uint)red << 16) | ((uint)green << 8) | (uint)blue));
             }
         }
