@@ -5,7 +5,7 @@ using Avalonia.Android;
 namespace UABEA.Mobile;
 
 [Activity(
-    Label = "UABEA Mobile",
+    Label = "UABE Avalonia",
     Theme = "@style/UABEAStartingTheme",
     MainLauncher = true,
     Exported = true,
