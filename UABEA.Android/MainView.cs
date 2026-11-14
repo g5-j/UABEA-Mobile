@@ -916,9 +916,7 @@ public sealed class MainView : UserControl
                 {
                     try
                     {
-                        imageData = instance.parentBundle != null
-                            ? ReadBundleResource(instance.parentBundle, streamPath, streamOffset, streamSize)
-                            : ReadExternalResource(instance, streamPath, streamOffset, streamSize);
+                        imageData = ReadResourceWithBundleFallback(instance, streamPath, streamOffset, streamSize);
                     }
                     catch (FileNotFoundException)
                     {
@@ -964,7 +962,7 @@ public sealed class MainView : UserControl
         catch (FileNotFoundException ex)
         {
             error = ex.Message;
-            needsExternalResource = instance.parentBundle == null && !string.IsNullOrWhiteSpace(ex.FileName);
+            needsExternalResource = !string.IsNullOrWhiteSpace(ex.FileName);
             resourceSource = ex.FileName;
         }
         catch (Exception ex)
@@ -1375,13 +1373,11 @@ public sealed class MainView : UserControl
                 {
                     try
                     {
-                        data = instance.parentBundle != null
-                            ? ReadBundleResource(instance.parentBundle, streamPath, streamOffset, streamSize)
-                            : ReadExternalResource(instance, streamPath, streamOffset, streamSize);
+                        data = ReadResourceWithBundleFallback(instance, streamPath, streamOffset, streamSize);
                     }
                     catch (FileNotFoundException)
                     {
-                        needsExternalResource = instance.parentBundle == null;
+                        needsExternalResource = true;
                         throw;
                     }
                 }
@@ -1504,13 +1500,11 @@ public sealed class MainView : UserControl
                 {
                     try
                     {
-                        data = instance.parentBundle != null
-                            ? ReadBundleResource(instance.parentBundle, streamPath, streamOffset, streamSize)
-                            : ReadExternalResource(instance, streamPath, streamOffset, streamSize);
+                        data = ReadResourceWithBundleFallback(instance, streamPath, streamOffset, streamSize);
                     }
                     catch (FileNotFoundException)
                     {
-                        needsExternalResource = instance.parentBundle == null;
+                        needsExternalResource = true;
                         throw;
                     }
                 }
@@ -1855,7 +1849,7 @@ public sealed class MainView : UserControl
         ulong size = ReadUnsignedField(GetChildField(stream, "size"));
         string path = ReadFieldString(GetChildField(stream, "path"));
         if (size > 0 && !string.IsNullOrWhiteSpace(path))
-            bytes = instance.parentBundle != null ? ReadBundleResource(instance.parentBundle, path, offset, size) : ReadExternalResource(instance, path, offset, size);
+            bytes = ReadResourceWithBundleFallback(instance, path, offset, size);
         if (bytes.Length == 0) throw new InvalidDataException("The referenced Texture2D contains no image data.");
         return (DecodeTexturePixelsToArgb(bytes, (TextureFormat)textureFile.m_TextureFormat, width, height), width, height, path);
     }
@@ -1957,7 +1951,7 @@ public sealed class MainView : UserControl
                     long textureId = ReadFieldInt64(GetChildField(GetChildField(env, "m_Texture"), "m_PathID"));
                     if (!string.IsNullOrWhiteSpace(key))
                         properties.Add($"{FormatShaderPropertyLabel(key)}: {(textureId == 0 ? "No texture" : $"Texture Path ID {textureId}")}");
-                    if (textureId != 0 && materialTexturePathId == 0)
+                    if (textureId != 0 && (materialTexturePathId == 0 || key is "_MainTex" or "_BaseMap" or "_BaseColorMap" or "_BaseColorTexture"))
                     { materialTexturePathId = textureId; materialTextureProperty = key; }
                 }
 
@@ -2026,7 +2020,7 @@ public sealed class MainView : UserControl
                     ulong offset = ReadUnsignedField(GetChildField(stream, "offset"));
                     ulong size = ReadUnsignedField(GetChildField(stream, "size"));
                     string path = ReadFieldString(GetChildField(stream, "path"));
-                    if (size > 0 && !string.IsNullOrWhiteSpace(path)) bytes = instance.parentBundle != null ? ReadBundleResource(instance.parentBundle, path, offset, size) : ReadExternalResource(instance, path, offset, size);
+                    if (size > 0 && !string.IsNullOrWhiteSpace(path)) bytes = ReadResourceWithBundleFallback(instance, path, offset, size);
                     if (bytes.Length == 0) throw new InvalidDataException("The referenced texture contains no image data.");
                     return (Pixels: DecodeTexturePixelsToArgb(bytes, (TextureFormat)textureFile.m_TextureFormat, w, h), Width: w, Height: h);
                 });
@@ -2296,6 +2290,15 @@ public sealed class MainView : UserControl
         BuildAudioPlayerCard(tempAudioPath, audioName ?? "AudioClip");
     }
 
+    private byte[] ReadResourceWithBundleFallback(AssetsFileInstance instance, string path, ulong offset, ulong size)
+    {
+        if (instance.parentBundle != null)
+        {
+            try { return ReadBundleResource(instance.parentBundle, path, offset, size); }
+            catch (FileNotFoundException) { }
+        }
+        return ReadExternalResource(instance, path, offset, size);
+    }
     private async Task<bool> ChooseSessionResourceAsync(string source, AssetsFileInstance instance)
     {
         var topLevel = TopLevel.GetTopLevel(this);
@@ -2629,14 +2632,14 @@ public sealed class MainView : UserControl
                     }
                     catch (FileNotFoundException)
                     {
-                        needsExternalResource = instance.parentBundle == null;
+                        needsExternalResource = true;
                         throw;
                     }
                     catch (InvalidDataException)
                     {
                         // Do not silently fall back to incomplete inline data when Unity
                         // declares an external vertex stream. Ask for the matching resource.
-                        needsExternalResource = instance.parentBundle == null;
+                        needsExternalResource = true;
                         throw;
                     }
                     catch (ArgumentOutOfRangeException)
@@ -2644,7 +2647,7 @@ public sealed class MainView : UserControl
                         // Corrupt/truncated stream data must never be interpreted as a
                         // valid Mesh. Let the resource-selection flow retry with the
                         // session resource or ask the user to import the matching file.
-                        needsExternalResource = instance.parentBundle == null;
+                        needsExternalResource = true;
                         throw new InvalidDataException("The Mesh stream data is incomplete. Select its matching .resource or .resS file.");
                     }
                 }
