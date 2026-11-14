@@ -2919,7 +2919,6 @@ public sealed class MainView : UserControl
             Children =
             {
                 topBar,
-                textureToggle,
                 viewer,
                 new TextBlock
                 {
