@@ -2005,13 +2005,13 @@ public sealed class MainView : UserControl
             return;
         }
 
-        var cubeMesh = CreateMaterialCubeMesh();
-        var cube = new MeshPreviewControl(cubeMesh.Vertices, cubeMesh.Indices,
-            interactive: true, surfaceColor: materialColor, uvs: cubeMesh.UVs, cameraInside: true)
+        var sphereMesh = CreateMaterialSphereMesh(48, 32);
+        var sphere = new MeshPreviewControl(sphereMesh.Vertices, sphereMesh.Indices,
+            interactive: true, surfaceColor: materialColor, uvs: sphereMesh.UVs)
         { Width = 280, Height = 280, HorizontalAlignment = HorizontalAlignment.Center, MinHeight = 240 };
         var content = new StackPanel { Spacing = 8 };
-        content.Children.Add(cube);
-        content.Children.Add(new TextBlock { Text = "Drag to look around inside the cube • Pinch to zoom", FontSize = 11, Foreground = MutedBrush, HorizontalAlignment = HorizontalAlignment.Center });
+        content.Children.Add(sphere);
+        content.Children.Add(new TextBlock { Text = "Drag to rotate • Pinch to zoom", FontSize = 11, Foreground = MutedBrush, HorizontalAlignment = HorizontalAlignment.Center });
         content.Children.Add(new TextBlock { Text = $"Shader: {shaderName}", Foreground = TextBrush, TextWrapping = TextWrapping.Wrap });
 
         if (materialTexturePathId != 0)
@@ -2023,7 +2023,7 @@ public sealed class MainView : UserControl
                 try
                 {
                     var decoded = await Task.Run(() => ReadMaterialTexturePixels(manager, instance, materialTexturePathId));
-                    cube.SetTexture(decoded.Pixels, decoded.Width, decoded.Height);
+                    sphere.SetTexture(decoded.Pixels, decoded.Width, decoded.Height);
                     content.Children.Add(new TextBlock
                     {
                         Text = $"Texture: {materialTextureProperty} • {decoded.Width}×{decoded.Height}",
@@ -2104,36 +2104,44 @@ public sealed class MainView : UserControl
         return cleaned.Length == 0 ? shaderPropertyName : cleaned;
     }
 
-    private static MeshPreviewData CreateMaterialCubeMesh()
+    private static MeshPreviewData CreateMaterialSphereMesh(int segments, int rings)
     {
-        var vertices = new System.Numerics.Vector3[24];
-        var uvs = new System.Numerics.Vector2[24];
-        var indices = new int[36];
-        var faces = new[]
+        segments = Math.Clamp(segments, 12, 96);
+        rings = Math.Clamp(rings, 8, 64);
+        var vertices = new System.Numerics.Vector3[(rings + 1) * (segments + 1)];
+        var uvs = new System.Numerics.Vector2[vertices.Length];
+        for (int y = 0; y <= rings; y++)
         {
-            new[] { new System.Numerics.Vector3(1,-1,-1), new System.Numerics.Vector3(1,-1,1), new System.Numerics.Vector3(1,1,1), new System.Numerics.Vector3(1,1,-1) },
-            new[] { new System.Numerics.Vector3(-1,-1,1), new System.Numerics.Vector3(-1,-1,-1), new System.Numerics.Vector3(-1,1,-1), new System.Numerics.Vector3(-1,1,1) },
-            new[] { new System.Numerics.Vector3(-1,1,-1), new System.Numerics.Vector3(1,1,-1), new System.Numerics.Vector3(1,1,1), new System.Numerics.Vector3(-1,1,1) },
-            new[] { new System.Numerics.Vector3(-1,-1,1), new System.Numerics.Vector3(1,-1,1), new System.Numerics.Vector3(1,-1,-1), new System.Numerics.Vector3(-1,-1,-1) },
-            new[] { new System.Numerics.Vector3(1,-1,1), new System.Numerics.Vector3(-1,-1,1), new System.Numerics.Vector3(-1,1,1), new System.Numerics.Vector3(1,1,1) },
-            new[] { new System.Numerics.Vector3(-1,-1,-1), new System.Numerics.Vector3(1,-1,-1), new System.Numerics.Vector3(1,1,-1), new System.Numerics.Vector3(-1,1,-1) }
-        };
-        var faceUvs = new[]
-        {
-            new System.Numerics.Vector2(0,1), new System.Numerics.Vector2(1,1),
-            new System.Numerics.Vector2(1,0), new System.Numerics.Vector2(0,0)
-        };
-        for (int face = 0; face < 6; face++)
-        {
-            int offset = face * 4;
-            for (int corner = 0; corner < 4; corner++)
+            float v = y / (float)rings;
+            float latitude = (v - 0.5f) * MathF.PI;
+            float ringRadius = MathF.Cos(latitude);
+            float py = MathF.Sin(latitude);
+            for (int x = 0; x <= segments; x++)
             {
-                vertices[offset + corner] = faces[face][corner];
-                uvs[offset + corner] = faceUvs[corner];
+                float u = x / (float)segments;
+                float longitude = u * MathF.PI * 2f;
+                uvs[y * (segments + 1) + x] = new System.Numerics.Vector2(u, 1f - v);
+                vertices[y * (segments + 1) + x] = new System.Numerics.Vector3(
+                    ringRadius * MathF.Cos(longitude),
+                    py,
+                    ringRadius * MathF.Sin(longitude));
             }
-            int index = face * 6;
-            indices[index] = offset; indices[index + 1] = offset + 2; indices[index + 2] = offset + 1;
-            indices[index + 3] = offset; indices[index + 4] = offset + 3; indices[index + 5] = offset + 2;
+        }
+        var indices = new int[segments * rings * 6];
+        int index = 0;
+        for (int y = 0; y < rings; y++)
+        {
+            for (int x = 0; x < segments; x++)
+            {
+                int a = y * (segments + 1) + x;
+                int b = a + segments + 1;
+                indices[index++] = a;
+                indices[index++] = b;
+                indices[index++] = a + 1;
+                indices[index++] = a + 1;
+                indices[index++] = b;
+                indices[index++] = b + 1;
+            }
         }
         return new MeshPreviewData(vertices, indices, uvs);
     }
