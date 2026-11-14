@@ -1155,6 +1155,287 @@ public sealed class MainView : UserControl
         }
     }
 
+
+    private async Task ImportTextureImageAsync(AssetFileInfo asset)
+    {
+        if (_currentAssets is null || _assetsManager is null || _isBusy) return;
+        var topLevel = TopLevel.GetTopLevel(this);
+        if (topLevel is null) return;
+
+        var selected = await topLevel.StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
+        {
+            Title = "Choose replacement image",
+            AllowMultiple = false,
+            FileTypeFilter = new[]
+            {
+                new FilePickerFileType("PNG or JPEG image") { Patterns = new[] { "*.png", "*.jpg", "*.jpeg" } }
+            }
+        });
+        if (selected.Count == 0) return;
+
+        var instance = _currentAssets;
+        var bundle = _currentBundle;
+        string sourceName = bundle is null ? instance.name : _currentFileName;
+        string extension = Path.GetExtension(sourceName);
+        if (string.IsNullOrWhiteSpace(extension)) extension = bundle is null ? ".assets" : ".bundle";
+        var destination = await topLevel.StorageProvider.SaveFilePickerAsync(new FilePickerSaveOptions
+        {
+            Title = "Save modified Unity file",
+            SuggestedFileName = Path.GetFileNameWithoutExtension(sourceName) + "-modified" + extension,
+            FileTypeChoices = new[] { new FilePickerFileType("Modified Unity file") { Patterns = new[] { "*" + extension } } }
+        });
+        if (destination is null) return;
+
+        _isBusy = true;
+        SetLoading(true, "Decoding replacement image...");
+        try
+        {
+            byte[] encoded;
+            await using (var input = await selected[0].OpenReadAsync())
+            using (var memory = new MemoryStream())
+            {
+                await input.CopyToAsync(memory);
+                encoded = memory.ToArray();
+            }
+            if (encoded.Length == 0) throw new InvalidDataException("The selected image is empty.");
+
+            byte[] serialized = await Task.Run(() =>
+            {
+                using var bitmap = global::Android.Graphics.BitmapFactory.DecodeByteArray(encoded, 0, encoded.Length)
+                    ?? throw new InvalidDataException("Android could not decode this PNG/JPG image.");
+                int width = bitmap.Width;
+                int height = bitmap.Height;
+                if (width <= 0 || height <= 0 || width > 8192 || height > 8192 ||
+                    (long)width * height > 32_000_000)
+                    throw new InvalidDataException("Image dimensions exceed the safe import limit (8192 per side / 32 MP).");
+
+                var argb = new int[checked(width * height)];
+                bitmap.GetPixels(argb, 0, width, 0, 0, width, height);
+                var rgba = new byte[checked(width * height * 4)];
+                for (int i = 0, p = 0; i < argb.Length; i++, p += 4)
+                {
+                    int pixel = argb[i];
+                    rgba[p] = (byte)(pixel >> 16);
+                    rgba[p + 1] = (byte)(pixel >> 8);
+                    rgba[p + 2] = (byte)pixel;
+                    rgba[p + 3] = (byte)(pixel >> 24);
+                }
+
+                var template = _assetsManager.GetTemplateBaseField(instance, asset)
+                    ?? throw new InvalidDataException("Texture2D type information could not be read.");
+                var imageTemplate = template.Children.FirstOrDefault(x => x.Name == "image data" || x.Name == "m_ImageData");
+                if (imageTemplate is null) throw new InvalidDataException("Texture2D has no image data field.");
+                imageTemplate.ValueType = AssetValueType.ByteArray;
+                var blobTemplate = template.Children.FirstOrDefault(x => x.Name == "m_PlatformBlob");
+                if (blobTemplate is not null && blobTemplate.Children.Count > 0)
+                    blobTemplate.Children[0].ValueType = AssetValueType.ByteArray;
+
+                AssetTypeValueField field;
+                var reader = instance.file.Reader;
+                lock (reader)
+                    field = template.MakeValue(reader, asset.GetAbsoluteByteStart(instance.file), null);
+
+                var texture = TextureFile.ReadTextureFile(field);
+                texture.m_Width = width;
+                texture.m_Height = height;
+                texture.m_TextureFormat = (int)TextureFormat.RGBA32;
+                texture.m_CompleteImageSize = rgba.Length;
+                texture.m_MipCount = 1;
+                texture.m_MipMap = false;
+                texture.m_StreamingMipmaps = false;
+                texture.pictureData = rgba;
+                texture.m_StreamData = new TextureFile.StreamingInfo { offset = 0, size = 0, path = "" };
+                texture.m_PlatformBlob = Array.Empty<byte>();
+                texture.WriteTo(field);
+                return field.WriteToByteArray(reader.BigEndian);
+            });
+
+            await SaveAssetReplacementAsync(asset, serialized, "Texture2D image import");
+        }
+        catch (Exception ex)
+        {
+            _status.Text = "Image import failed:\n" + ex.Message;
+        }
+        finally
+        {
+            _isBusy = false;
+            SetLoading(false);
+        }
+    }
+
+    private async Task ImportTextAssetAsync(AssetFileInfo asset)
+    {
+        if (_currentAssets is null || _assetsManager is null || _isBusy) return;
+        var topLevel = TopLevel.GetTopLevel(this);
+        if (topLevel is null) return;
+        var selected = await topLevel.StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
+        {
+            Title = "Choose TextAsset content",
+            AllowMultiple = false,
+            FileTypeFilter = new[]
+            {
+                new FilePickerFileType("Text / JSON / XML") { Patterns = new[] { "*.txt", "*.json", "*.xml", "*.csv", "*.yaml", "*.yml", "*.bytes", "*.*" } }
+            }
+        });
+        if (selected.Count == 0) return;
+
+        var instance = _currentAssets;
+        var bundle = _currentBundle;
+        string sourceName = bundle is null ? instance.name : _currentFileName;
+        string extension = Path.GetExtension(sourceName);
+        if (string.IsNullOrWhiteSpace(extension)) extension = bundle is null ? ".assets" : ".bundle";
+        var destination = await topLevel.StorageProvider.SaveFilePickerAsync(new FilePickerSaveOptions
+        {
+            Title = "Save modified Unity file",
+            SuggestedFileName = Path.GetFileNameWithoutExtension(sourceName) + "-modified" + extension,
+            FileTypeChoices = new[] { new FilePickerFileType("Modified Unity file") { Patterns = new[] { "*" + extension } } }
+        });
+        if (destination is null) return;
+
+        _isBusy = true;
+        SetLoading(true, "Importing TextAsset...");
+        try
+        {
+            byte[] bytes;
+            await using (var input = await selected[0].OpenReadAsync())
+            using (var memory = new MemoryStream())
+            {
+                await input.CopyToAsync(memory);
+                bytes = memory.ToArray();
+            }
+            if (bytes.Length == 0) throw new InvalidDataException("The selected text file is empty.");
+
+            var field = await Task.Run(() => _assetsManager.GetBaseField(instance, asset)
+                ?? throw new InvalidDataException("TextAsset data could not be read."));
+            var script = GetChildField(field, "m_Script");
+            if (script is null) throw new InvalidDataException("This TextAsset has no m_Script payload.");
+            if (script.TemplateField.ValueType != AssetValueType.ByteArray)
+                throw new NotSupportedException("This TextAsset uses a non-byte-array script layout.");
+            script.AsByteArray = bytes;
+            await SaveAssetReplacementAsync(asset, field.WriteToByteArray(instance.file.Reader.BigEndian), "TextAsset import");
+        }
+        catch (Exception ex) { _status.Text = "Text import failed:\n" + ex.Message; }
+        finally { _isBusy = false; SetLoading(false); }
+    }
+
+    private async Task ImportFontAssetAsync(AssetFileInfo asset)
+    {
+        if (_currentAssets is null || _assetsManager is null || _isBusy) return;
+        var topLevel = TopLevel.GetTopLevel(this);
+        if (topLevel is null) return;
+        var selected = await topLevel.StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
+        {
+            Title = "Choose replacement font",
+            AllowMultiple = false,
+            FileTypeFilter = new[]
+            {
+                new FilePickerFileType("TrueType / OpenType font") { Patterns = new[] { "*.ttf", "*.otf" } }
+            }
+        });
+        if (selected.Count == 0) return;
+
+        var instance = _currentAssets;
+        var bundle = _currentBundle;
+        string sourceName = bundle is null ? instance.name : _currentFileName;
+        string extension = Path.GetExtension(sourceName);
+        if (string.IsNullOrWhiteSpace(extension)) extension = bundle is null ? ".assets" : ".bundle";
+        var destination = await topLevel.StorageProvider.SaveFilePickerAsync(new FilePickerSaveOptions
+        {
+            Title = "Save modified Unity file",
+            SuggestedFileName = Path.GetFileNameWithoutExtension(sourceName) + "-modified" + extension,
+            FileTypeChoices = new[] { new FilePickerFileType("Modified Unity file") { Patterns = new[] { "*" + extension } } }
+        });
+        if (destination is null) return;
+
+        _isBusy = true;
+        SetLoading(true, "Importing font...");
+        try
+        {
+            byte[] bytes;
+            await using (var input = await selected[0].OpenReadAsync())
+            using (var memory = new MemoryStream())
+            {
+                await input.CopyToAsync(memory);
+                bytes = memory.ToArray();
+            }
+            bool isTtf = bytes.Length >= 4 && bytes[0] == 0 && bytes[1] == 1 && bytes[2] == 0 && bytes[3] == 0;
+            bool isOtf = bytes.Length >= 4 && bytes[0] == 0x4F && bytes[1] == 0x54 && bytes[2] == 0x54 && bytes[3] == 0x4F;
+            if (!isTtf && !isOtf) throw new InvalidDataException("The selected file is not a supported TTF/OTF font.");
+
+            var template = _assetsManager.GetTemplateBaseField(instance, asset)
+                ?? throw new InvalidDataException("Font type information could not be read.");
+            var fontTemplate = template.Children.FirstOrDefault(x => x.Name == "m_FontData");
+            if (fontTemplate is null || fontTemplate.Children.Count == 0)
+                throw new NotSupportedException("This Font uses an external or built-in payload.");
+            fontTemplate.Children[0].ValueType = AssetValueType.ByteArray;
+            AssetTypeValueField field;
+            var reader = instance.file.Reader;
+            lock (reader) field = template.MakeValue(reader, asset.GetAbsoluteByteStart(instance.file), null);
+            var data = GetChildField(field, "m_FontData.Array");
+            if (data is null) throw new InvalidDataException("Font data array is unavailable.");
+            data.AsByteArray = bytes;
+            await SaveAssetReplacementAsync(asset, field.WriteToByteArray(reader.BigEndian), "Font import");
+        }
+        catch (Exception ex) { _status.Text = "Font import failed:\n" + ex.Message; }
+        finally { _isBusy = false; SetLoading(false); }
+    }
+
+    private async Task SaveAssetReplacementAsync(AssetFileInfo asset, byte[] serializedData, string operation)
+    {
+        var topLevel = TopLevel.GetTopLevel(this) ?? throw new InvalidOperationException("Storage provider is unavailable.");
+        var instance = _currentAssets ?? throw new InvalidOperationException("No assets file is open.");
+        var bundle = _currentBundle;
+        int classId = asset.GetTypeId(instance.file);
+        ushort monoId = instance.file.GetScriptIndex(asset);
+        var replacer = new AssetsReplacerFromMemory(asset.PathId, classId, monoId, serializedData);
+        string sourceName = bundle is null ? instance.name : _currentFileName;
+        string extension = Path.GetExtension(sourceName);
+        if (string.IsNullOrWhiteSpace(extension)) extension = bundle is null ? ".assets" : ".bundle";
+        string suggested = Path.GetFileNameWithoutExtension(sourceName) + "-modified" + extension;
+        var destination = await topLevel.StorageProvider.SaveFilePickerAsync(new FilePickerSaveOptions
+        {
+            Title = "Save modified Unity file",
+            SuggestedFileName = suggested,
+            FileTypeChoices = new[] { new FilePickerFileType("Modified Unity file") { Patterns = new[] { "*" + extension } } }
+        });
+        if (destination is null) return;
+
+        string temporaryOutput = Path.Combine(Path.GetTempPath(), "uabea-import-" + Guid.NewGuid().ToString("N") + extension);
+        try
+        {
+            SetLoading(true, "Writing modified Unity data...");
+            await Task.Run(() =>
+            {
+                if (bundle is null)
+                {
+                    using var output = File.Create(temporaryOutput);
+                    using var writer = new AssetsFileWriter(output);
+                    instance.file.Write(writer, 0, new List<AssetsReplacer> { replacer });
+                }
+                else
+                {
+                    string entryName = ResolveBundleAssetsEntryName(bundle, instance);
+                    using var modifiedAssets = new MemoryStream();
+                    using (var assetsWriter = new AssetsFileWriter(modifiedAssets))
+                        instance.file.Write(assetsWriter, 0, new List<AssetsReplacer> { replacer });
+                    var bundleReplacer = new BundleReplacerFromMemory(entryName, entryName, true, modifiedAssets.ToArray(), -1);
+                    using var output = File.Create(temporaryOutput);
+                    using var writer = new AssetsFileWriter(output);
+                    bundle.file.Write(writer, new List<BundleReplacer> { bundleReplacer });
+                }
+            });
+            await using var output = await destination.OpenWriteAsync();
+            await using var input = File.OpenRead(temporaryOutput);
+            await input.CopyToAsync(output);
+            await output.FlushAsync();
+            _status.Text = $"{operation} saved\nAsset: {asset.PathId}\nOutput: {destination.Name}\nReopen the saved file to verify it.";
+        }
+        finally
+        {
+            try { File.Delete(temporaryOutput); } catch { }
+        }
+    }
+
     private static string ResolveBundleAssetsEntryName(
         BundleFileInstance bundle, AssetsFileInstance instance)
     {
@@ -1633,6 +1914,55 @@ public sealed class MainView : UserControl
         ToolTip.SetTip(importRawButton, "Replace this asset with serialized raw data exported from UABEA.");
         importRawButton.Click += async (_, _) => await ImportRawAssetAsync(asset);
         _items.Children.Add(importRawButton);
+
+        if (typeId == (int)AssetClassID.Texture2D)
+        {
+            var importImageButton = new Button
+            {
+                Content = CreateIconLabel(MaterialIconKind.Image, "Import image (PNG / JPG)", OnPrimaryBrush, 15),
+                Background = SurfaceHighBrush,
+                Foreground = TextBrush,
+                BorderBrush = OutlineBrush,
+                BorderThickness = new Thickness(1),
+                CornerRadius = new CornerRadius(12),
+                MinHeight = 46,
+                HorizontalAlignment = HorizontalAlignment.Stretch
+            };
+            importImageButton.Click += async (_, _) => await ImportTextureImageAsync(asset);
+            _items.Children.Add(importImageButton);
+        }
+        else if (typeId == (int)AssetClassID.TextAsset)
+        {
+            var importTextButton = new Button
+            {
+                Content = CreateIconLabel(MaterialIconKind.FileDocument, "Import text / JSON / XML", OnPrimaryBrush, 15),
+                Background = SurfaceHighBrush,
+                Foreground = TextBrush,
+                BorderBrush = OutlineBrush,
+                BorderThickness = new Thickness(1),
+                CornerRadius = new CornerRadius(12),
+                MinHeight = 46,
+                HorizontalAlignment = HorizontalAlignment.Stretch
+            };
+            importTextButton.Click += async (_, _) => await ImportTextAssetAsync(asset);
+            _items.Children.Add(importTextButton);
+        }
+        else if (typeId == (int)AssetClassID.Font)
+        {
+            var importFontButton = new Button
+            {
+                Content = CreateIconLabel(MaterialIconKind.FileUpload, "Import font (TTF / OTF)", OnPrimaryBrush, 15),
+                Background = SurfaceHighBrush,
+                Foreground = TextBrush,
+                BorderBrush = OutlineBrush,
+                BorderThickness = new Thickness(1),
+                CornerRadius = new CornerRadius(12),
+                MinHeight = 46,
+                HorizontalAlignment = HorizontalAlignment.Stretch
+            };
+            importFontButton.Click += async (_, _) => await ImportFontAssetAsync(asset);
+            _items.Children.Add(importFontButton);
+        }
 
         if (typeId == (int)AssetClassID.TextAsset)
         {
