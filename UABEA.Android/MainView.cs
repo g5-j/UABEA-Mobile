@@ -603,6 +603,31 @@ public sealed class MainView : UserControl
             return;
         }
 
+        if (_currentPage == BrowserPage.Assets)
+        {
+            var exportItems = _currentRows
+                .Where(row => row.AssetInfo is not null)
+                .Select(row => row.AssetInfo!)
+                .ToList();
+            if (exportItems.Count > 0)
+            {
+                var exportAllButton = new Button
+                {
+                    Content = CreateIconLabel(MaterialIconKind.Download,
+                        $"Export filtered assets ({exportItems.Count}) as ZIP", OnPrimaryBrush, 14),
+                    Background = PrimaryBrush,
+                    Foreground = OnPrimaryBrush,
+                    CornerRadius = new CornerRadius(12),
+                    MinHeight = 44,
+                    HorizontalAlignment = HorizontalAlignment.Stretch,
+                    FontWeight = FontWeight.SemiBold,
+                    Margin = new Thickness(0, 0, 0, 8)
+                };
+                exportAllButton.Click += async (_, _) => await ExportAssetsArchiveAsync(exportItems);
+                _items.Children.Add(exportAllButton);
+            }
+        }
+
         RenderNextPage();
     }
 
@@ -733,6 +758,102 @@ public sealed class MainView : UserControl
     }
 
 
+
+    private async Task ExportAssetsArchiveAsync(List<AssetFileInfo> assets)
+    {
+        if (_currentAssets is null || _assetsManager is null || _isBusy || assets.Count == 0) return;
+        var instance = _currentAssets;
+        var manager = _assetsManager;
+        var topLevel = TopLevel.GetTopLevel(this);
+        if (topLevel is null) return;
+
+        var destination = await topLevel.StorageProvider.SaveFilePickerAsync(new FilePickerSaveOptions
+        {
+            Title = "Export filtered Unity assets",
+            SuggestedFileName = "UABEA-Assets-Export.zip",
+            DefaultExtension = "zip",
+            FileTypeChoices = new[]
+            {
+                new FilePickerFileType("ZIP archive") { Patterns = new[] { "*.zip" } }
+            }
+        });
+        if (destination is null) return;
+
+        SetLoading(true, $"Exporting {assets.Count} assets...");
+        int exported = 0;
+        var usedNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        try
+        {
+            await using var output = await destination.OpenWriteAsync();
+            using (var archive = new ZipArchive(output, ZipArchiveMode.Create, true))
+            {
+                foreach (var asset in assets)
+                {
+                    int typeId = asset.GetTypeId(instance.file);
+                    string typeName = Enum.GetName(typeof(AssetClassID), typeId) ?? $"Type_{typeId}";
+                    string name = await Task.Run(() => TryReadAssetName(manager, instance, asset, typeName));
+                    AssetExportPayload payload;
+
+                    try
+                    {
+                        payload = await Task.Run(() => BuildAssetExportPayload(manager, instance, asset, typeId));
+                    }
+                    catch (FileNotFoundException ex) when (!string.IsNullOrWhiteSpace(ex.FileName))
+                    {
+                        SetLoading(false);
+                        _status.Text = $"Resource required for {name}: {Path.GetFileName(ex.FileName)}";
+                        if (!await ChooseSessionResourceAsync(ex.FileName!, instance))
+                            throw new OperationCanceledException("The required external resource was not selected.");
+                        SetLoading(true, $"Retrying {name}...");
+                        payload = await Task.Run(() => BuildAssetExportPayload(manager, instance, asset, typeId));
+                    }
+
+                    string sourceName = SanitizeExportName(Path.GetFileNameWithoutExtension(instance.name));
+                    string baseName = $"{SanitizeExportName(name)}-{sourceName}-{asset.PathId}{payload.Extension}";
+                    string entryName = baseName;
+                    int duplicate = 2;
+                    while (!usedNames.Add(entryName))
+                    {
+                        string stem = Path.GetFileNameWithoutExtension(baseName);
+                        entryName = $"{stem}_{duplicate++}{payload.Extension}";
+                    }
+
+                    var zipEntry = archive.CreateEntry(entryName, CompressionLevel.Optimal);
+                    using var entryStream = zipEntry.Open();
+                    if (payload.IsRaw)
+                    {
+                        long start = asset.GetAbsoluteByteStart(instance.file);
+                        using var source = new SegmentStream(instance.file.Reader.BaseStream, start, asset.ByteSize);
+                        await source.CopyToAsync(entryStream);
+                    }
+                    else
+                    {
+                        if (payload.Data is null)
+                            throw new InvalidDataException($"No export data was produced for {name}.");
+                        await entryStream.WriteAsync(payload.Data);
+                    }
+
+                    exported++;
+                    _status.Text = $"Exported {exported}/{assets.Count}\n{name}";
+                }
+            }
+            await output.FlushAsync();
+            _status.Text = $"Export completed\n{exported} assets saved to ZIP.";
+        }
+        catch (OperationCanceledException)
+        {
+            _status.Text = $"Export cancelled after {exported}/{assets.Count} assets.";
+        }
+        catch (Exception ex)
+        {
+            _status.Text = $"Could not export asset archive:\n{ex.Message}\nCompleted: {exported}/{assets.Count}";
+        }
+        finally
+        {
+            SetLoading(false);
+        }
+    }
+
     private async Task ExportAssetAsync(AssetFileInfo asset, bool resourceRetry = false)
     {
         if (_currentAssets is null || _assetsManager is null || _isBusy) return;
@@ -781,8 +902,8 @@ public sealed class MainView : UserControl
             }
             else
             {
-                if (payload.Data is null || payload.Data.Length == 0)
-                    throw new InvalidDataException("The exported resource is empty.");
+                if (payload.Data is null)
+                    throw new InvalidDataException("The exported resource data is unavailable.");
                 await output.WriteAsync(payload.Data);
             }
             await output.FlushAsync();
