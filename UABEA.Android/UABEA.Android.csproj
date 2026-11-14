@@ -5,7 +5,10 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <ApplicationId>com.g5j.uabeamobile</ApplicationId>
-    <ApplicationTitle>UABEA Mobile</ApplicationTitle>
+    <ApplicationTitle>UABE Avalonia</ApplicationTitle>
+    <ApplicationDisplayVersion>0.2.0</ApplicationDisplayVersion>
+    <Version>0.2.0</Version>
+    <AndroidIcon>Resources/uabeavalonia64.png</AndroidIcon>
     <ApplicationVersion>1</ApplicationVersion>
     <ApplicationDisplayVersion>0.1.0</ApplicationDisplayVersion>
     <AndroidMinSdkVersion>31</AndroidMinSdkVersion>
