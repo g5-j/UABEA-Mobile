@@ -810,8 +810,10 @@ public sealed class MainView : UserControl
                         payload = await Task.Run(() => BuildAssetExportPayload(manager, instance, asset, typeId));
                     }
 
-                    string sourceName = SanitizeExportName(Path.GetFileNameWithoutExtension(instance.name));
-                    string baseName = $"{SanitizeExportName(name)}-{sourceName}-{asset.PathId}{payload.Extension}";
+                    // Export using the Unity asset's own name only.
+                    // Keep PathID/source names out of the filename; disambiguate
+                    // collisions below so assets with identical names are preserved.
+                    string baseName = $"{SanitizeExportName(name)}{payload.Extension}";
                     string entryName = baseName;
                     int duplicate = 2;
                     while (!usedNames.Add(entryName))
@@ -872,10 +874,8 @@ public sealed class MainView : UserControl
             var payload = await Task.Run(() => BuildAssetExportPayload(manager, instance, asset, typeId));
             SetLoading(false);
 
-            string sourceName = Path.GetFileNameWithoutExtension(instance.name);
-            string safeName = SanitizeExportName(assetName);
-            string safeSource = SanitizeExportName(sourceName);
-            string suggestedName = $"{safeName}-{safeSource}-{asset.PathId}";
+            // Use the original Unity asset name without source filename or PathID.
+            string suggestedName = SanitizeExportName(assetName);
             string normalizedExtension = NormalizeExportExtension(payload.Extension);
             var destination = await TopLevel.GetTopLevel(this)!.StorageProvider.SaveFilePickerAsync(
                 new FilePickerSaveOptions
