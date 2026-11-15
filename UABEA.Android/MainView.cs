@@ -1381,7 +1381,7 @@ public sealed class MainView : UserControl
             {
                 var template = _assetsManager.GetTemplateBaseField(instance, asset)
                     ?? throw new InvalidDataException("AudioClip type information could not be read.");
-                var audioTemplate = GetChildField(template, "m_AudioData");
+                var audioTemplate = template.Children.FirstOrDefault(x => x.Name == "m_AudioData");
                 if (audioTemplate is null || audioTemplate.Children.Count == 0)
                     throw new NotSupportedException("This AudioClip layout has no embedded audio-data array.");
                 audioTemplate.Children[0].ValueType = AssetValueType.ByteArray;
