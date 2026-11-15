@@ -1527,8 +1527,9 @@ public sealed class MainView : UserControl
 
         int frequencyCode = sampleRate switch
         {
-            8000 => 1, 11000 => 2, 11025 => 3, 16000 => 4,
-            22050 => 5, 24000 => 6, 32000 => 7, 44100 => 8, 48000 => 9,
+            8000 => 1, 11000 => 2, 12000 => 3, 16000 => 4,
+            22050 => 5, 24000 => 6, 32000 => 7, 44100 => 8,
+            48000 => 9, 96000 => 10,
             _ => 0
         };
         bool hasFrequencyChunk = frequencyCode == 0;
