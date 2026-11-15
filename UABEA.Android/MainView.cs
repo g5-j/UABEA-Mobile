@@ -1257,6 +1257,309 @@ public sealed class MainView : UserControl
         }
     }
 
+    private async Task ImportAudioClipAsync(AssetFileInfo asset)
+    {
+        if (_currentAssets is null || _assetsManager is null || _isBusy) return;
+        if (_currentBundle is not null)
+        {
+            _status.Text = "Audio import currently requires a standalone .assets file. Bundle resource replacement is not enabled yet; the bundle was not changed.";
+            return;
+        }
+
+        var topLevel = TopLevel.GetTopLevel(this);
+        if (topLevel is null) return;
+        var selected = await topLevel.StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
+        {
+            Title = "Choose replacement audio (WAV / OGG)",
+            AllowMultiple = false,
+            FileTypeFilter = new[]
+            {
+                new FilePickerFileType("WAV / OGG audio") { Patterns = new[] { "*.wav", "*.ogg" } }
+            }
+        });
+        if (selected.Count == 0) return;
+
+        var instance = _currentAssets;
+        _isBusy = true;
+        SetLoading(true, "Converting audio to Unity PCM...");
+        string? temporaryAssets = null;
+        try
+        {
+            byte[] sourceBytes;
+            await using (var input = await selected[0].OpenReadAsync())
+            using (var memory = new MemoryStream())
+            {
+                await input.CopyToAsync(memory);
+                sourceBytes = memory.ToArray();
+            }
+            if (sourceBytes.Length == 0) throw new InvalidDataException("The selected audio file is empty.");
+
+            string extension = Path.GetExtension(selected[0].Name).ToLowerInvariant();
+            var decoded = await Task.Run(() =>
+            {
+                if (extension == ".wav") return DecodeWaveToPcm16(sourceBytes);
+                if (extension == ".ogg") return DecodeOggToPcm16(sourceBytes);
+                throw new NotSupportedException("Only WAV and OGG files are supported.");
+            });
+            byte[] fsbData = BuildFsb5Pcm16(decoded.Pcm16, decoded.Channels, decoded.SampleRate);
+
+            if (!FsbLoader.TryLoadFsbFromByteArray(fsbData, out FmodSoundBank? validationBank) ||
+                validationBank?.Samples is null || validationBank.Samples.Count != 1)
+                throw new InvalidDataException("The generated FMOD FSB5 bank failed validation.");
+            validationBank.Samples[0].RebuildAsStandardFileFormat(out var validationAudio, out _);
+            if (validationAudio is null || validationAudio.Length == 0)
+                throw new InvalidDataException("The generated FSB5 sample could not be decoded.");
+
+            var field = await Task.Run(() => _assetsManager.GetBaseField(instance, asset)
+                ?? throw new InvalidDataException("AudioClip data could not be read."));
+            var sourceField = GetChildField(field, "m_Resource.m_Source")
+                ?? throw new NotSupportedException("This AudioClip layout has no external resource source field.");
+            var offsetField = GetChildField(field, "m_Resource.m_Offset")
+                ?? throw new NotSupportedException("This AudioClip layout has no resource offset field.");
+            var sizeField = GetChildField(field, "m_Resource.m_Size")
+                ?? throw new NotSupportedException("This AudioClip layout has no resource size field.");
+
+            string currentSource = ReadFieldString(sourceField);
+            string suggestedResourceName = string.IsNullOrWhiteSpace(currentSource)
+                ? Path.GetFileNameWithoutExtension(instance.name) + ".resource"
+                : Path.GetFileName(currentSource.Replace('/', Path.DirectorySeparatorChar));
+            var resourceDestination = await topLevel.StorageProvider.SaveFilePickerAsync(new FilePickerSaveOptions
+            {
+                Title = "Save the new AudioClip resource",
+                SuggestedFileName = suggestedResourceName,
+                FileTypeChoices = new[] { new FilePickerFileType("Unity resource") { Patterns = new[] { "*.resource" } } }
+            });
+            if (resourceDestination is null) return;
+
+            string assetExtension = Path.GetExtension(instance.name);
+            if (string.IsNullOrWhiteSpace(assetExtension)) assetExtension = ".assets";
+            var assetDestination = await topLevel.StorageProvider.SaveFilePickerAsync(new FilePickerSaveOptions
+            {
+                Title = "Save modified Unity assets file",
+                SuggestedFileName = Path.GetFileNameWithoutExtension(instance.name) + "-modified" + assetExtension,
+                FileTypeChoices = new[]
+                {
+                    new FilePickerFileType("Modified Unity assets") { Patterns = new[] { "*.assets", "*.asset" } }
+                }
+            });
+            if (assetDestination is null) return;
+
+            sourceField.AsString = Path.GetFileName(resourceDestination.Name);
+            offsetField.AsULong = 0;
+            sizeField.AsULong = (ulong)fsbData.Length;
+            SetOptionalIntField(field, "m_Channels", decoded.Channels);
+            SetOptionalIntField(field, "m_Frequency", decoded.SampleRate);
+            SetOptionalIntField(field, "m_BitsPerSample", 16);
+            SetOptionalFloatField(field, "m_Length",
+                (float)((double)decoded.Pcm16.Length / (decoded.Channels * 2.0 * decoded.SampleRate)));
+            SetOptionalIntField(field, "m_CompressionFormat", 0);
+            var trackerField = GetChildField(field, "m_IsTrackerFormat");
+            if (trackerField is not null) trackerField.AsBool = false;
+
+            byte[] serialized = field.WriteToByteArray(instance.file.Reader.BigEndian);
+            var replacer = new AssetsReplacerFromMemory(asset.PathId,
+                asset.GetTypeId(instance.file), instance.file.GetScriptIndex(asset), serialized);
+            temporaryAssets = Path.Combine(Path.GetTempPath(), "uabea-audio-" + Guid.NewGuid().ToString("N") + ".assets");
+            await Task.Run(() =>
+            {
+                using var output = File.Create(temporaryAssets);
+                using var writer = new AssetsFileWriter(output);
+                instance.file.Write(writer, 0, new List<AssetsReplacer> { replacer });
+            });
+
+            await using (var resourceOutput = await resourceDestination.OpenWriteAsync())
+            {
+                await resourceOutput.WriteAsync(fsbData);
+                await resourceOutput.FlushAsync();
+            }
+            await using (var assetOutput = await assetDestination.OpenWriteAsync())
+            await using (var assetInput = File.OpenRead(temporaryAssets))
+            {
+                await assetInput.CopyToAsync(assetOutput);
+                await assetOutput.FlushAsync();
+            }
+
+            _status.Text = $"AudioClip import saved\nEncoding: PCM16 / FSB5\nChannels: {decoded.Channels}\nSample rate: {decoded.SampleRate} Hz\nResource: {resourceDestination.Name}\nAssets: {assetDestination.Name}\nKeep both files together and reopen the modified assets file to verify it.";
+        }
+        catch (Exception ex)
+        {
+            _status.Text = "Audio import failed:\n" + ex.Message;
+        }
+        finally
+        {
+            if (!string.IsNullOrWhiteSpace(temporaryAssets))
+            {
+                try { File.Delete(temporaryAssets); } catch { }
+            }
+            _isBusy = false;
+            SetLoading(false);
+        }
+    }
+
+    private static void SetOptionalIntField(AssetTypeValueField root, string name, int value)
+    {
+        var field = GetChildField(root, name);
+        if (field is not null) field.AsInt = value;
+    }
+
+    private static void SetOptionalFloatField(AssetTypeValueField root, string name, float value)
+    {
+        var field = GetChildField(root, name);
+        if (field is not null) field.AsFloat = value;
+    }
+
+    private static (byte[] Pcm16, int Channels, int SampleRate) DecodeWaveToPcm16(byte[] wave)
+    {
+        if (wave.Length < 12 || Encoding.ASCII.GetString(wave, 0, 4) != "RIFF" ||
+            Encoding.ASCII.GetString(wave, 8, 4) != "WAVE")
+            throw new InvalidDataException("The selected WAV file has no valid RIFF/WAVE header.");
+
+        ushort format = 0, bits = 0, blockAlign = 0;
+        int channels = 0, sampleRate = 0, dataOffset = -1, dataSize = 0;
+        int position = 12;
+        while (position <= wave.Length - 8)
+        {
+            string chunk = Encoding.ASCII.GetString(wave, position, 4);
+            uint length = BitConverter.ToUInt32(wave, position + 4);
+            long end = (long)position + 8 + length;
+            if (end > wave.Length) throw new InvalidDataException("The WAV file contains a truncated chunk.");
+            int start = position + 8;
+            if (chunk == "fmt ")
+            {
+                if (length < 16) throw new InvalidDataException("The WAV format chunk is incomplete.");
+                format = BitConverter.ToUInt16(wave, start);
+                channels = BitConverter.ToUInt16(wave, start + 2);
+                sampleRate = checked((int)BitConverter.ToUInt32(wave, start + 4));
+                blockAlign = BitConverter.ToUInt16(wave, start + 12);
+                bits = BitConverter.ToUInt16(wave, start + 14);
+            }
+            else if (chunk == "data")
+            {
+                dataOffset = start;
+                dataSize = checked((int)length);
+            }
+            position = checked((int)(end + (length & 1)));
+        }
+
+        if (channels is < 1 or > 2) throw new NotSupportedException("AudioClip import currently supports mono or stereo audio.");
+        if (sampleRate < 8000 || sampleRate > 192000) throw new InvalidDataException("The WAV sample rate is outside the supported range.");
+        if (dataOffset < 0 || dataSize <= 0) throw new InvalidDataException("The WAV file has no audio data.");
+        if (blockAlign == 0 || dataSize % blockAlign != 0) throw new InvalidDataException("The WAV data is not aligned to complete sample frames.");
+        if (format != 1 && format != 3) throw new NotSupportedException("Only PCM and IEEE-float WAV files are supported.");
+        if (format == 1 && bits is not (8 or 16 or 24 or 32))
+            throw new NotSupportedException("PCM WAV must use 8, 16, 24, or 32 bits per sample.");
+        if (format == 3 && bits is not (32 or 64))
+            throw new NotSupportedException("IEEE-float WAV must use 32- or 64-bit samples.");
+
+        int bytesPerSample = bits / 8;
+        if (blockAlign != channels * bytesPerSample)
+            throw new InvalidDataException("The WAV block alignment does not match its channel/sample format.");
+        int sampleCount = dataSize / bytesPerSample;
+        byte[] pcm = new byte[checked(sampleCount * 2)];
+        for (int i = 0; i < sampleCount; i++)
+        {
+            int offset = dataOffset + i * bytesPerSample;
+            double value;
+            if (format == 3)
+                value = bits == 32 ? BitConverter.ToSingle(wave, offset) : BitConverter.ToDouble(wave, offset);
+            else
+            {
+                value = bits switch
+                {
+                    8 => (wave[offset] - 128) / 128.0,
+                    16 => BitConverter.ToInt16(wave, offset) / 32768.0,
+                    24 => ReadPcm24(wave, offset) / 8388608.0,
+                    32 => BitConverter.ToInt32(wave, offset) / 2147483648.0,
+                    _ => 0
+                };
+            }
+            if (double.IsNaN(value) || double.IsInfinity(value)) value = 0;
+            value = Math.Clamp(value, -1.0, 1.0);
+            short sample = (short)Math.Clamp((int)Math.Round(value * (value < 0 ? 32768.0 : 32767.0)), short.MinValue, short.MaxValue);
+            BitConverter.GetBytes(sample).CopyTo(pcm, i * 2);
+        }
+        return (pcm, channels, sampleRate);
+    }
+
+    private static int ReadPcm24(byte[] bytes, int offset)
+    {
+        int value = bytes[offset] | (bytes[offset + 1] << 8) | (bytes[offset + 2] << 16);
+        return (value & 0x800000) != 0 ? value | unchecked((int)0xFF000000) : value;
+    }
+
+    private static (byte[] Pcm16, int Channels, int SampleRate) DecodeOggToPcm16(byte[] ogg)
+    {
+        using var stream = new MemoryStream(ogg, writable: false);
+        using var reader = new VorbisReader(stream, closeOnDispose: false);
+        int channels = reader.Channels;
+        int sampleRate = reader.SampleRate;
+        if (channels is < 1 or > 2) throw new NotSupportedException("AudioClip import currently supports mono or stereo audio.");
+        if (sampleRate < 8000 || sampleRate > 192000) throw new InvalidDataException("The OGG sample rate is outside the supported range.");
+
+        using var pcm = new MemoryStream();
+        float[] samples = new float[16384];
+        int read;
+        while ((read = reader.ReadSamples(samples, 0, samples.Length)) > 0)
+        {
+            byte[] chunk = new byte[read * 2];
+            for (int i = 0; i < read; i++)
+            {
+                double value = float.IsFinite(samples[i]) ? Math.Clamp(samples[i], -1f, 1f) : 0;
+                short sample = (short)Math.Clamp((int)Math.Round(value * (value < 0 ? 32768.0 : 32767.0)), short.MinValue, short.MaxValue);
+                chunk[i * 2] = (byte)sample;
+                chunk[i * 2 + 1] = (byte)(sample >> 8);
+            }
+            pcm.Write(chunk, 0, chunk.Length);
+            if (pcm.Length > 512L * 1024 * 1024)
+                throw new InvalidDataException("Decoded audio exceeds the 512 MB safety limit.");
+        }
+        if (pcm.Length == 0) throw new InvalidDataException("The OGG decoder returned no audio samples.");
+        return (pcm.ToArray(), channels, sampleRate);
+    }
+
+    private static byte[] BuildFsb5Pcm16(byte[] pcm16, int channels, int sampleRate)
+    {
+        if (channels is < 1 or > 2 || pcm16.Length == 0 || pcm16.Length % (channels * 2) != 0)
+            throw new InvalidDataException("PCM audio data is not valid mono/stereo 16-bit audio.");
+        long frames = pcm16.Length / (channels * 2);
+        if (frames > 0x3FFFFFFF) throw new InvalidDataException("The audio clip is too long for a single FSB5 sample.");
+
+        int frequencyCode = sampleRate switch
+        {
+            8000 => 1, 11000 => 2, 11025 => 3, 16000 => 4,
+            22050 => 5, 24000 => 6, 32000 => 7, 44100 => 8, 48000 => 9,
+            _ => 0
+        };
+        bool hasFrequencyChunk = frequencyCode == 0;
+        using var output = new MemoryStream(checked(60 + (hasFrequencyChunk ? 16 : 8) + pcm16.Length));
+        using var writer = new BinaryWriter(output, Encoding.UTF8, leaveOpen: true);
+        writer.Write(Encoding.ASCII.GetBytes("FSB5"));
+        writer.Write(1);
+        writer.Write(1);
+        writer.Write(hasFrequencyChunk ? 16 : 8);
+        writer.Write(0);
+        writer.Write(pcm16.Length);
+        writer.Write(2);
+        writer.Write(new byte[8]);
+        writer.Write(new byte[16]);
+        writer.Write(new byte[8]);
+
+        ulong sampleHeader = ((ulong)frames << 34) |
+            ((ulong)(channels - 1) << 5) |
+            ((ulong)frequencyCode << 1);
+        if (hasFrequencyChunk) sampleHeader |= 1UL;
+        writer.Write(sampleHeader);
+        if (hasFrequencyChunk)
+        {
+            uint frequencyChunk = (4u << 1) | (2u << 25);
+            writer.Write(frequencyChunk);
+            writer.Write(sampleRate);
+        }
+        writer.Write(pcm16);
+        writer.Flush();
+        return output.ToArray();
+    }
+
     private async Task ImportTextAssetAsync(AssetFileInfo asset)
     {
         if (_currentAssets is null || _assetsManager is null || _isBusy) return;
