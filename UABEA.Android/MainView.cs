@@ -5992,7 +5992,7 @@ public sealed class MainView : UserControl
             };
             menu.Items.Add(item);
         }
-        menu.PlacementTarget = placementTarget ?? _floatingActionButton ?? this;
+        menu.PlacementTarget = placementTarget ?? (Control?)_floatingActionButton ?? this;
         menu.Open();
     }
 
