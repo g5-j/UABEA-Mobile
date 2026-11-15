@@ -1948,6 +1948,58 @@ public sealed class MainView : UserControl
         finally { _isBusy = false; SetLoading(false); }
     }
 
+    private async Task ImportStructuredJsonAssetAsync(AssetFileInfo asset, string assetTypeName)
+    {
+        if (_currentAssets is null || _assetsManager is null || _isBusy) return;
+        var topLevel = TopLevel.GetTopLevel(this);
+        if (topLevel is null) return;
+
+        var selected = await topLevel.StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
+        {
+            Title = $"Choose {assetTypeName} type-tree JSON",
+            AllowMultiple = false,
+            FileTypeFilter = new[]
+            {
+                new FilePickerFileType("UABEA JSON type-tree dump") { Patterns = new[] { "*.json" } }
+            }
+        });
+        if (selected.Count == 0) return;
+
+        var instance = _currentAssets;
+        _isBusy = true;
+        SetLoading(true, $"Importing {assetTypeName} JSON...");
+        try
+        {
+            string json;
+            await using (var input = await selected[0].OpenReadAsync())
+            using (var memory = new MemoryStream())
+            {
+                await input.CopyToAsync(memory);
+                if (memory.Length == 0) throw new InvalidDataException("The selected JSON file is empty.");
+                if (memory.Length > 128L * 1024 * 1024)
+                    throw new InvalidDataException("The JSON file exceeds the 128 MB safety limit.");
+                json = Encoding.UTF8.GetString(memory.ToArray());
+            }
+
+            var template = _assetsManager.GetTemplateBaseField(instance, asset)
+                ?? throw new InvalidDataException($"{assetTypeName} type information could not be read.");
+
+            byte[] serialized = await Task.Run(() =>
+                UnityJsonAssetImporter.Import(template, json, instance.file.Reader.BigEndian));
+
+            await SaveAssetReplacementAsync(asset, serialized, $"{assetTypeName} JSON import");
+        }
+        catch (Exception ex)
+        {
+            _status.Text = $"{assetTypeName} JSON import failed:\\n{ex.Message}";
+        }
+        finally
+        {
+            _isBusy = false;
+            SetLoading(false);
+        }
+    }
+
     private async Task SaveAssetReplacementAsync(AssetFileInfo asset, byte[] serializedData, string operation)
     {
         var topLevel = TopLevel.GetTopLevel(this) ?? throw new InvalidOperationException("Storage provider is unavailable.");
@@ -2583,6 +2635,36 @@ public sealed class MainView : UserControl
             };
             importCubemapButton.Click += async (_, _) => await ImportCubemapAsync(asset);
             _items.Children.Add(importCubemapButton);
+        }
+
+        else if (typeId == (int)AssetClassID.Material ||
+                 typeId == (int)AssetClassID.GameObject ||
+                 typeId == 1001 ||
+                 typeId == (int)AssetClassID.Mesh)
+        {
+            string structuredType = typeId switch
+            {
+                (int)AssetClassID.Material => "Material",
+                (int)AssetClassID.GameObject => "GameObject",
+                1001 => "PrefabInstance",
+                (int)AssetClassID.Mesh => "Mesh",
+                _ => "Unity asset"
+            };
+            var importStructuredButton = new Button
+            {
+                Content = CreateIconLabel(MaterialIconKind.FileCode, $"Import {structuredType} JSON", OnPrimaryBrush, 15),
+                Background = SurfaceHighBrush,
+                Foreground = TextBrush,
+                BorderBrush = OutlineBrush,
+                BorderThickness = new Thickness(1),
+                CornerRadius = new CornerRadius(12),
+                MinHeight = 46,
+                HorizontalAlignment = HorizontalAlignment.Stretch
+            };
+            ToolTip.SetTip(importStructuredButton,
+                "Imports a complete UABEA type-tree JSON dump. Existing references are preserved as supplied in the JSON; this does not create new Unity assets.");
+            importStructuredButton.Click += async (_, _) => await ImportStructuredJsonAssetAsync(asset, structuredType);
+            _items.Children.Add(importStructuredButton);
         }
 
         if (typeId == (int)AssetClassID.TextAsset)
