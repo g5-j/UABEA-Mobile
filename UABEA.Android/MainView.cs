@@ -1734,7 +1734,7 @@ public sealed class MainView : UserControl
         finally { _isBusy = false; SetLoading(false); }
     }
 
-    private async Task ImportSpriteImageAsync(AssetFileInfo spriteAsset)
+    private async Task ImportSpriteImageAsync(AssetFileInfo spriteAsset, bool addNew = false)
     {
         if (_currentAssets is null || _assetsManager is null || _isBusy) return;
         var topLevel = TopLevel.GetTopLevel(this);
@@ -1742,7 +1742,7 @@ public sealed class MainView : UserControl
 
         var selected = await topLevel.StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
         {
-            Title = "Choose replacement Sprite PNG",
+            Title = addNew ? "Choose PNG for new Sprite" : "Choose replacement Sprite PNG",
             AllowMultiple = false,
             FileTypeFilter = new[]
             {
@@ -1754,7 +1754,7 @@ public sealed class MainView : UserControl
         var instance = _currentAssets;
         var manager = _assetsManager;
         _isBusy = true;
-        SetLoading(true, "Replacing Sprite atlas rectangle...");
+        SetLoading(true, addNew ? "Preparing new Sprite and Texture2D..." : "Replacing Sprite atlas rectangle...");
         try
         {
             byte[] encoded;
@@ -1766,6 +1766,8 @@ public sealed class MainView : UserControl
             }
             if (encoded.Length == 0) throw new InvalidDataException("The selected PNG is empty.");
 
+            long newTexturePathId = addNew ? GetNextAssetPathId(instance) : 0;
+            long newSpritePathId = addNew ? checked(newTexturePathId + 1) : 0;
             var result = await Task.Run(() =>
             {
                 var sprite = manager.GetBaseField(instance, spriteAsset)
@@ -1881,11 +1883,26 @@ public sealed class MainView : UserControl
                 replacementTexture.pictureData = rgba;
                 replacementTexture.m_StreamData = new TextureFile.StreamingInfo { offset = 0, size = 0, path = "" };
                 replacementTexture.WriteTo(replacementField);
-                return (textureAsset, replacementField.WriteToByteArray(reader.BigEndian));
+                byte[] spriteData = Array.Empty<byte>();
+                if (addNew)
+                {
+                    var pathField = GetChildField(pointer, "m_PathID") ?? throw new InvalidDataException("Sprite texture Path ID is missing.");
+                    if (pathField.Value?.ValueType != AssetValueType.Int64) throw new NotSupportedException("Unsupported Sprite texture Path ID type.");
+                    pathField.AsLong = newTexturePathId;
+                    var fileField = GetChildField(pointer, "m_FileID");
+                    if (fileField?.Value?.ValueType == AssetValueType.Int32) fileField.AsInt = 0;
+                    spriteData = sprite.WriteToByteArray(reader.BigEndian);
+                }
+                return (textureAsset, replacementField.WriteToByteArray(reader.BigEndian), SpriteData: spriteData);
             });
 
-            await SaveAssetReplacementAsync(result.textureAsset, result.Item2, "Sprite atlas import");
-            _status.Text = "Sprite PNG imported into its existing atlas rectangle. Other atlas regions were preserved.";
+            if (addNew)
+                await SaveNewAssetPairAsync(result.textureAsset, result.Item2, spriteAsset, result.SpriteData, newTexturePathId, newSpritePathId);
+            else
+            {
+                await SaveAssetReplacementAsync(result.textureAsset, result.Item2, "Sprite atlas import");
+                _status.Text = "Sprite PNG imported into its existing atlas rectangle. Other atlas regions were preserved.";
+            }
         }
         catch (Exception ex) { _status.Text = "Sprite import failed:\n" + ex.Message; }
         finally { _isBusy = false; SetLoading(false); }
@@ -2162,6 +2179,56 @@ public sealed class MainView : UserControl
         _items.Children.Add(button);
     }
 
+    private async Task SaveNewAssetPairAsync(AssetFileInfo textureTemplate, byte[] textureData, AssetFileInfo spriteTemplate, byte[] spriteData, long texturePathId, long spritePathId)
+    {
+        var top = TopLevel.GetTopLevel(this) ?? throw new InvalidOperationException("Storage provider unavailable.");
+        var instance = _currentAssets ?? throw new InvalidOperationException("No assets file is open.");
+        var bundle = _currentBundle;
+        string source = bundle is null ? instance.name : _currentFileName;
+        string ext = Path.GetExtension(source);
+        if (string.IsNullOrWhiteSpace(ext)) ext = bundle is null ? ".assets" : ".bundle";
+        var destination = await top.StorageProvider.SaveFilePickerAsync(new FilePickerSaveOptions
+        {
+            Title = "Save file with new Sprite and Texture2D",
+            SuggestedFileName = Path.GetFileNameWithoutExtension(source) + "-with-new-sprite" + ext,
+            FileTypeChoices = new[] { new FilePickerFileType("Modified Unity file") { Patterns = new[] { "*" + ext } } }
+        });
+        if (destination is null) return;
+        var replacers = new List<AssetsReplacer>
+        {
+            new AssetsReplacerFromMemory(texturePathId, textureTemplate.GetTypeId(instance.file), instance.file.GetScriptIndex(textureTemplate), textureData),
+            new AssetsReplacerFromMemory(spritePathId, spriteTemplate.GetTypeId(instance.file), instance.file.GetScriptIndex(spriteTemplate), spriteData)
+        };
+        string temp = Path.Combine(Path.GetTempPath(), "uabea-new-sprite-" + Guid.NewGuid().ToString("N") + ext);
+        try
+        {
+            await Task.Run(() =>
+            {
+                if (bundle is null)
+                {
+                    using var output = File.Create(temp);
+                    using var writer = new AssetsFileWriter(output);
+                    instance.file.Write(writer, 0, replacers);
+                }
+                else
+                {
+                    string entry = ResolveBundleAssetsEntryName(bundle, instance);
+                    using var data = new MemoryStream();
+                    using (var writer = new AssetsFileWriter(data)) instance.file.Write(writer, 0, replacers);
+                    var br = new BundleReplacerFromMemory(entry, entry, true, data.ToArray(), -1);
+                    using var output = File.Create(temp);
+                    using var writer = new AssetsFileWriter(output);
+                    bundle.file.Write(writer, new List<BundleReplacer> { br });
+                }
+            });
+            await using var output = await destination.OpenWriteAsync();
+            await using var input = File.OpenRead(temp);
+            await input.CopyToAsync(output);
+            await output.FlushAsync();
+            _status.Text = "New Sprite and Texture2D saved. Texture2D Path ID: " + texturePathId + "; Sprite Path ID: " + spritePathId + ". Reopen the file to verify.";
+        }
+        finally { try { File.Delete(temp); } catch { } }
+    }
     private async Task SaveNewAssetDataAsync(AssetFileInfo sourceAsset, byte[] serializedData, string operation)
     {
         var topLevel = TopLevel.GetTopLevel(this)
@@ -2878,6 +2945,7 @@ public sealed class MainView : UserControl
             ToolTip.SetTip(importSpriteButton, "Replaces only this Sprite's rectangle in its Texture2D atlas.");
             importSpriteButton.Click += async (_, _) => await ImportSpriteImageAsync(asset);
             _items.Children.Add(importSpriteButton);
+            AddNewAssetImportButton("Import new Sprite (PNG + Texture2D)", () => ImportSpriteImageAsync(asset, true));
         }
 
         else if (typeId == (int)AssetClassID.Cubemap)
