@@ -169,7 +169,7 @@ internal static class UnityObjMeshImporter
     {
         if (string.IsNullOrWhiteSpace(text))
             throw new InvalidDataException("The selected OBJ file is empty.");
-        text = text.TrimStart('\\uFEFF');
+        text = text.TrimStart('\uFEFF');
 
         var result = new ParsedObj();
         result.Groups.Add(new ObjGroup());
