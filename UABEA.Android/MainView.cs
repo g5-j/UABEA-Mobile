@@ -96,7 +96,9 @@ public sealed class MainView : UserControl
     private string? _audioTempPath;
     private readonly List<string> _sessionResourcePaths = new();
     private bool _sessionResourceWasExplicitlySelected;
-    private readonly Dictionary<long, AssetsReplacer> _pendingAssetChanges = new();
+    private readonly Dictionary<AssetID, AssetsReplacer> _pendingAssetChanges = new();
+    private readonly Dictionary<AssetID, AssetsFileInstance> _pendingAssetInstances = new();
+    private readonly HashSet<AssetID> _savedAssetChanges = new();
     private readonly HashSet<long> _selectedAssetIds = new();
     private readonly HashSet<long> _pendingDeleteIds = new();
     private bool _selectionMode;
@@ -105,7 +107,7 @@ public sealed class MainView : UserControl
     private Button? _floatingActionButton;
     private Border? _floatingMenu;
     private System.Threading.CancellationTokenSource? _exportCancellation;
-    private readonly Dictionary<long, byte[]> _pendingAssetData = new();
+    private readonly Dictionary<AssetID, byte[]> _pendingAssetData = new();
     private Border? _saveChoiceOverlay;
     private TaskCompletionSource<string?>? _saveChoiceCompletion;
 
@@ -450,6 +452,8 @@ public sealed class MainView : UserControl
         _sessionResourcePaths.Clear();
         _sessionResourceWasExplicitlySelected = false;
         _pendingAssetChanges.Clear();
+        _pendingAssetInstances.Clear();
+        _savedAssetChanges.Clear();
         _pendingAssetData.Clear();
         _pendingDeleteIds.Clear();
         _selectedAssetIds.Clear();
@@ -2159,7 +2163,7 @@ public sealed class MainView : UserControl
             for (int i = 0; i < count; i++)
             {
                 long id = checked(candidate + i);
-                if (_pendingAssetChanges.ContainsKey(id) || instance.file.AssetInfos.Any(x => x.PathId == id))
+                if (_pendingAssetChanges.ContainsKey(new AssetID(instance.path, id)) || instance.file.AssetInfos.Any(x => x.PathId == id))
                 {
                     available = false;
                     candidate = checked(id + 1);
@@ -2190,19 +2194,22 @@ public sealed class MainView : UserControl
 
     private void RegisterPendingAssetChange(AssetsFileInstance instance, AssetsReplacer replacer)
     {
-        long pathId = replacer.GetPathID();
-        _pendingAssetChanges[pathId] = replacer;
+        // Same identity model as UABEA's AssetWorkspace: source file + Path ID.
+        var assetId = new AssetID(instance.path, replacer.GetPathID());
+        _pendingAssetChanges[assetId] = replacer;
+        _pendingAssetInstances[assetId] = instance;
+        _savedAssetChanges.Remove(assetId);
 
         if (replacer.GetType().Name.Contains("Remover", StringComparison.Ordinal))
         {
-            _pendingAssetData.Remove(pathId);
+            _pendingAssetData.Remove(assetId);
             return;
         }
 
         using var previewStream = new MemoryStream();
         using (var previewWriter = new AssetsFileWriter(previewStream))
             replacer.Write(previewWriter);
-        _pendingAssetData[pathId] = previewStream.ToArray();
+        _pendingAssetData[assetId] = previewStream.ToArray();
     }
 
     private AssetTypeValueField? GetAssetBaseField(AssetsFileInstance instance, AssetFileInfo asset, AssetsManager? manager = null)
@@ -2210,7 +2217,7 @@ public sealed class MainView : UserControl
         var activeManager = manager ?? _assetsManager;
         if (activeManager is null) return null;
 
-        if (_pendingAssetData.TryGetValue(asset.PathId, out var replacementData))
+        if (_pendingAssetData.TryGetValue(new AssetID(instance.path, asset.PathId), out var replacementData))
         {
             var template = activeManager.GetTemplateBaseField(instance, asset);
             if (template is not null)
@@ -2296,13 +2303,30 @@ public sealed class MainView : UserControl
         }
     }
 
+    private List<AssetsReplacer> GetPendingAssetReplacers(AssetsFileInstance instance)
+    {
+        return _pendingAssetChanges
+            .Where(pair => _pendingAssetInstances.TryGetValue(pair.Key, out var owner) &&
+                ReferenceEquals(owner, instance))
+            .Select(pair => pair.Value)
+            .ToList();
+    }
+
+    private List<AssetID> GetPendingAssetIds(AssetsFileInstance instance)
+    {
+        return _pendingAssetChanges.Keys
+            .Where(id => _pendingAssetInstances.TryGetValue(id, out var owner) &&
+                ReferenceEquals(owner, instance))
+            .ToList();
+    }
+
     private async Task SavePendingAssetsAsync()
     {
-        if (_currentAssets is null || _pendingAssetChanges.Count == 0 || _isBusy) return;
+        if (_currentAssets is null || !_hasUnsavedChanges || _isBusy) return;
         var top = TopLevel.GetTopLevel(this);
         if (top is null) return;
 
-        var instance = _currentAssets;
+        var activeInstance = _currentAssets;
         var bundle = _currentBundle;
         bool saveWholeBundle = false;
         if (bundle is not null)
@@ -2312,9 +2336,16 @@ public sealed class MainView : UserControl
             saveWholeBundle = choice == "bundle";
         }
 
+        // UABEA serializes each changed assets file first, then its bundle
+        // workspace replaces the corresponding serialized entries.
+        var changedFiles = saveWholeBundle
+            ? _pendingAssetInstances.Values.Distinct().ToList()
+            : new List<AssetsFileInstance> { activeInstance };
+        if (changedFiles.Count == 0) return;
+
         string originalName = Path.GetFileName(saveWholeBundle
             ? _currentFileName
-            : instance.name ?? "sharedassets.assets");
+            : activeInstance.name ?? "sharedassets.assets");
         if (string.IsNullOrWhiteSpace(originalName))
             originalName = saveWholeBundle ? "modified.unity3d" : "sharedassets.assets";
         string extension = Path.GetExtension(originalName);
@@ -2334,34 +2365,52 @@ public sealed class MainView : UserControl
 
         string temp = Path.Combine(Path.GetTempPath(), "uabea-save-" + Guid.NewGuid().ToString("N") +
             (saveWholeBundle ? ".unity3d" : ".assets"));
+        var savedAssetIds = changedFiles.SelectMany(GetPendingAssetIds).ToList();
         try
         {
             _isBusy = true;
-            SetLoading(true, saveWholeBundle ? "Building modified Unity bundle..." : "Building modified assets file...");
-            var replacers = _pendingAssetChanges.Values.ToList();
+            SetLoading(true, saveWholeBundle
+                ? "Preparing changed assets and rebuilding the Unity bundle..."
+                : "Writing the modified assets file...");
+
             await Task.Run(() =>
             {
-                byte[] modifiedAssets;
-                using (var assetsStream = new MemoryStream())
-                {
-                    using (var assetsWriter = new AssetsFileWriter(assetsStream))
-                        instance.file.Write(assetsWriter, 0, replacers);
-                    modifiedAssets = assetsStream.ToArray();
-                }
-
                 if (saveWholeBundle)
                 {
-                    if (bundle is null) throw new InvalidOperationException("The Unity bundle is no longer available.");
-                    string entryName = ResolveBundleAssetsEntryName(bundle, instance);
-                    var bundleReplacer = new BundleReplacerFromMemory(
-                        entryName, entryName, true, modifiedAssets, -1);
+                    if (bundle is null)
+                        throw new InvalidOperationException("The Unity bundle is no longer available.");
+
+                    var bundleReplacers = new List<BundleReplacer>();
+                    foreach (var changedFile in changedFiles)
+                    {
+                        var replacers = GetPendingAssetReplacers(changedFile);
+                        if (replacers.Count == 0) continue;
+
+                        using var changedAssetsStream = new MemoryStream();
+                        using (var assetsWriter = new AssetsFileWriter(changedAssetsStream))
+                            changedFile.file.Write(assetsWriter, 0, replacers);
+
+                        string entryName = ResolveBundleAssetsEntryName(bundle, changedFile);
+                        bundleReplacers.Add(new BundleReplacerFromMemory(
+                            entryName, entryName, true, changedAssetsStream.ToArray(), -1));
+                    }
+
+                    if (bundleReplacers.Count == 0)
+                        throw new InvalidOperationException("No modified serialized entries were found in this bundle.");
+
                     using var output = File.Create(temp);
                     using var writer = new AssetsFileWriter(output);
-                    bundle.file.Write(writer, new List<BundleReplacer> { bundleReplacer });
+                    bundle.file.Write(writer, bundleReplacers);
                 }
                 else
                 {
-                    File.WriteAllBytes(temp, modifiedAssets);
+                    var replacers = GetPendingAssetReplacers(activeInstance);
+                    if (replacers.Count == 0)
+                        throw new InvalidOperationException("The opened assets file has no pending changes.");
+
+                    using var output = File.Create(temp);
+                    using var writer = new AssetsFileWriter(output);
+                    activeInstance.file.Write(writer, 0, replacers);
                 }
             });
 
@@ -2370,10 +2419,13 @@ public sealed class MainView : UserControl
             await source.CopyToAsync(target);
             await target.FlushAsync();
 
-            _hasUnsavedChanges = false;
+            foreach (var assetId in savedAssetIds)
+                _savedAssetChanges.Add(assetId);
+
+            _hasUnsavedChanges = _pendingAssetChanges.Keys.Any(id => !_savedAssetChanges.Contains(id));
             _status.Text = saveWholeBundle
-                ? $"Saved modified Unity bundle copy: {destination.Name}\nThe opened assets entry and its pending changes were included. The original file was not changed."
-                : $"Saved modified assets file copy: {destination.Name}\nApplied {_pendingAssetChanges.Count} pending asset changes. The surrounding Unity bundle was not included. The original file was not changed.";
+                ? $"Saved modified Unity bundle copy: {destination.Name}\nSerialized each changed assets entry with UABEA's AssetsFile.Write flow, then applied the entries through the bundle writer. The original file was not changed."
+                : $"Saved modified assets file copy: {destination.Name}\nApplied {savedAssetIds.Count} pending changes from the opened assets file. Other changed bundle entries, if any, remain pending. The original file was not changed.";
             UpdateFloatingActions();
         }
         catch (Exception ex)
@@ -3824,7 +3876,7 @@ public sealed class MainView : UserControl
         if (platformBlob != null && platformBlob.Children.Count > 0)
             platformBlob.Children[0].ValueType = AssetValueType.ByteArray;
 
-        if (_pendingAssetData.TryGetValue(asset.PathId, out var replacementData))
+        if (_pendingAssetData.TryGetValue(new AssetID(instance.path, asset.PathId), out var replacementData))
         {
             using var stream = new MemoryStream(replacementData, writable: false);
             using var replacementReader = new AssetsFileReader(stream);
