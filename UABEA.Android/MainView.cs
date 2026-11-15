@@ -2226,7 +2226,7 @@ public sealed class MainView : UserControl
         _hasUnsavedChanges = true;
         RegisterPendingAssetChange(instance, new AssetsReplacerFromMemory(spritePathId,
             spriteTemplate.GetTypeId(instance.file), instance.file.GetScriptIndex(spriteTemplate), spriteData));
-        _status.Text = "New Sprite and Texture2D are pending. Use the floating menu → Save to export the modified .assets file.";
+        _status.Text = "New Sprite and Texture2D added to the active session. Use Save changes to export them.";
         UpdateFloatingActions();
         return Task.CompletedTask;
     }
@@ -2239,7 +2239,7 @@ public sealed class MainView : UserControl
         ushort scriptId = instance.file.GetScriptIndex(sourceAsset);
         RegisterPendingAssetChange(instance, new AssetsReplacerFromMemory(newPathId, classId, scriptId, serializedData));
         _hasUnsavedChanges = true;
-        _status.Text = $"{operation} is pending. New Path ID: {newPathId}. Use the floating menu → Save.";
+        _status.Text = $"{operation} added to the active session. New Path ID: {newPathId}. Use Save changes to export it.";
         UpdateFloatingActions();
         return Task.CompletedTask;
     }
@@ -2252,7 +2252,7 @@ public sealed class MainView : UserControl
         ushort scriptId = instance.file.GetScriptIndex(asset);
         RegisterPendingAssetChange(instance, new AssetsReplacerFromMemory(asset.PathId, classId, scriptId, serializedData));
         _hasUnsavedChanges = true;
-        _status.Text = $"{operation} prepared for asset {asset.PathId}. Changes are pending; use the floating menu → Save.";
+        _status.Text = $"{operation} applied to asset {asset.PathId} in the active session. Use Save changes to export it.";
         UpdateFloatingActions();
         return Task.CompletedTask;
     }
