@@ -333,6 +333,7 @@ public sealed class MainView : UserControl
             Padding = new Thickness(0),
             IsTabStop = false
         };
+        ScrollViewer.SetHorizontalScrollBarVisibility(_assetListBox, ScrollBarVisibility.Disabled);
         _assetListBox.ItemTemplate = new FuncDataTemplate<RowData>((row, nameScope) =>
         {
             bool isBundleEntry = _currentPage == BrowserPage.Bundle && _currentBundle is not null;
@@ -668,9 +669,10 @@ public sealed class MainView : UserControl
                 .Where(row => !_pendingDeleteIds.Contains(row.Info.PathId))
                 .Where(row => selectedType == "All types" || row.TypeName == selectedType)
                 .Where(row => Matches(row.Name, query) || Matches(row.TypeName, query))
-                .Select(row => new RowData(row.Name,
+                .Select(row => new RowData(
+                    _selectionMode && _selectedAssetIds.Contains(row.Info.PathId) ? "✓ " + row.Name : row.Name,
                     $"{row.TypeName} • {FormatSize(row.Info.ByteSize)} • ID: {row.Info.PathId}",
-                    GetAssetIcon(row.TypeName), () => ShowAssetDetails(row.Info), row.Info))
+                    GetAssetIcon(row.TypeName), () => { if (_selectionMode) ToggleAssetSelection(row.Info); else ShowAssetDetails(row.Info); }, row.Info))
                 .ToList();
         }
         else
@@ -2663,6 +2665,7 @@ public sealed class MainView : UserControl
         var instance = _currentAssets;
         var manager = _assetsManager;
         _currentPage = BrowserPage.AssetDetails;
+        UpdateFloatingActions();
         _searchBox.IsEnabled = true;
         _searchBox.IsVisible = false;
         _filterBox.IsVisible = false;
@@ -5168,12 +5171,14 @@ public sealed class MainView : UserControl
         ExitSelectionMode();
         if (_currentAssets is null) return;
         _currentPage = BrowserPage.Assets;
+        UpdateFloatingActions();
         _assetListBox.IsVisible = true;
         _searchBox.IsVisible = true;
         _filterButton.IsVisible = true;
         _filterBox.IsVisible = false;
         SetFilterOptions(_assetRows.Select(row => row.TypeName));
         _searchBox.Watermark = "Search by asset name or type...";
+        UpdateFloatingActions();
         _status.Text = $"Assets file: {_currentAssets.name}\nAssets: {_currentAssets.file.AssetInfos.Count}";
         UpdateNavigation();
         RefreshCurrentList();
