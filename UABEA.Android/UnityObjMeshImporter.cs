@@ -48,6 +48,7 @@ internal static class UnityObjMeshImporter
         if (major < 2018)
             throw new NotSupportedException("OBJ import currently supports Unity 2018 and newer Mesh vertex layouts. This avoids writing an incompatible legacy vertex-channel layout.");
 
+        EnsureStaticMeshOnly(mesh);
         ParsedObj parsed = Parse(objText);
         GenerateMissingNormals(parsed);
 
@@ -157,7 +158,69 @@ internal static class UnityObjMeshImporter
         SetNumberIfPresent(mesh, "m_MeshCompression", 0);
         SetBounds(mesh, center, extent, "m_LocalAABB");
         ClearStreamData(mesh);
-        return $"Imported {vertexCount:N0} vertices, {parsed.TriangleCount:N0} triangles and {subMeshes.Children.Count:N0} submeshes. OBJ material files are not imported; existing MeshRenderer material references are left unchanged.";
+        return $"Imported {vertexCount:N0} vertices, {parsed.TriangleCount:N0} triangles and {subMeshes.Children.Count:N0} submeshes. OBJ MTL materials, tangents and vertex colors are not imported; existing MeshRenderer material references are left unchanged. Static meshes only.";
+    }
+
+    private static void EnsureStaticMeshOnly(AssetTypeValueField mesh)
+    {
+        var channels = GetField(mesh, "m_VertexData.m_Channels.Array");
+        if (channels != null && !channels.IsDummy)
+        {
+            foreach (int channelIndex in new[] { 12, 13 })
+            {
+                if (channels.Children.Count <= channelIndex) continue;
+                var dimension = GetField(channels.Children[channelIndex], "dimension");
+                if (ReadInteger(dimension) > 0)
+                    throw new NotSupportedException("This Mesh contains bone weights or bone indices. OBJ does not carry skinning data, so the import was stopped to protect the rig.");
+            }
+        }
+
+        foreach (string path in new[] { "m_BindPose.Array", "m_BoneNameHashes.Array", "m_Skin.Array" })
+        {
+            var array = GetField(mesh, path);
+            if (array != null && !array.IsDummy && array.Children.Count > 0)
+                throw new NotSupportedException("This Mesh contains skinning or bind-pose data. OBJ does not carry that data, so the import was stopped to protect the rig.");
+        }
+
+        var shapes = GetField(mesh, "m_Shapes");
+        if (shapes != null && !shapes.IsDummy && ContainsNonEmptyArray(shapes))
+            throw new NotSupportedException("This Mesh contains blend shapes. OBJ does not carry blend-shape data, so the import was stopped to protect the original asset.");
+    }
+
+    private static long ReadInteger(AssetTypeValueField? field)
+    {
+        if (field == null || field.IsDummy || field.Value == null) return 0;
+        try
+        {
+            return field.TemplateField.ValueType switch
+            {
+                AssetValueType.Int8 => field.AsSByte,
+                AssetValueType.UInt8 => field.AsByte,
+                AssetValueType.Int16 => field.AsShort,
+                AssetValueType.UInt16 => field.AsUShort,
+                AssetValueType.Int32 => field.AsInt,
+                AssetValueType.UInt32 => field.AsUInt,
+                AssetValueType.Int64 => field.AsLong,
+                AssetValueType.UInt64 => checked((long)field.AsULong),
+                _ => 0
+            };
+        }
+        catch { return 0; }
+    }
+
+    private static bool ContainsNonEmptyArray(AssetTypeValueField field)
+    {
+        if (field == null || field.IsDummy) return false;
+        if (field.TemplateField.IsArray)
+        {
+            if (field.TemplateField.ValueType == AssetValueType.ByteArray)
+                return field.AsByteArray?.Length > 0;
+            if (field.Children.Count > 0)
+                return true;
+        }
+        foreach (var child in field.Children)
+            if (ContainsNonEmptyArray(child)) return true;
+        return false;
     }
 
     private static ParsedObj Parse(string text)
