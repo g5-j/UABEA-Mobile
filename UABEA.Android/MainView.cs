@@ -2188,184 +2188,111 @@ public sealed class MainView : UserControl
         _items.Children.Add(button);
     }
 
-    private async Task SaveNewAssetPairAsync(AssetFileInfo textureTemplate, byte[] textureData, AssetFileInfo spriteTemplate, byte[] spriteData, long texturePathId, long spritePathId)
+    private Task SaveNewAssetPairAsync(AssetFileInfo textureTemplate, byte[] textureData, AssetFileInfo spriteTemplate, byte[] spriteData, long texturePathId, long spritePathId)
     {
-        var top = TopLevel.GetTopLevel(this) ?? throw new InvalidOperationException("Storage provider unavailable.");
         var instance = _currentAssets ?? throw new InvalidOperationException("No assets file is open.");
-        var bundle = _currentBundle;
-        string source = bundle is null ? instance.name : _currentFileName;
-        string ext = Path.GetExtension(source);
-        if (string.IsNullOrWhiteSpace(ext)) ext = bundle is null ? ".assets" : ".bundle";
-        var destination = await top.StorageProvider.SaveFilePickerAsync(new FilePickerSaveOptions
-        {
-            Title = "Save file with new Sprite and Texture2D",
-            SuggestedFileName = Path.GetFileNameWithoutExtension(source) + "-with-new-sprite" + ext,
-            FileTypeChoices = new[] { new FilePickerFileType("Modified Unity file") { Patterns = new[] { "*" + ext } } }
-        });
-        if (destination is null) return;
-        var replacers = new List<AssetsReplacer>
-        {
-            new AssetsReplacerFromMemory(texturePathId, textureTemplate.GetTypeId(instance.file), instance.file.GetScriptIndex(textureTemplate), textureData),
-            new AssetsReplacerFromMemory(spritePathId, spriteTemplate.GetTypeId(instance.file), instance.file.GetScriptIndex(spriteTemplate), spriteData)
-        };
-        string temp = Path.Combine(Path.GetTempPath(), "uabea-new-sprite-" + Guid.NewGuid().ToString("N") + ext);
-        try
-        {
-            await Task.Run(() =>
-            {
-                if (bundle is null)
-                {
-                    using var output = File.Create(temp);
-                    using var writer = new AssetsFileWriter(output);
-                    instance.file.Write(writer, 0, replacers);
-                }
-                else
-                {
-                    string entry = ResolveBundleAssetsEntryName(bundle, instance);
-                    using var data = new MemoryStream();
-                    using (var memoryWriter = new AssetsFileWriter(data)) instance.file.Write(memoryWriter, 0, replacers);
-                    var br = new BundleReplacerFromMemory(entry, entry, true, data.ToArray(), -1);
-                    using var output = File.Create(temp);
-                    using var writer = new AssetsFileWriter(output);
-                    bundle.file.Write(writer, new List<BundleReplacer> { br });
-                }
-            });
-            await using var output = await destination.OpenWriteAsync();
-            await using var input = File.OpenRead(temp);
-            await input.CopyToAsync(output);
-            await output.FlushAsync();
-            _status.Text = "New Sprite and Texture2D saved. Texture2D Path ID: " + texturePathId + "; Sprite Path ID: " + spritePathId + ". Reopen the file to verify.";
-        }
-        finally { try { File.Delete(temp); } catch { } }
+        _pendingAssetChanges[texturePathId] = new AssetsReplacerFromMemory(texturePathId,
+            textureTemplate.GetTypeId(instance.file), instance.file.GetScriptIndex(textureTemplate), textureData);
+        _pendingAssetChanges[spritePathId] = new AssetsReplacerFromMemory(spritePathId,
+            spriteTemplate.GetTypeId(instance.file), instance.file.GetScriptIndex(spriteTemplate), spriteData);
+        _status.Text = "New Sprite and Texture2D are pending. Use the floating menu → Save to export the modified .assets file.";
+        UpdateFloatingActions();
+        return Task.CompletedTask;
     }
-    private async Task SaveNewAssetDataAsync(AssetFileInfo sourceAsset, byte[] serializedData, string operation)
+
+    private Task SaveNewAssetDataAsync(AssetFileInfo sourceAsset, byte[] serializedData, string operation)
     {
-        var topLevel = TopLevel.GetTopLevel(this)
-            ?? throw new InvalidOperationException("Storage provider is unavailable.");
-        var instance = _currentAssets
-            ?? throw new InvalidOperationException("No assets file is open.");
-        var bundle = _currentBundle;
+        var instance = _currentAssets ?? throw new InvalidOperationException("No assets file is open.");
+        long newPathId = GetNextAssetPathId(instance);
+        while (_pendingAssetChanges.ContainsKey(newPathId)) newPathId = checked(newPathId + 1);
         int classId = sourceAsset.GetTypeId(instance.file);
         ushort scriptId = instance.file.GetScriptIndex(sourceAsset);
-        long newPathId = GetNextAssetPathId(instance);
-        var replacer = new AssetsReplacerFromMemory(newPathId, classId, scriptId, serializedData);
-
-        string sourceName = bundle is null ? instance.name : _currentFileName;
-        string extension = Path.GetExtension(sourceName);
-        if (string.IsNullOrWhiteSpace(extension))
-            extension = bundle is null ? ".assets" : ".bundle";
-        string suggested = Path.GetFileNameWithoutExtension(sourceName) + "-with-new-asset" + extension;
-        var destination = await topLevel.StorageProvider.SaveFilePickerAsync(new FilePickerSaveOptions
-        {
-            Title = "Save Unity file with new asset",
-            SuggestedFileName = suggested,
-            FileTypeChoices = new[]
-            {
-                new FilePickerFileType("Modified Unity file") { Patterns = new[] { "*" + extension } }
-            }
-        });
-        if (destination is null) return;
-
-        string temporaryOutput = Path.Combine(Path.GetTempPath(),
-            "uabea-add-" + Guid.NewGuid().ToString("N") + extension);
-        try
-        {
-            SetLoading(true, "Adding the new Unity asset...");
-            await Task.Run(() =>
-            {
-                var replacers = new List<AssetsReplacer> { replacer };
-                if (bundle is null)
-                {
-                    using var output = File.Create(temporaryOutput);
-                    using var writer = new AssetsFileWriter(output);
-                    instance.file.Write(writer, 0, replacers);
-                    return;
-                }
-
-                string entryName = ResolveBundleAssetsEntryName(bundle, instance);
-                using var modifiedAssets = new MemoryStream();
-                using (var assetsWriter = new AssetsFileWriter(modifiedAssets))
-                    instance.file.Write(assetsWriter, 0, replacers);
-                var bundleReplacer = new BundleReplacerFromMemory(
-                    entryName, entryName, true, modifiedAssets.ToArray(), -1);
-                using var bundleOutput = File.Create(temporaryOutput);
-                using var bundleWriter = new AssetsFileWriter(bundleOutput);
-                bundle.file.Write(bundleWriter, new List<BundleReplacer> { bundleReplacer });
-            });
-
-            await using var output = await destination.OpenWriteAsync();
-            await using var input = File.OpenRead(temporaryOutput);
-            await input.CopyToAsync(output);
-            await output.FlushAsync();
-            _status.Text = $"{operation} completed\\nNew Path ID: {newPathId}\\n" +
-                $"Type: {Enum.GetName(typeof(AssetClassID), classId) ?? classId.ToString()}\\n" +
-                $"Data: {FormatSize(serializedData.LongLength)}\\nOutput: {destination.Name}\\n" +
-                "Reopen the saved file to verify the new asset.";
-        }
-        finally
-        {
-            try { File.Delete(temporaryOutput); } catch { }
-        }
+        _pendingAssetChanges[newPathId] = new AssetsReplacerFromMemory(newPathId, classId, scriptId, serializedData);
+        _status.Text = $"{operation} is pending. New Path ID: {newPathId}. Use the floating menu → Save.";
+        UpdateFloatingActions();
+        return Task.CompletedTask;
     }
 
-    private async Task SaveAssetReplacementAsync(AssetFileInfo asset, byte[] serializedData, string operation, bool addNew = false)
+    private Task SaveAssetReplacementAsync(AssetFileInfo asset, byte[] serializedData, string operation, bool addNew = false)
     {
-        if (addNew)
-        {
-            await SaveNewAssetDataAsync(asset, serializedData, operation);
-            return;
-        }
-        var topLevel = TopLevel.GetTopLevel(this) ?? throw new InvalidOperationException("Storage provider is unavailable.");
+        if (addNew) return SaveNewAssetDataAsync(asset, serializedData, operation);
         var instance = _currentAssets ?? throw new InvalidOperationException("No assets file is open.");
-        var bundle = _currentBundle;
         int classId = asset.GetTypeId(instance.file);
-        ushort monoId = instance.file.GetScriptIndex(asset);
-        var replacer = new AssetsReplacerFromMemory(asset.PathId, classId, monoId, serializedData);
-        string sourceName = bundle is null ? instance.name : _currentFileName;
-        string extension = Path.GetExtension(sourceName);
-        if (string.IsNullOrWhiteSpace(extension)) extension = bundle is null ? ".assets" : ".bundle";
-        string suggested = Path.GetFileNameWithoutExtension(sourceName) + "-modified" + extension;
-        var destination = await topLevel.StorageProvider.SaveFilePickerAsync(new FilePickerSaveOptions
-        {
-            Title = "Save modified Unity file",
-            SuggestedFileName = suggested,
-            FileTypeChoices = new[] { new FilePickerFileType("Modified Unity file") { Patterns = new[] { "*" + extension } } }
-        });
-        if (destination is null) return;
+        ushort scriptId = instance.file.GetScriptIndex(asset);
+        _pendingAssetChanges[asset.PathId] = new AssetsReplacerFromMemory(asset.PathId, classId, scriptId, serializedData);
+        _status.Text = $"{operation} prepared for asset {asset.PathId}. Changes are pending; use the floating menu → Save.";
+        UpdateFloatingActions();
+        return Task.CompletedTask;
+    }
 
-        string temporaryOutput = Path.Combine(Path.GetTempPath(), "uabea-import-" + Guid.NewGuid().ToString("N") + extension);
+    private void QueueAssetDeletion(AssetFileInfo asset)
+    {
         try
         {
-            SetLoading(true, "Writing modified Unity data...");
+            var assembly = typeof(AssetsReplacer).Assembly;
+            var removerType = assembly.GetTypes().FirstOrDefault(t => t.Name == "AssetsRemover")
+                ?? throw new NotSupportedException("This AssetsTools.NET build does not expose AssetsRemover.");
+            var constructor = removerType.GetConstructors().FirstOrDefault(ctor =>
+            {
+                var p = ctor.GetParameters();
+                return p.Length == 2 && p[0].ParameterType == typeof(int) && p[1].ParameterType == typeof(long);
+            }) ?? throw new MissingMethodException("AssetsRemover(int, long) constructor was not found.");
+            var remover = constructor.Invoke(new object[] { 0, asset.PathId }) as AssetsReplacer
+                ?? throw new InvalidOperationException("Could not create an asset remover.");
+            _pendingAssetChanges[asset.PathId] = remover;
+            _status.Text = $"Asset {asset.PathId} marked for deletion. Use the floating menu → Save to apply it.";
+            CloseAssetDetailsLayer();
+            _currentPage = BrowserPage.Assets;
+            UpdateNavigation();
+            UpdateFloatingActions();
+        }
+        catch (Exception ex) { _status.Text = "Could not queue asset deletion: " + ex.Message; }
+    }
+
+    private async Task SavePendingAssetsAsync()
+    {
+        if (_currentAssets is null || _pendingAssetChanges.Count == 0 || _isBusy) return;
+        var top = TopLevel.GetTopLevel(this);
+        if (top is null) return;
+        var instance = _currentAssets;
+        string fileName = Path.GetFileName(instance.name ?? "sharedassets.assets");
+        if (!fileName.EndsWith(".assets", StringComparison.OrdinalIgnoreCase) &&
+            !fileName.EndsWith(".asset", StringComparison.OrdinalIgnoreCase))
+            fileName = Path.GetFileNameWithoutExtension(fileName) + ".assets";
+        var destination = await top.StorageProvider.SaveFilePickerAsync(new FilePickerSaveOptions
+        {
+            Title = "Save modified assets file",
+            SuggestedFileName = fileName,
+            FileTypeChoices = new[] { new FilePickerFileType("Unity assets file") { Patterns = new[] { "*.assets", "*.asset" } } }
+        });
+        if (destination is null) return;
+        string temp = Path.Combine(Path.GetTempPath(), "uabea-save-" + Guid.NewGuid().ToString("N") + ".assets");
+        try
+        {
+            _isBusy = true;
+            SetLoading(true, "Saving modified .assets file...");
+            var replacers = _pendingAssetChanges.Values.ToList();
             await Task.Run(() =>
             {
-                if (bundle is null)
-                {
-                    using var output = File.Create(temporaryOutput);
-                    using var writer = new AssetsFileWriter(output);
-                    instance.file.Write(writer, 0, new List<AssetsReplacer> { replacer });
-                }
-                else
-                {
-                    string entryName = ResolveBundleAssetsEntryName(bundle, instance);
-                    using var modifiedAssets = new MemoryStream();
-                    using (var assetsWriter = new AssetsFileWriter(modifiedAssets))
-                        instance.file.Write(assetsWriter, 0, new List<AssetsReplacer> { replacer });
-                    var bundleReplacer = new BundleReplacerFromMemory(entryName, entryName, true, modifiedAssets.ToArray(), -1);
-                    using var output = File.Create(temporaryOutput);
-                    using var writer = new AssetsFileWriter(output);
-                    bundle.file.Write(writer, new List<BundleReplacer> { bundleReplacer });
-                }
+                using var output = File.Create(temp);
+                using var writer = new AssetsFileWriter(output);
+                instance.file.Write(writer, 0, replacers);
             });
-            await using var output = await destination.OpenWriteAsync();
-            await using var input = File.OpenRead(temporaryOutput);
-            await input.CopyToAsync(output);
-            await output.FlushAsync();
-            _status.Text = $"{operation} saved\nAsset: {asset.PathId}\nOutput: {destination.Name}\nReopen the saved file to verify it.";
+            await using var target = await destination.OpenWriteAsync();
+            await using var source = File.OpenRead(temp);
+            await source.CopyToAsync(target);
+            await target.FlushAsync();
+            int count = replacers.Count;
+            _pendingAssetChanges.Clear();
+            _status.Text = $"Saved {destination.Name}\nApplied {count} pending asset changes.\nOnly the opened .assets file was exported; the surrounding unity3d bundle was not exported.";
+            UpdateFloatingActions();
         }
+        catch (Exception ex) { _status.Text = "Save failed: " + ex.Message; }
         finally
         {
-            try { File.Delete(temporaryOutput); } catch { }
+            try { File.Delete(temp); } catch { }
+            _isBusy = false;
+            SetLoading(false);
         }
     }
 
