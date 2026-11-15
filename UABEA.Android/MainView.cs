@@ -101,6 +101,7 @@ public sealed class MainView : UserControl
     private readonly HashSet<long> _pendingDeleteIds = new();
     private bool _selectionMode;
     private bool _floatingMenuOpen;
+    private bool _hasUnsavedChanges;
     private Button? _floatingActionButton;
     private Border? _floatingMenu;
 
@@ -433,6 +434,11 @@ public sealed class MainView : UserControl
         _isBusy = true;
         _sessionResourcePaths.Clear();
         _sessionResourceWasExplicitlySelected = false;
+        _pendingAssetChanges.Clear();
+        _pendingDeleteIds.Clear();
+        _selectedAssetIds.Clear();
+        _selectionMode = false;
+        _hasUnsavedChanges = false;
         SetLoading(true, $"Copying {file.Name}...");
         _items.Children.Clear();
         _displayedRows.Clear();
@@ -2181,6 +2187,7 @@ public sealed class MainView : UserControl
         var instance = _currentAssets ?? throw new InvalidOperationException("No assets file is open.");
         _pendingAssetChanges[texturePathId] = new AssetsReplacerFromMemory(texturePathId,
             textureTemplate.GetTypeId(instance.file), instance.file.GetScriptIndex(textureTemplate), textureData);
+        _hasUnsavedChanges = true;
         _pendingAssetChanges[spritePathId] = new AssetsReplacerFromMemory(spritePathId,
             spriteTemplate.GetTypeId(instance.file), instance.file.GetScriptIndex(spriteTemplate), spriteData);
         _status.Text = "New Sprite and Texture2D are pending. Use the floating menu → Save to export the modified .assets file.";
@@ -2195,6 +2202,7 @@ public sealed class MainView : UserControl
         int classId = sourceAsset.GetTypeId(instance.file);
         ushort scriptId = instance.file.GetScriptIndex(sourceAsset);
         _pendingAssetChanges[newPathId] = new AssetsReplacerFromMemory(newPathId, classId, scriptId, serializedData);
+        _hasUnsavedChanges = true;
         _status.Text = $"{operation} is pending. New Path ID: {newPathId}. Use the floating menu → Save.";
         UpdateFloatingActions();
         return Task.CompletedTask;
@@ -2207,6 +2215,7 @@ public sealed class MainView : UserControl
         int classId = asset.GetTypeId(instance.file);
         ushort scriptId = instance.file.GetScriptIndex(asset);
         _pendingAssetChanges[asset.PathId] = new AssetsReplacerFromMemory(asset.PathId, classId, scriptId, serializedData);
+        _hasUnsavedChanges = true;
         _status.Text = $"{operation} prepared for asset {asset.PathId}. Changes are pending; use the floating menu → Save.";
         UpdateFloatingActions();
         return Task.CompletedTask;
@@ -2228,6 +2237,7 @@ public sealed class MainView : UserControl
                 ?? throw new InvalidOperationException("Could not create an asset remover.");
             _pendingAssetChanges[asset.PathId] = remover;
             _pendingDeleteIds.Add(asset.PathId);
+            _hasUnsavedChanges = true;
             _status.Text = $"Asset {asset.PathId} marked for deletion. Use the floating menu → Save to apply it.";
             CloseAssetDetailsLayer();
             _currentPage = BrowserPage.Assets;
@@ -2271,8 +2281,7 @@ public sealed class MainView : UserControl
             await source.CopyToAsync(target);
             await target.FlushAsync();
             int count = replacers.Count;
-            _pendingAssetChanges.Clear();
-            _pendingDeleteIds.Clear();
+            _hasUnsavedChanges = false;
             _status.Text = $"Saved {destination.Name}\nApplied {count} pending asset changes.\nOnly the opened .assets file was exported; the surrounding unity3d bundle was not exported.";
             UpdateFloatingActions();
         }
@@ -5176,6 +5185,7 @@ public sealed class MainView : UserControl
                 UpdateNavigation();
                 break;
         }
+        UpdateFloatingActions();
         SetLoading(false);
     }
 
@@ -5191,6 +5201,7 @@ public sealed class MainView : UserControl
             .Where(entry => (entry.Flags & 0x02) == 0).Select(entry => GetEntryKind(entry.Name)));
         _searchBox.Watermark = "Search bundle entries...";
         _status.Text = $"Bundle: {_currentFileName}\nEntries: {_currentRows.Count}";
+        UpdateFloatingActions();
         UpdateNavigation();
         RefreshCurrentList();
     }
@@ -5907,7 +5918,7 @@ public sealed class MainView : UserControl
                 if (rows.Count > 0) _ = ExportAssetsArchiveAsync(rows);
             }));
             var save = CreateFloatingMenuButton($"حفظ التعديلات ({_pendingAssetChanges.Count})", MaterialIconKind.ContentSave, () => _ = SavePendingAssetsAsync());
-            save.IsEnabled = _pendingAssetChanges.Count > 0;
+            save.IsEnabled = _hasUnsavedChanges && _pendingAssetChanges.Count > 0;
             menu.Children.Add(save);
         }
     }
