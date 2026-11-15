@@ -36,6 +36,7 @@ internal static class UnityObjMeshImporter
         public List<ObjGroup> Groups { get; } = new();
         public Dictionary<VertexKey, int> VertexMap { get; } = new();
         public int TriangleCount { get; set; }
+        public bool HasAnyUv { get; set; }
     }
 
     public static string Import(AssetTypeValueField mesh, string objText, bool bigEndian, string unityVersion)
@@ -44,8 +45,8 @@ internal static class UnityObjMeshImporter
             throw new InvalidDataException("Mesh asset data is unavailable.");
 
         int major = ParseUnityMajor(unityVersion);
-        if (major < 5)
-            throw new NotSupportedException("OBJ import currently requires Unity 5 or newer Mesh serialization.");
+        if (major < 2018)
+            throw new NotSupportedException("OBJ import currently supports Unity 2018 and newer Mesh vertex layouts. This avoids writing an incompatible legacy vertex-channel layout.");
 
         ParsedObj parsed = Parse(objText);
         GenerateMissingNormals(parsed);
@@ -54,11 +55,9 @@ internal static class UnityObjMeshImporter
         if (vertexCount < 3 || parsed.TriangleCount < 1)
             throw new InvalidDataException("The OBJ file contains no usable triangle mesh.");
 
-        bool hasUvs = parsed.VertexUvs.Count == vertexCount &&
-            parsed.Groups.SelectMany(g => g.Indices).Any();
-        bool modernLayout = major >= 2018;
-        int uvChannel = modernLayout ? 4 : 3;
-        int uvOffset = modernLayout ? 24 : 20;
+        bool hasUvs = parsed.HasAnyUv;
+        int uvChannel = 4;
+        int uvOffset = 24;
         int stride = hasUvs ? uvOffset + 8 : uvOffset;
         uint channelMask = (1u << 0) | (1u << 1) | (hasUvs ? (1u << uvChannel) : 0u);
 
@@ -80,7 +79,7 @@ internal static class UnityObjMeshImporter
             throw new InvalidDataException("Mesh vertex channel array has an unexpected type.");
         channels.Children.Clear();
 
-        int channelCount = Math.Max(14, channels.TemplateField.Children[1].Children.Count == 0 ? 14 : 14);
+        const int channelCount = 14;
         for (int i = 0; i < channelCount; i++)
         {
             var item = ValueBuilder.DefaultValueFieldFromArrayTemplate(channels);
@@ -157,8 +156,7 @@ internal static class UnityObjMeshImporter
             throw new InvalidDataException("No valid OBJ submeshes were generated.");
 
         SetNumberIfPresent(mesh, "m_MeshCompression", 0);
-        SetNumberIfPresent(mesh, "m_KeepVertices", 1);
-        SetNumberIfPresent(mesh, "m_KeepIndices", 1);
+        SetBounds(mesh, center, extent, "m_LocalAABB");
         ClearStreamData(mesh);
         return $"Imported {vertexCount:N0} vertices, {parsed.TriangleCount:N0} triangles and {subMeshes.Children.Count:N0} submeshes. OBJ material files are not imported; existing MeshRenderer material references are left unchanged.";
     }
@@ -292,6 +290,7 @@ internal static class UnityObjMeshImporter
         obj.VertexMap.Add(key, index);
         obj.Vertices.Add(obj.Positions[position]);
         obj.VertexUvs.Add(uv >= 0 ? obj.Uvs[uv] : Vector2.Zero);
+        if (uv >= 0) obj.HasAnyUv = true;
         bool hasNormal = normal >= 0 && obj.SourceNormals[normal].LengthSquared() > 1e-12f;
         obj.HasNormal.Add(hasNormal);
         obj.VertexNormals.Add(hasNormal ? Vector3.Normalize(obj.SourceNormals[normal]) : Vector3.Zero);
@@ -390,10 +389,10 @@ internal static class UnityObjMeshImporter
         SetNumber(GetRequiredField(channel, "dimension"), dimension);
     }
 
-    private static void SetBounds(AssetTypeValueField subMesh, Vector3 center, Vector3 extent)
+    private static void SetBounds(AssetTypeValueField root, Vector3 center, Vector3 extent, string prefix = "localAABB")
     {
-        SetVector3IfPresent(subMesh, "localAABB.center", center);
-        SetVector3IfPresent(subMesh, "localAABB.extent", extent);
+        SetVector3IfPresent(root, prefix + ".center", center);
+        SetVector3IfPresent(root, prefix + ".extent", extent);
     }
 
     private static void SetVector3IfPresent(AssetTypeValueField root, string path, Vector3 value)
