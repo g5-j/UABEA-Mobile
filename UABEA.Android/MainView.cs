@@ -5784,6 +5784,230 @@ public sealed class MainView : UserControl
         return button;
     }
 
+    private Button CreateDetailActionButton(MaterialIconKind icon, string label, IBrush background, IBrush foreground)
+    {
+        return new Button
+        {
+            Content = CreateIconLabel(icon, label, foreground, 16),
+            Background = background,
+            Foreground = foreground,
+            BorderBrush = OutlineBrush,
+            BorderThickness = new Thickness(1),
+            CornerRadius = new CornerRadius(13),
+            MinHeight = 48,
+            HorizontalAlignment = HorizontalAlignment.Stretch,
+            HorizontalContentAlignment = HorizontalAlignment.Center,
+            FontWeight = FontWeight.SemiBold
+        };
+    }
+
+    private void BuildFloatingActions()
+    {
+        var panel = new StackPanel { Spacing = 9, HorizontalAlignment = HorizontalAlignment.Left, VerticalAlignment = VerticalAlignment.Bottom };
+        _floatingMenu = new Border
+        {
+            Background = SurfaceBrush,
+            BorderBrush = OutlineBrush,
+            BorderThickness = new Thickness(1),
+            CornerRadius = new CornerRadius(18),
+            Padding = new Thickness(9),
+            IsVisible = false,
+            Child = new StackPanel { Spacing = 7 }
+        };
+        panel.Children.Add(_floatingMenu);
+        _floatingActionButton = new Button
+        {
+            Width = 58, Height = 58, MinWidth = 58, MinHeight = 58,
+            CornerRadius = new CornerRadius(29),
+            Background = PrimaryBrush, Foreground = OnPrimaryBrush,
+            HorizontalAlignment = HorizontalAlignment.Left,
+            Content = CreateIcon(MaterialIconKind.Menu, 25, OnPrimaryBrush),
+            BoxShadow = new Avalonia.Media.BoxShadows(new Avalonia.Media.BoxShadow { Blur = 18, Spread = 1, Color = Color.Parse("#66000000") })
+        };
+        _floatingActionButton.Click += (_, _) =>
+        {
+            _floatingMenuOpen = !_floatingMenuOpen;
+            UpdateFloatingActions();
+        };
+        panel.Children.Add(_floatingActionButton);
+        var host = new Border
+        {
+            HorizontalAlignment = HorizontalAlignment.Left,
+            VerticalAlignment = VerticalAlignment.Bottom,
+            Margin = new Thickness(16),
+            Child = panel,
+            IsVisible = false
+        };
+        host.Name = "FloatingActionsHost";
+        _pageLayers.Children.Add(host);
+        _floatingHost = host;
+        UpdateFloatingActions();
+    }
+
+    private Border? _floatingHost;
+
+    private Button CreateFloatingMenuButton(string text, MaterialIconKind icon, Action action, bool destructive = false)
+    {
+        var button = new Button
+        {
+            Content = CreateIconLabel(icon, text, TextBrush, 14),
+            Background = destructive ? Brush.Parse("#51252B") : SurfaceHighBrush,
+            Foreground = TextBrush,
+            BorderBrush = OutlineBrush,
+            BorderThickness = new Thickness(1),
+            CornerRadius = new CornerRadius(12),
+            MinHeight = 44,
+            HorizontalAlignment = HorizontalAlignment.Stretch,
+            HorizontalContentAlignment = HorizontalAlignment.Left
+        };
+        button.Click += (_, _) => { _floatingMenuOpen = false; UpdateFloatingActions(); action(); };
+        return button;
+    }
+
+    private void UpdateFloatingActions()
+    {
+        if (_floatingHost is null || _floatingMenu is null || _floatingActionButton is null) return;
+        _floatingHost.IsVisible = _currentPage == BrowserPage.Assets && _currentAssets is not null;
+        _floatingActionButton.Content = CreateIcon(_selectionMode ? MaterialIconKind.CheckAll : MaterialIconKind.Menu, 25, OnPrimaryBrush);
+        _floatingMenu.IsVisible = _floatingMenuOpen;
+        if (_floatingMenu.Child is not StackPanel menu) return;
+        menu.Children.Clear();
+        if (_selectionMode)
+        {
+            int count = _selectedAssetIds.Count;
+            menu.Children.Add(CreateFloatingMenuButton($"حذف ({count})", MaterialIconKind.Delete, DeleteSelectedAssets, true));
+            menu.Children.Add(CreateFloatingMenuButton($"استبدال ({count})", MaterialIconKind.FileUpload, ReplaceSelectedAssets));
+            menu.Children.Add(CreateFloatingMenuButton($"استخراج ({count})", MaterialIconKind.Download, ExportSelectedAssets));
+            menu.Children.Add(CreateFloatingMenuButton("إلغاء التحديد", MaterialIconKind.Close, ExitSelectionMode));
+        }
+        else
+        {
+            menu.Children.Add(CreateFloatingMenuButton("استخراج كل ما في الملف", MaterialIconKind.Download, () =>
+            {
+                if (_currentAssets is not null) _ = ExportAssetsArchiveAsync(_currentAssets.file.AssetInfos.ToList());
+            }));
+            menu.Children.Add(CreateFloatingMenuButton("استخراج العناصر المفلترة فقط", MaterialIconKind.Filter, () =>
+            {
+                var rows = _currentRows.Where(x => x.AssetInfo is not null).Select(x => x.AssetInfo!).ToList();
+                if (rows.Count > 0) _ = ExportAssetsArchiveAsync(rows);
+            }));
+            var save = CreateFloatingMenuButton($"حفظ التعديلات ({_pendingAssetChanges.Count})", MaterialIconKind.ContentSave, () => _ = SavePendingAssetsAsync());
+            save.IsEnabled = _pendingAssetChanges.Count > 0;
+            menu.Children.Add(save);
+        }
+    }
+
+    private void EnterSelectionMode(AssetFileInfo asset)
+    {
+        if (_currentPage != BrowserPage.Assets) return;
+        _selectionMode = true;
+        _selectedAssetIds.Clear();
+        _selectedAssetIds.Add(asset.PathId);
+        _floatingMenuOpen = false;
+        _status.Text = "وضع التحديد مفعّل. اضغط على أصول أخرى لإضافتها إلى التحديد.";
+        UpdateFloatingActions();
+        RefreshCurrentList();
+    }
+
+    private void ToggleAssetSelection(AssetFileInfo asset)
+    {
+        if (!_selectionMode) return;
+        if (!_selectedAssetIds.Add(asset.PathId)) _selectedAssetIds.Remove(asset.PathId);
+        if (_selectedAssetIds.Count == 0) { ExitSelectionMode(); return; }
+        _status.Text = $"تم تحديد {_selectedAssetIds.Count} أصل.";
+        UpdateFloatingActions();
+        RefreshCurrentList();
+    }
+
+    private void ExitSelectionMode()
+    {
+        _selectionMode = false;
+        _selectedAssetIds.Clear();
+        _floatingMenuOpen = false;
+        UpdateFloatingActions();
+        if (_currentPage == BrowserPage.Assets) RefreshCurrentList();
+    }
+
+    private List<AssetFileInfo> GetSelectedAssets()
+    {
+        if (_currentAssets is null) return new();
+        return _currentAssets.file.AssetInfos.Where(x => _selectedAssetIds.Contains(x.PathId)).ToList();
+    }
+
+    private void DeleteSelectedAssets()
+    {
+        var assets = GetSelectedAssets();
+        foreach (var asset in assets) QueueAssetDeletion(asset);
+        ExitSelectionMode();
+        _status.Text = $"تم وضع {assets.Count} أصل للحذف. احفظ التعديلات من القائمة العائمة.";
+    }
+
+    private async void ExportSelectedAssets()
+    {
+        var assets = GetSelectedAssets();
+        if (assets.Count == 0) return;
+        ExitSelectionMode();
+        await ExportAssetsArchiveAsync(assets);
+    }
+
+    private async void ReplaceSelectedAssets()
+    {
+        var assets = GetSelectedAssets();
+        if (assets.Count == 0) return;
+        ExitSelectionMode();
+        foreach (var asset in assets)
+            await ReplaceAssetAsync(asset, null);
+    }
+
+    private void ShowAssetFormatMenu(AssetFileInfo asset, bool replace)
+    {
+        if (_currentAssets is null) return;
+        int typeId = asset.GetTypeId(_currentAssets.file);
+        var formats = GetAssetFormats(typeId, replace);
+        var menu = new ContextMenu();
+        foreach (var format in formats)
+        {
+            var item = new MenuItem { Header = format.Label };
+            item.Click += async (_, _) =>
+            {
+                if (replace) await ReplaceAssetAsync(asset, format.Key);
+                else await ExportAssetAsync(asset);
+            };
+            menu.Items.Add(item);
+        }
+        menu.PlacementTarget = this;
+        menu.Open();
+    }
+
+    private static List<(string Key, string Label)> GetAssetFormats(int typeId, bool replace)
+    {
+        if (typeId == (int)AssetClassID.Texture2D) return replace ? new() { ("png", "PNG image"), ("jpg", "JPG image") } : new() { ("png", "PNG image") };
+        if (typeId == (int)AssetClassID.Sprite) return replace ? new() { ("png", "PNG image") } : new() { ("png", "PNG image") };
+        if (typeId == (int)AssetClassID.AudioClip) return replace ? new() { ("wav", "WAV audio"), ("ogg", "OGG audio") } : new() { ("audio", "Original decoded audio (WAV / OGG)") };
+        if (typeId == (int)AssetClassID.Font) return replace ? new() { ("ttf", "TTF font"), ("otf", "OTF font") } : new() { ("font", "Embedded font (TTF / OTF)") };
+        if (typeId == (int)AssetClassID.TextAsset) return replace ? new() { ("text", "Text / TXT / JSON / XML / CSV / YAML / BYTES") } : new() { ("text", "Text file (.txt)") };
+        if (typeId == (int)AssetClassID.Cubemap) return replace ? new() { ("zip", "ZIP with six PNG faces") } : new() { ("zip", "ZIP with six PNG faces") };
+        if (typeId == (int)AssetClassID.Mesh) return replace ? new() { ("obj", "Wavefront OBJ model") } : new() { ("obj", "Wavefront OBJ model") };
+        if (typeId == (int)AssetClassID.Material || typeId == 1 || typeId == 1001) return replace ? new() { ("json", "Unity type-tree JSON") } : new() { ("raw", "Raw serialized asset data") };
+        return new() { (replace ? "raw" : "raw", "Raw serialized asset data (.assetdata)") };
+    }
+
+    private async Task ReplaceAssetAsync(AssetFileInfo asset, string? format)
+    {
+        if (_currentAssets is null) return;
+        int typeId = asset.GetTypeId(_currentAssets.file);
+        if (format is null || format == "raw") { await ImportRawAssetAsync(asset); return; }
+        if (typeId == (int)AssetClassID.Texture2D) await ImportTextureImageAsync(asset);
+        else if (typeId == (int)AssetClassID.Sprite) await ImportSpriteImageAsync(asset);
+        else if (typeId == (int)AssetClassID.AudioClip) await ImportAudioClipAsync(asset);
+        else if (typeId == (int)AssetClassID.Font) await ImportFontAssetAsync(asset);
+        else if (typeId == (int)AssetClassID.TextAsset) await ImportTextAssetAsync(asset);
+        else if (typeId == (int)AssetClassID.Cubemap) await ImportCubemapAsync(asset);
+        else if (typeId == (int)AssetClassID.Mesh) await ImportMeshObjAsync(asset);
+        else if (typeId == (int)AssetClassID.Material || typeId == 1 || typeId == 1001)
+            await ImportStructuredJsonAssetAsync(asset, typeId == 1 ? "GameObject" : typeId == 1001 ? "PrefabInstance" : "Material");
+    }
+
     private static Control CreateInfoRow(string title, string detail, MaterialIconKind iconKind)
     {
         var icon = CreateIcon(iconKind, 20, PrimaryBrush);
