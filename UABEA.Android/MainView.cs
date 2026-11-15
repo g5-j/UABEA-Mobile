@@ -106,6 +106,8 @@ public sealed class MainView : UserControl
     private Border? _floatingMenu;
     private System.Threading.CancellationTokenSource? _exportCancellation;
     private readonly Dictionary<long, byte[]> _pendingAssetData = new();
+    private Border? _saveChoiceOverlay;
+    private TaskCompletionSource<string?>? _saveChoiceCompletion;
 
     private enum BrowserPage { Home, Bundle, Assets, EntryDetails, AssetDetails }
 
@@ -416,6 +418,11 @@ public sealed class MainView : UserControl
 
     public bool HandleSystemBack()
     {
+        if (_saveChoiceOverlay is not null)
+        {
+            CompleteBundleSaveChoice(null);
+            return true;
+        }
         if (_exportCancellation is { IsCancellationRequested: false } exportCancellation)
         {
             exportCancellation.Cancel();
@@ -2300,14 +2307,7 @@ public sealed class MainView : UserControl
         bool saveWholeBundle = false;
         if (bundle is not null)
         {
-            var owner = top as Window;
-            if (owner is null)
-            {
-                _status.Text = "Could not open the bundle save options.";
-                return;
-            }
-
-            string? choice = await ShowBundleSaveChoiceAsync(owner);
+            string? choice = await ShowBundleSaveChoiceAsync();
             if (choice is null) return;
             saveWholeBundle = choice == "bundle";
         }
@@ -2388,68 +2388,94 @@ public sealed class MainView : UserControl
         }
     }
 
-    private async Task<string?> ShowBundleSaveChoiceAsync(Window owner)
+    private Task<string?> ShowBundleSaveChoiceAsync()
     {
-        var dialog = new Window
-        {
-            Title = "Save Unity bundle",
-            Width = 360,
-            Height = 260,
-            CanResize = false,
-            WindowStartupLocation = WindowStartupLocation.CenterOwner,
-            Background = SurfaceBrush,
-            Content = new StackPanel
-            {
-                Margin = new Thickness(20),
-                Spacing = 12,
-                Children =
-                {
-                    new TextBlock
-                    {
-                        Text = "Choose what to save",
-                        FontSize = 19,
-                        FontWeight = FontWeight.SemiBold,
-                        Foreground = TextBrush,
-                        TextWrapping = TextWrapping.Wrap
-                    },
-                    new TextBlock
-                    {
-                        Text = "This asset was opened from a Unity bundle.",
-                        FontSize = 14,
-                        Foreground = MutedBrush,
-                        TextWrapping = TextWrapping.Wrap
-                    }
-                }
-            }
-        };
+        if (_saveChoiceCompletion is not null)
+            return _saveChoiceCompletion.Task;
 
-        var content = (StackPanel)dialog.Content!;
+        _saveChoiceCompletion = new TaskCompletionSource<string?>();
+        var content = new StackPanel { Spacing = 12 };
+        content.Children.Add(new TextBlock
+        {
+            Text = "Choose what to save",
+            FontSize = 19,
+            FontWeight = FontWeight.SemiBold,
+            Foreground = TextBrush,
+            TextWrapping = TextWrapping.Wrap
+        });
+        content.Children.Add(new TextBlock
+        {
+            Text = "This assets file was opened from a Unity bundle.",
+            FontSize = 14,
+            Foreground = MutedBrush,
+            TextWrapping = TextWrapping.Wrap
+        });
+
         var bundleButton = new Button
         {
             Content = "Save entire Unity bundle",
-            MinHeight = 46,
+            MinHeight = 48,
             HorizontalAlignment = HorizontalAlignment.Stretch
         };
-        bundleButton.Click += (_, _) => dialog.Close("bundle");
+        bundleButton.Click += (_, _) => CompleteBundleSaveChoice("bundle");
         var assetsButton = new Button
         {
             Content = "Save opened .assets file only",
-            MinHeight = 46,
+            MinHeight = 48,
             HorizontalAlignment = HorizontalAlignment.Stretch
         };
-        assetsButton.Click += (_, _) => dialog.Close("assets");
+        assetsButton.Click += (_, _) => CompleteBundleSaveChoice("assets");
         var cancelButton = new Button
         {
             Content = "Cancel",
             MinHeight = 42,
             HorizontalAlignment = HorizontalAlignment.Stretch
         };
-        cancelButton.Click += (_, _) => dialog.Close(null);
+        cancelButton.Click += (_, _) => CompleteBundleSaveChoice(null);
         content.Children.Add(bundleButton);
         content.Children.Add(assetsButton);
         content.Children.Add(cancelButton);
 
-        return await dialog.ShowDialog<string?>(owner);
+        var card = new Border
+        {
+            Background = SurfaceBrush,
+            BorderBrush = OutlineBrush,
+            BorderThickness = new Thickness(1),
+            CornerRadius = new CornerRadius(20),
+            Padding = new Thickness(20),
+            MaxWidth = 380,
+            HorizontalAlignment = HorizontalAlignment.Center,
+            VerticalAlignment = VerticalAlignment.Center,
+            Child = content
+        };
+        var overlay = new Grid
+        {
+            Background = Brush.Parse("#B8000000"),
+            HorizontalAlignment = HorizontalAlignment.Stretch,
+            VerticalAlignment = VerticalAlignment.Stretch
+        };
+        overlay.Children.Add(card);
+        _saveChoiceOverlay = new Border
+        {
+            Background = Brushes.Transparent,
+            HorizontalAlignment = HorizontalAlignment.Stretch,
+            VerticalAlignment = VerticalAlignment.Stretch,
+            Child = overlay
+        };
+        _pageLayers.Children.Add(_saveChoiceOverlay);
+        return _saveChoiceCompletion.Task;
+    }
+
+    private void CompleteBundleSaveChoice(string? choice)
+    {
+        if (_saveChoiceOverlay is not null)
+        {
+            _pageLayers.Children.Remove(_saveChoiceOverlay);
+            _saveChoiceOverlay = null;
+        }
+        var completion = _saveChoiceCompletion;
+        _saveChoiceCompletion = null;
+        completion?.TrySetResult(choice);
     }
 
     private static string ResolveBundleAssetsEntryName(
