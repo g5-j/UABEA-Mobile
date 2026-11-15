@@ -646,7 +646,6 @@ public sealed class MainView : UserControl
         if (_assetListBox is null) return;
         _displayedRows.Clear();
         _listHeader.Children.Clear();
-        if (_currentPage == BrowserPage.Assets) AddNewAssetImportMenuButton();
         _visibleRows = 0;
         var query = (_searchBox.Text ?? "").Trim();
 
@@ -699,31 +698,6 @@ public sealed class MainView : UserControl
 
         _listPlaceholder.IsVisible = false;
         _assetListBox.IsVisible = true;
-
-        if (_currentPage == BrowserPage.Assets)
-        {
-            var exportItems = _currentRows
-                .Where(row => row.AssetInfo is not null)
-                .Select(row => row.AssetInfo!)
-                .ToList();
-            if (exportItems.Count > 0)
-            {
-                var exportAllButton = new Button
-                {
-                    Content = CreateIconLabel(MaterialIconKind.Download,
-                        $"Export filtered assets ({exportItems.Count}) as ZIP", OnPrimaryBrush, 14),
-                    Background = PrimaryBrush,
-                    Foreground = OnPrimaryBrush,
-                    CornerRadius = new CornerRadius(12),
-                    MinHeight = 44,
-                    HorizontalAlignment = HorizontalAlignment.Stretch,
-                    FontWeight = FontWeight.SemiBold,
-                    Margin = new Thickness(0, 0, 0, 8)
-                };
-                exportAllButton.Click += async (_, _) => await ExportAssetsArchiveAsync(exportItems);
-                _listHeader.Children.Add(exportAllButton);
-            }
-        }
 
         RenderNextPage();
     }
@@ -2746,13 +2720,13 @@ public sealed class MainView : UserControl
             asset.GetAbsoluteByteStart(instance.file).ToString("N0") + " bytes");
         AddDetail("Source file", instance.name);
 
-        var extractButton = CreateDetailActionButton(MaterialIconKind.Export, "استخراج", PrimaryBrush, OnPrimaryBrush);
-        extractButton.Click += (_, _) => ShowAssetFormatMenu(asset, false);
+        var extractButton = CreateDetailActionButton(MaterialIconKind.Export, "Extract", PrimaryBrush, OnPrimaryBrush);
+        extractButton.Click += (_, _) => ShowAssetFormatMenu(asset, false, extractButton);
         _items.Children.Add(extractButton);
-        var replaceButton = CreateDetailActionButton(MaterialIconKind.FileUpload, "استبدال", SurfaceHighBrush, TextBrush);
-        replaceButton.Click += (_, _) => ShowAssetFormatMenu(asset, true);
+        var replaceButton = CreateDetailActionButton(MaterialIconKind.FileUpload, "Replace", SurfaceHighBrush, TextBrush);
+        replaceButton.Click += (_, _) => ShowAssetFormatMenu(asset, true, replaceButton);
         _items.Children.Add(replaceButton);
-        var deleteButton = CreateDetailActionButton(MaterialIconKind.Delete, "حذف", Brush.Parse("#51252B"), TextBrush);
+        var deleteButton = CreateDetailActionButton(MaterialIconKind.Delete, "Delete", Brush.Parse("#51252B"), TextBrush);
         deleteButton.Click += (_, _) => QueueAssetDeletion(asset);
         _items.Children.Add(deleteButton);
 
@@ -5788,18 +5762,24 @@ public sealed class MainView : UserControl
         return button;
     }
 
-    private void AddNewAssetImportMenuButton()
+    private ContextMenu CreateNewAssetImportMenu()
     {
-        var button = CreateDetailActionButton(MaterialIconKind.FilePlus, "Import new asset", SurfaceHighBrush, TextBrush);
         var menu = new ContextMenu();
+        if (_currentAssets is null) return menu;
+
         void Add(string label, int typeId, Func<AssetFileInfo, Task> import)
         {
-            var template = _assetRows.FirstOrDefault(x => x.Info.GetTypeId(_currentAssets!.file) == typeId)?.Info;
+            var template = _assetRows.FirstOrDefault(x => x.Info.GetTypeId(_currentAssets.file) == typeId)?.Info;
             if (template is null) return;
             var item = new MenuItem { Header = label };
-            item.Click += async (_, _) => await import(template);
+            item.Click += async (_, _) =>
+            {
+                try { await import(template); }
+                catch (Exception ex) { _status.Text = "Import failed: " + ex.Message; }
+            };
             menu.Items.Add(item);
         }
+
         Add("Texture2D • PNG / JPG", (int)AssetClassID.Texture2D, x => ImportTextureImageAsync(x, true));
         Add("Sprite • PNG + Texture2D", (int)AssetClassID.Sprite, x => ImportSpriteImageAsync(x, true));
         Add("AudioClip • WAV / OGG", (int)AssetClassID.AudioClip, x => ImportAudioClipAsync(x, true));
@@ -5807,9 +5787,7 @@ public sealed class MainView : UserControl
         Add("TextAsset", (int)AssetClassID.TextAsset, x => ImportTextAssetAsync(x, true));
         Add("Cubemap • ZIP", (int)AssetClassID.Cubemap, x => ImportCubemapAsync(x, true));
         Add("Mesh • OBJ", (int)AssetClassID.Mesh, x => ImportMeshObjAsync(x, true));
-        button.Click += (_, _) => { if (menu.Items.Count > 0) { menu.PlacementTarget = button; menu.Open(); } };
-        button.Margin = new Thickness(0, 0, 0, 8);
-        _listHeader.Children.Add(button);
+        return menu;
     }
 
     private Button CreateDetailActionButton(MaterialIconKind icon, string label, IBrush background, IBrush foreground)
@@ -5902,23 +5880,35 @@ public sealed class MainView : UserControl
         if (_selectionMode)
         {
             int count = _selectedAssetIds.Count;
-            menu.Children.Add(CreateFloatingMenuButton($"حذف ({count})", MaterialIconKind.Delete, DeleteSelectedAssets, true));
-            menu.Children.Add(CreateFloatingMenuButton($"استبدال ({count})", MaterialIconKind.FileUpload, ReplaceSelectedAssets));
-            menu.Children.Add(CreateFloatingMenuButton($"استخراج ({count})", MaterialIconKind.Download, ExportSelectedAssets));
-            menu.Children.Add(CreateFloatingMenuButton("إلغاء التحديد", MaterialIconKind.Close, ExitSelectionMode));
+            menu.Children.Add(CreateFloatingMenuButton($"Delete ({count})", MaterialIconKind.Delete, DeleteSelectedAssets, true));
+            menu.Children.Add(CreateFloatingMenuButton($"Extract ({count})", MaterialIconKind.Download, ExportSelectedAssets));
+            menu.Children.Add(CreateFloatingMenuButton("Cancel selection", MaterialIconKind.Close, ExitSelectionMode));
         }
         else
         {
-            menu.Children.Add(CreateFloatingMenuButton("استخراج كل ما في الملف", MaterialIconKind.Download, () =>
+            menu.Children.Add(CreateFloatingMenuButton("Import new asset", MaterialIconKind.FilePlus, () =>
             {
-                if (_currentAssets is not null) _ = ExportAssetsArchiveAsync(_currentAssets.file.AssetInfos.ToList());
+                var importMenu = CreateNewAssetImportMenu();
+                if (importMenu.Items.Count == 0)
+                {
+                    _status.Text = "No supported asset types are available for importing into this file.";
+                    return;
+                }
+                importMenu.PlacementTarget = _floatingActionButton;
+                importMenu.Open();
             }));
-            menu.Children.Add(CreateFloatingMenuButton("استخراج العناصر المفلترة فقط", MaterialIconKind.Filter, () =>
+            menu.Children.Add(CreateFloatingMenuButton("Extract all assets", MaterialIconKind.Download, () =>
+            {
+                if (_currentAssets is not null)
+                    _ = ExportAssetsArchiveAsync(_currentAssets.file.AssetInfos
+                        .Where(x => !_pendingDeleteIds.Contains(x.PathId)).ToList());
+            }));
+            menu.Children.Add(CreateFloatingMenuButton("Extract filtered assets", MaterialIconKind.Filter, () =>
             {
                 var rows = _currentRows.Where(x => x.AssetInfo is not null).Select(x => x.AssetInfo!).ToList();
                 if (rows.Count > 0) _ = ExportAssetsArchiveAsync(rows);
             }));
-            var save = CreateFloatingMenuButton($"حفظ التعديلات ({_pendingAssetChanges.Count})", MaterialIconKind.ContentSave, () => _ = SavePendingAssetsAsync());
+            var save = CreateFloatingMenuButton($"Save changes ({_pendingAssetChanges.Count})", MaterialIconKind.ContentSave, () => _ = SavePendingAssetsAsync());
             save.IsEnabled = _hasUnsavedChanges && _pendingAssetChanges.Count > 0;
             menu.Children.Add(save);
         }
@@ -5977,37 +5967,9 @@ public sealed class MainView : UserControl
         await ExportAssetsArchiveAsync(assets);
     }
 
-    private void ReplaceSelectedAssets()
+    private void ShowAssetFormatMenu(AssetFileInfo asset, bool replace, Control? placementTarget = null)
     {
-        var assets = GetSelectedAssets();
-        if (assets.Count == 0 || _currentAssets is null) return;
-        var menu = new ContextMenu();
-        foreach (var group in assets.GroupBy(x => x.GetTypeId(_currentAssets.file)))
-        {
-            int typeId = group.Key;
-            string typeName = Enum.GetName(typeof(AssetClassID), typeId) ?? $"Type {typeId}";
-            var typeItem = new MenuItem { Header = $"{typeName} ({group.Count()})" };
-            foreach (var format in GetAssetFormats(typeId, true))
-            {
-                var formatItem = new MenuItem { Header = format.Label };
-                var matching = group.ToList();
-                formatItem.Click += async (_, _) =>
-                {
-                    ExitSelectionMode();
-                    foreach (var asset in matching)
-                        await ReplaceAssetAsync(asset, format.Key);
-                };
-                typeItem.Items.Add(formatItem);
-            }
-            menu.Items.Add(typeItem);
-        }
-        menu.PlacementTarget = _floatingActionButton;
-        menu.Open();
-    }
-
-    private void ShowAssetFormatMenu(AssetFileInfo asset, bool replace)
-    {
-        if (_currentAssets is null) return;
+        if (_currentAssets is null || _isBusy) return;
         int typeId = asset.GetTypeId(_currentAssets.file);
         var formats = GetAssetFormats(typeId, replace);
         var menu = new ContextMenu();
@@ -6016,13 +5978,37 @@ public sealed class MainView : UserControl
             var item = new MenuItem { Header = format.Label };
             item.Click += async (_, _) =>
             {
-                if (replace) await ReplaceAssetAsync(asset, format.Key);
-                else await ExportAssetAsync(asset);
+                try
+                {
+                    if (replace)
+                        await ReplaceAssetSafelyAsync(asset, format.Key);
+                    else
+                        await ExportAssetAsync(asset);
+                }
+                catch (Exception ex)
+                {
+                    _status.Text = (replace ? "Replace failed: " : "Export failed: ") + ex.Message;
+                }
             };
             menu.Items.Add(item);
         }
-        menu.PlacementTarget = this;
+        menu.PlacementTarget = placementTarget ?? _floatingActionButton ?? this;
         menu.Open();
+    }
+
+    private async Task ReplaceAssetSafelyAsync(AssetFileInfo asset, string format)
+    {
+        if (_currentAssets is null || _isBusy) return;
+        try
+        {
+            await ReplaceAssetAsync(asset, format);
+        }
+        catch (Exception ex)
+        {
+            _status.Text = "Replace failed: " + ex.Message;
+            SetLoading(false);
+            _isBusy = false;
+        }
     }
 
     private static List<(string Key, string Label)> GetAssetFormats(int typeId, bool replace)
