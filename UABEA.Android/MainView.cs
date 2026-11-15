@@ -443,6 +443,7 @@ public sealed class MainView : UserControl
         _sessionResourcePaths.Clear();
         _sessionResourceWasExplicitlySelected = false;
         _pendingAssetChanges.Clear();
+        _pendingAssetData.Clear();
         _pendingDeleteIds.Clear();
         _selectedAssetIds.Clear();
         _selectionMode = false;
@@ -3779,12 +3780,11 @@ public sealed class MainView : UserControl
             y + height <= textureHeight + 1;
     }
 
-    private static AssetTypeValueField ReadTextureFieldForPreview(
+    private AssetTypeValueField ReadTextureFieldForPreview(
         AssetsManager manager, AssetsFileInstance instance, AssetFileInfo asset)
     {
-        // The generic class database can describe "image data" as an ordinary
-        // array of scalar values. TextureFile expects a ByteArray; reading it
-        // through the unmodified template can corrupt block-compressed payloads.
+        // TextureFile expects image data as a byte array, including when the
+        // active session contains a replacement that has not been saved yet.
         var template = manager.GetTemplateBaseField(instance, asset);
         if (template == null)
             throw new InvalidDataException("Texture type information could not be read.");
@@ -3797,6 +3797,14 @@ public sealed class MainView : UserControl
         var platformBlob = template.Children.FirstOrDefault(x => x.Name == "m_PlatformBlob");
         if (platformBlob != null && platformBlob.Children.Count > 0)
             platformBlob.Children[0].ValueType = AssetValueType.ByteArray;
+
+        if (_pendingAssetData.TryGetValue(asset.PathId, out var replacementData))
+        {
+            using var stream = new MemoryStream(replacementData, writable: false);
+            using var replacementReader = new AssetsFileReader(stream);
+            replacementReader.BigEndian = instance.file.Reader.BigEndian;
+            return template.MakeValue(replacementReader);
+        }
 
         var reader = instance.file.Reader;
         lock (reader)
