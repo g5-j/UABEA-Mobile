@@ -1349,6 +1349,123 @@ public sealed class MainView : UserControl
         finally { _isBusy = false; SetLoading(false); }
     }
 
+    private async Task ImportCubemapAsync(AssetFileInfo asset)
+    {
+        if (_currentAssets is null || _assetsManager is null || _isBusy) return;
+        var topLevel = TopLevel.GetTopLevel(this);
+        if (topLevel is null) return;
+
+        var selected = await topLevel.StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
+        {
+            Title = "Choose cubemap ZIP (six PNG faces)",
+            AllowMultiple = false,
+            FileTypeFilter = new[]
+            {
+                new FilePickerFileType("Cubemap face archive") { Patterns = new[] { "*.zip" } }
+            }
+        });
+        if (selected.Count == 0) return;
+
+        var instance = _currentAssets;
+        _isBusy = true;
+        SetLoading(true, "Importing cubemap faces...");
+        try
+        {
+            byte[] zipBytes;
+            await using (var input = await selected[0].OpenReadAsync())
+            using (var memory = new MemoryStream())
+            {
+                await input.CopyToAsync(memory);
+                zipBytes = memory.ToArray();
+            }
+
+            byte[] serialized = await Task.Run(() =>
+            {
+                string[] faceNames = { "PositiveX.png", "NegativeX.png", "PositiveY.png",
+                    "NegativeY.png", "PositiveZ.png", "NegativeZ.png" };
+                using var zipStream = new MemoryStream(zipBytes, false);
+                using var archive = new ZipArchive(zipStream, ZipArchiveMode.Read, false);
+                var rgbaFaces = new List<byte[]>(6);
+                int faceWidth = -1, faceHeight = -1;
+
+                foreach (string faceName in faceNames)
+                {
+                    var entry = archive.Entries.FirstOrDefault(x =>
+                        string.Equals(Path.GetFileName(x.FullName), faceName, StringComparison.OrdinalIgnoreCase))
+                        ?? throw new InvalidDataException("Cubemap ZIP is missing " + faceName + ".");
+                    using var faceStream = entry.Open();
+                    using var encoded = new MemoryStream();
+                    faceStream.CopyTo(encoded);
+                    byte[] png = encoded.ToArray();
+                    using var bitmap = global::Android.Graphics.BitmapFactory.DecodeByteArray(png, 0, png.Length)
+                        ?? throw new InvalidDataException(faceName + " is not a supported PNG image.");
+
+                    if (bitmap.Width <= 0 || bitmap.Width != bitmap.Height ||
+                        bitmap.Width > 4096 || bitmap.Height > 4096)
+                        throw new InvalidDataException("Cubemap faces must be square PNGs up to 4096x4096.");
+                    if (faceWidth < 0) { faceWidth = bitmap.Width; faceHeight = bitmap.Height; }
+                    if (bitmap.Width != faceWidth || bitmap.Height != faceHeight)
+                        throw new InvalidDataException("All six cubemap faces must have identical dimensions.");
+
+                    int[] argb = new int[checked(faceWidth * faceHeight)];
+                    bitmap.GetPixels(argb, 0, faceWidth, 0, 0, faceWidth, faceHeight);
+                    byte[] rgba = new byte[checked(argb.Length * 4)];
+                    for (int y = 0; y < faceHeight; y++)
+                    {
+                        int sourceRow = (faceHeight - 1 - y) * faceWidth;
+                        int targetRow = y * faceWidth * 4;
+                        for (int x = 0; x < faceWidth; x++)
+                        {
+                            int pixel = argb[sourceRow + x];
+                            int p = targetRow + x * 4;
+                            rgba[p] = (byte)(pixel >> 16);
+                            rgba[p + 1] = (byte)(pixel >> 8);
+                            rgba[p + 2] = (byte)pixel;
+                            rgba[p + 3] = (byte)(pixel >> 24);
+                        }
+                    }
+                    rgbaFaces.Add(rgba);
+                }
+
+                var template = _assetsManager!.GetTemplateBaseField(instance, asset)
+                    ?? throw new InvalidDataException("Cubemap type information could not be read.");
+                var imageTemplate = template.Children.FirstOrDefault(x =>
+                    x.Name == "image data" || x.Name == "m_ImageData");
+                if (imageTemplate is null) throw new InvalidDataException("Cubemap has no image data field.");
+                imageTemplate.ValueType = AssetValueType.ByteArray;
+                var reader = instance.file.Reader;
+                AssetTypeValueField field;
+                lock (reader) field = template.MakeValue(reader, asset.GetAbsoluteByteStart(instance.file), null);
+
+                var cubemap = TextureFile.ReadTextureFile(field);
+                int totalLength = checked(rgbaFaces.Sum(x => x.Length));
+                byte[] allFaces = new byte[totalLength];
+                int position = 0;
+                foreach (var face in rgbaFaces)
+                {
+                    Buffer.BlockCopy(face, 0, allFaces, position, face.Length);
+                    position += face.Length;
+                }
+                cubemap.m_Width = faceWidth;
+                cubemap.m_Height = faceHeight;
+                cubemap.m_TextureFormat = (int)TextureFormat.RGBA32;
+                cubemap.m_CompleteImageSize = allFaces.Length;
+                cubemap.m_MipCount = 1;
+                cubemap.m_MipMap = false;
+                cubemap.m_StreamingMipmaps = false;
+                cubemap.pictureData = allFaces;
+                cubemap.m_StreamData = new TextureFile.StreamingInfo { offset = 0, size = 0, path = "" };
+                cubemap.WriteTo(field);
+                return field.WriteToByteArray(reader.BigEndian);
+            });
+
+            await SaveAssetReplacementAsync(asset, serialized, "Cubemap import");
+            _status.Text = "Cubemap import prepared. Save the modified Unity file to apply all six faces.";
+        }
+        catch (Exception ex) { _status.Text = "Cubemap import failed:\n" + ex.Message; }
+        finally { _isBusy = false; SetLoading(false); }
+    }
+
     private async Task SaveAssetReplacementAsync(AssetFileInfo asset, byte[] serializedData, string operation)
     {
         var topLevel = TopLevel.GetTopLevel(this) ?? throw new InvalidOperationException("Storage provider is unavailable.");
@@ -1931,6 +2048,23 @@ public sealed class MainView : UserControl
             };
             importFontButton.Click += async (_, _) => await ImportFontAssetAsync(asset);
             _items.Children.Add(importFontButton);
+        }
+
+        else if (typeId == (int)AssetClassID.Cubemap)
+        {
+            var importCubemapButton = new Button
+            {
+                Content = CreateIconLabel(MaterialIconKind.Image, "Import cubemap (6 PNG ZIP)", OnPrimaryBrush, 15),
+                Background = SurfaceHighBrush,
+                Foreground = TextBrush,
+                BorderBrush = OutlineBrush,
+                BorderThickness = new Thickness(1),
+                CornerRadius = new CornerRadius(12),
+                MinHeight = 46,
+                HorizontalAlignment = HorizontalAlignment.Stretch
+            };
+            importCubemapButton.Click += async (_, _) => await ImportCubemapAsync(asset);
+            _items.Children.Add(importCubemapButton);
         }
 
         if (typeId == (int)AssetClassID.TextAsset)
