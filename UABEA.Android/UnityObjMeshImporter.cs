@@ -95,17 +95,21 @@ internal static class UnityObjMeshImporter
         if (hasUvs)
             SetChannel(channels.Children[uvChannel], 0, uvOffset, 2);
 
-        var streams = GetRequiredField(vertexData, "m_Streams.Array");
-        if (!streams.TemplateField.IsArray)
-            throw new InvalidDataException("Mesh vertex stream array has an unexpected type.");
-        streams.Children.Clear();
-        var streamItem = ValueBuilder.DefaultValueFieldFromArrayTemplate(streams);
-        SetNumberIfPresent(streamItem, "channelMask", channelMask);
-        SetNumberIfPresent(streamItem, "offset", 0);
-        SetNumberIfPresent(streamItem, "stride", (uint)stride);
-        SetNumberIfPresent(streamItem, "dividerOp", 0);
-        SetNumberIfPresent(streamItem, "frequency", 0);
-        streams.Children.Add(streamItem);
+        // Unity 2018+ derives stream layouts from channel descriptors in many
+        // serialized versions. If a particular TypeTree exposes m_Streams, keep
+        // it consistent; otherwise the channel offsets/stride are sufficient.
+        var streams = GetField(vertexData, "m_Streams.Array");
+        if (streams != null && !streams.IsDummy && streams.TemplateField.IsArray)
+        {
+            streams.Children.Clear();
+            var streamItem = ValueBuilder.DefaultValueFieldFromArrayTemplate(streams);
+            SetNumberIfPresent(streamItem, "channelMask", channelMask);
+            SetNumberIfPresent(streamItem, "offset", 0);
+            SetNumberIfPresent(streamItem, "stride", (uint)stride);
+            SetNumberIfPresent(streamItem, "dividerOp", 0);
+            SetNumberIfPresent(streamItem, "frequency", 0);
+            streams.Children.Add(streamItem);
+        }
 
         bool wroteVertexPayload = false;
         wroteVertexPayload |= TrySetByteArray(vertexData, "m_Data", vertexBytes);
@@ -391,8 +395,8 @@ internal static class UnityObjMeshImporter
 
     private static void SetBounds(AssetTypeValueField root, Vector3 center, Vector3 extent, string prefix = "localAABB")
     {
-        SetVector3IfPresent(root, prefix + ".center", center);
-        SetVector3IfPresent(root, prefix + ".extent", extent);
+        SetVector3IfPresent(root, prefix + ".m_Center", center);
+        SetVector3IfPresent(root, prefix + ".m_Extent", extent);
     }
 
     private static void SetVector3IfPresent(AssetTypeValueField root, string path, Vector3 value)
