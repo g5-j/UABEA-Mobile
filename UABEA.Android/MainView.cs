@@ -2218,7 +2218,7 @@ public sealed class MainView : UserControl
         return Task.CompletedTask;
     }
 
-    private void QueueAssetDeletion(AssetFileInfo asset)
+    private bool QueueAssetDeletion(AssetFileInfo asset)
     {
         try
         {
@@ -2241,8 +2241,13 @@ public sealed class MainView : UserControl
             UpdateNavigation();
             RefreshCurrentList();
             UpdateFloatingActions();
+            return true;
         }
-        catch (Exception ex) { _status.Text = "Could not queue asset deletion: " + ex.Message; }
+        catch (Exception ex)
+        {
+            _status.Text = "Could not queue asset deletion: " + ex.Message;
+            return false;
+        }
     }
 
     private async Task SavePendingAssetsAsync()
@@ -5979,11 +5984,13 @@ public sealed class MainView : UserControl
     private void DeleteSelectedAssets()
     {
         var assets = GetSelectedAssets();
-        foreach (var asset in assets) QueueAssetDeletion(asset);
+        int queued = 0;
+        foreach (var asset in assets)
+            if (QueueAssetDeletion(asset)) queued++;
         ExitSelectionMode();
-        _status.Text = assets.Count == 0
-            ? "No assets were deleted."
-            : $"{assets.Count} asset(s) marked for deletion. Select Save changes to apply them.";
+        _status.Text = queued == 0
+            ? "No assets were queued for deletion."
+            : $"{queued} asset(s) marked for deletion. Select Save changes to apply them.";
     }
 
     private async void ExportSelectedAssets()
