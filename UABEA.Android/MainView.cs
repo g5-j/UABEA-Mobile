@@ -1992,6 +1992,19 @@ public sealed class MainView : UserControl
                     instance.file.Reader.BigEndian,
                     instance.file.Metadata.UnityVersion);
                 byte[] serialized = field.WriteToByteArray(instance.file.Reader.BigEndian);
+
+                // Parse the serialized bytes back through the same TypeTree and
+                // Mesh preview reader before offering the file for saving.
+                var template = manager.GetTemplateBaseField(instance, asset)
+                    ?? throw new InvalidDataException("Mesh TypeTree is unavailable for import verification.");
+                using var verifyStream = new MemoryStream(serialized, writable: false);
+                using var verifyReader = new AssetsFileReader(verifyStream);
+                verifyReader.BigEndian = instance.file.Reader.BigEndian;
+                var verifiedField = template.MakeValue(verifyReader);
+                var verifiedMesh = MeshPreviewDataReader.Read(verifiedField);
+                if (verifiedMesh.Vertices.Length < 3 || verifiedMesh.Indices.Length < 3)
+                    throw new InvalidDataException("The imported Mesh did not pass the serialized-data verification.");
+
                 return (Serialized: serialized, Summary: summary);
             });
 
