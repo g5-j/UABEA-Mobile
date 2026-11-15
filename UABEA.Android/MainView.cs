@@ -1320,9 +1320,10 @@ public sealed class MainView : UserControl
                 ?? throw new NotSupportedException("This AudioClip layout has no resource size field.");
 
             string currentSource = ReadFieldString(sourceField);
-            string suggestedResourceName = string.IsNullOrWhiteSpace(currentSource)
-                ? Path.GetFileNameWithoutExtension(instance.name) + ".resource"
-                : Path.GetFileName(currentSource.Replace('/', Path.DirectorySeparatorChar));
+            string resourceBaseName = string.IsNullOrWhiteSpace(currentSource)
+                ? Path.GetFileNameWithoutExtension(instance.name)
+                : Path.GetFileNameWithoutExtension(currentSource.Replace('/', Path.DirectorySeparatorChar));
+            string suggestedResourceName = resourceBaseName + ".resource";
             var resourceDestination = await topLevel.StorageProvider.SaveFilePickerAsync(new FilePickerSaveOptions
             {
                 Title = "Save the new AudioClip resource",
@@ -2527,7 +2528,8 @@ public sealed class MainView : UserControl
                 MinHeight = 46,
                 HorizontalAlignment = HorizontalAlignment.Stretch
             };
-            ToolTip.SetTip(importAudioButton, "Converts WAV/OGG to PCM16 in an FSB5 resource and updates AudioClip metadata.");
+            ToolTip.SetTip(importAudioButton, "Converts WAV/OGG to PCM16 in an FSB5 resource. Standalone .assets files only.");
+            importAudioButton.IsEnabled = _currentBundle is null;
             importAudioButton.Click += async (_, _) => await ImportAudioClipAsync(asset);
             _items.Children.Add(importAudioButton);
         }
