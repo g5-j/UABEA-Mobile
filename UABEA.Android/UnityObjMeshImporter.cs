@@ -65,9 +65,6 @@ internal static class UnityObjMeshImporter
         List<int> allIndices = parsed.Groups.SelectMany(g => g.Indices).ToList();
         bool use32BitIndices = vertexCount > ushort.MaxValue || allIndices.Any(i => i > ushort.MaxValue);
 
-        if (use32BitIndices && major < 2017)
-            throw new NotSupportedException("This Unity version does not expose a supported 32-bit Mesh index format.");
-
         byte[] indexBytes = BuildIndexBuffer(allIndices, use32BitIndices, bigEndian);
         (Vector3 center, Vector3 extent) = CalculateBounds(parsed.Vertices);
 
@@ -346,7 +343,9 @@ internal static class UnityObjMeshImporter
 
     private static byte[] BuildVertexBuffer(ParsedObj obj, bool hasUvs, int uvOffset, int stride, bool bigEndian)
     {
-        using var memory = new MemoryStream(checked(obj.Vertices.Count * stride));
+        int rawLength = checked(obj.Vertices.Count * stride);
+        int paddedLength = checked((rawLength + 15) & ~15);
+        using var memory = new MemoryStream(paddedLength);
         using var writer = new AssetsFileWriter(memory);
         writer.BigEndian = bigEndian;
         for (int i = 0; i < obj.Vertices.Count; i++)
@@ -357,10 +356,14 @@ internal static class UnityObjMeshImporter
             writer.Write(n.X); writer.Write(n.Y); writer.Write(n.Z);
             if (hasUvs)
             {
+                if (writer.Position != (long)i * stride + uvOffset)
+                    throw new InvalidDataException("The generated Mesh vertex layout is inconsistent.");
                 Vector2 uv = obj.VertexUvs[i];
                 writer.Write(uv.X); writer.Write(uv.Y);
             }
         }
+        while (memory.Length < paddedLength)
+            writer.Write((byte)0);
         return memory.ToArray();
     }
 
