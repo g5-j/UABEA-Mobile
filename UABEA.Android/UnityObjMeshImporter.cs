@@ -169,6 +169,7 @@ internal static class UnityObjMeshImporter
     {
         if (string.IsNullOrWhiteSpace(text))
             throw new InvalidDataException("The selected OBJ file is empty.");
+        text = text.TrimStart('\\uFEFF');
 
         var result = new ParsedObj();
         result.Groups.Add(new ObjGroup());
@@ -197,12 +198,13 @@ internal static class UnityObjMeshImporter
                         float x = ParseFloat(parts[1]);
                         float y = ParseFloat(parts[2]);
                         float z = ParseFloat(parts[3]);
-                        if (parts.Length > 4)
+                        if (parts.Length == 5)
                         {
                             float w = ParseFloat(parts[4]);
                             if (Math.Abs(w) > 1e-8f) { x /= w; y /= w; z /= w; }
                         }
-                        result.Positions.Add(new Vector3(-x, y, z));
+                        // Keep the same coordinate convention as this app's OBJ exporter.
+                        result.Positions.Add(new Vector3(x, y, z));
                         if (result.Positions.Count > MaxSourceElements)
                             throw new InvalidDataException("The OBJ exceeds the vertex safety limit.");
                         break;
@@ -216,7 +218,8 @@ internal static class UnityObjMeshImporter
 
                     case "vn":
                         if (parts.Length < 4) throw new FormatException("Normal requires X, Y and Z.");
-                        result.SourceNormals.Add(Vector3.Normalize(new Vector3(-ParseFloat(parts[1]), ParseFloat(parts[2]), ParseFloat(parts[3]))));
+                        Vector3 normal = new(ParseFloat(parts[1]), ParseFloat(parts[2]), ParseFloat(parts[3]));
+                        result.SourceNormals.Add(normal.LengthSquared() > 1e-12f ? Vector3.Normalize(normal) : Vector3.Zero);
                         if (result.SourceNormals.Count > MaxSourceElements)
                             throw new InvalidDataException("The OBJ exceeds the normal safety limit.");
                         break;
@@ -246,7 +249,7 @@ internal static class UnityObjMeshImporter
 
                         for (int i = 1; i + 1 < face.Count; i++)
                         {
-                            // OBJ is right-handed. X is mirrored for Unity, so reverse winding.
+                            // Reverse OBJ face winding to match the app's Mesh OBJ exporter.
                             currentGroup.Indices.Add(face[0]);
                             currentGroup.Indices.Add(face[i + 1]);
                             currentGroup.Indices.Add(face[i]);
