@@ -98,6 +98,7 @@ public sealed class MainView : UserControl
     private bool _sessionResourceWasExplicitlySelected;
     private readonly Dictionary<long, AssetsReplacer> _pendingAssetChanges = new();
     private readonly HashSet<long> _selectedAssetIds = new();
+    private readonly HashSet<long> _pendingDeleteIds = new();
     private bool _selectionMode;
     private bool _floatingMenuOpen;
     private Button? _floatingActionButton;
@@ -638,6 +639,7 @@ public sealed class MainView : UserControl
         if (_assetListBox is null) return;
         _displayedRows.Clear();
         _listHeader.Children.Clear();
+        if (_currentPage == BrowserPage.Assets) AddNewAssetImportMenuButton();
         _visibleRows = 0;
         var query = (_searchBox.Text ?? "").Trim();
 
@@ -663,6 +665,7 @@ public sealed class MainView : UserControl
         {
             var selectedType = _filterBox.SelectedItem?.ToString() ?? "All types";
             _currentRows = _assetRows
+                .Where(row => !_pendingDeleteIds.Contains(row.Info.PathId))
                 .Where(row => selectedType == "All types" || row.TypeName == selectedType)
                 .Where(row => Matches(row.Name, query) || Matches(row.TypeName, query))
                 .Select(row => new RowData(row.Name,
@@ -2240,6 +2243,7 @@ public sealed class MainView : UserControl
             var remover = constructor.Invoke(new object[] { 0, asset.PathId }) as AssetsReplacer
                 ?? throw new InvalidOperationException("Could not create an asset remover.");
             _pendingAssetChanges[asset.PathId] = remover;
+            _pendingDeleteIds.Add(asset.PathId);
             _status.Text = $"Asset {asset.PathId} marked for deletion. Use the floating menu → Save to apply it.";
             CloseAssetDetailsLayer();
             _currentPage = BrowserPage.Assets;
@@ -2284,6 +2288,7 @@ public sealed class MainView : UserControl
             await target.FlushAsync();
             int count = replacers.Count;
             _pendingAssetChanges.Clear();
+            _pendingDeleteIds.Clear();
             _status.Text = $"Saved {destination.Name}\nApplied {count} pending asset changes.\nOnly the opened .assets file was exported; the surrounding unity3d bundle was not exported.";
             UpdateFloatingActions();
         }
@@ -5784,6 +5789,30 @@ public sealed class MainView : UserControl
         return button;
     }
 
+    private void AddNewAssetImportMenuButton()
+    {
+        var button = CreateDetailActionButton(MaterialIconKind.FilePlus, "Import new asset", SurfaceHighBrush, TextBrush);
+        var menu = new ContextMenu();
+        void Add(string label, int typeId, Func<AssetFileInfo, Task> import)
+        {
+            var template = _assetRows.FirstOrDefault(x => x.Info.GetTypeId(_currentAssets!.file) == typeId)?.Info;
+            if (template is null) return;
+            var item = new MenuItem { Header = label };
+            item.Click += async (_, _) => await import(template);
+            menu.Items.Add(item);
+        }
+        Add("Texture2D • PNG / JPG", (int)AssetClassID.Texture2D, x => ImportTextureImageAsync(x, true));
+        Add("Sprite • PNG + Texture2D", (int)AssetClassID.Sprite, x => ImportSpriteImageAsync(x, true));
+        Add("AudioClip • WAV / OGG", (int)AssetClassID.AudioClip, x => ImportAudioClipAsync(x, true));
+        Add("Font • TTF / OTF", (int)AssetClassID.Font, x => ImportFontAssetAsync(x, true));
+        Add("TextAsset", (int)AssetClassID.TextAsset, x => ImportTextAssetAsync(x, true));
+        Add("Cubemap • ZIP", (int)AssetClassID.Cubemap, x => ImportCubemapAsync(x, true));
+        Add("Mesh • OBJ", (int)AssetClassID.Mesh, x => ImportMeshObjAsync(x, true));
+        button.Click += (_, _) => { if (menu.Items.Count > 0) { menu.PlacementTarget = button; menu.Open(); } };
+        button.Margin = new Thickness(0, 0, 0, 8);
+        _listHeader.Children.Add(button);
+    }
+
     private Button CreateDetailActionButton(MaterialIconKind icon, string label, IBrush background, IBrush foreground)
     {
         return new Button
@@ -5821,8 +5850,7 @@ public sealed class MainView : UserControl
             CornerRadius = new CornerRadius(29),
             Background = PrimaryBrush, Foreground = OnPrimaryBrush,
             HorizontalAlignment = HorizontalAlignment.Left,
-            Content = CreateIcon(MaterialIconKind.Menu, 25, OnPrimaryBrush),
-            BoxShadow = new Avalonia.Media.BoxShadows(new Avalonia.Media.BoxShadow { Blur = 18, Spread = 1, Color = Color.Parse("#66000000") })
+            Content = CreateIcon(MaterialIconKind.Menu, 25, OnPrimaryBrush)
         };
         _floatingActionButton.Click += (_, _) =>
         {
