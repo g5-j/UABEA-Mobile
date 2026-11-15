@@ -5923,7 +5923,7 @@ public sealed class MainView : UserControl
                     _status.Text = "No supported asset types are available for importing into this file.";
                     return;
                 }
-                var target = _floatingActionButton ?? this;
+                var target = (Control?)_floatingActionButton ?? this;
                 importMenu.PlacementTarget = target;
                 importMenu.Open(target);
             }));
