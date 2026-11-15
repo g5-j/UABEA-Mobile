@@ -13,6 +13,7 @@ using AssetsTools.NET.Extra;
 using AssetsTools.NET.Texture;
 using Fmod5Sharp;
 using Fmod5Sharp.FmodTypes;
+using NVorbis;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.Primitives;
@@ -2189,6 +2190,23 @@ public sealed class MainView : UserControl
             };
             importTextButton.Click += async (_, _) => await ImportTextAssetAsync(asset);
             _items.Children.Add(importTextButton);
+        }
+        else if (typeId == (int)AssetClassID.AudioClip)
+        {
+            var importAudioButton = new Button
+            {
+                Content = CreateIconLabel(MaterialIconKind.FileMusic, "Import audio (WAV / OGG)", OnPrimaryBrush, 15),
+                Background = SurfaceHighBrush,
+                Foreground = TextBrush,
+                BorderBrush = OutlineBrush,
+                BorderThickness = new Thickness(1),
+                CornerRadius = new CornerRadius(12),
+                MinHeight = 46,
+                HorizontalAlignment = HorizontalAlignment.Stretch
+            };
+            ToolTip.SetTip(importAudioButton, "Converts WAV/OGG to PCM16 in an FSB5 resource and updates AudioClip metadata.");
+            importAudioButton.Click += async (_, _) => await ImportAudioClipAsync(asset);
+            _items.Children.Add(importAudioButton);
         }
         else if (typeId == (int)AssetClassID.Font)
         {
