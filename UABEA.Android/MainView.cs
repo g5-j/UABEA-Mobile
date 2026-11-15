@@ -2008,8 +2008,8 @@ public sealed class MainView : UserControl
                 return (Serialized: serialized, Summary: summary);
             });
 
+            _status.Text = result.Summary;
             await SaveAssetReplacementAsync(asset, result.Serialized, "Mesh OBJ import");
-            _status.Text = result.Summary + "\nSaved as a new Unity file. Reopen it and inspect the Mesh preview before replacing the original.";
         }
         catch (Exception ex)
         {
