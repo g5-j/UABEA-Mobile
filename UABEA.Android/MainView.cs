@@ -1403,14 +1403,11 @@ public sealed class MainView : UserControl
                 float rh = ReadFieldFloat(GetChildField(rect, "height"), float.NaN);
                 if (!(rw > 0 && rh > 0))
                 {
-                    if (!TryReadSpriteUvRect(renderData, 1, 1, out _, out _, out _, out _))
-                    {
-                        rect = GetChildField(sprite, "m_Rect");
-                        rx = ReadFieldFloat(GetChildField(rect, "x"), float.NaN);
-                        ry = ReadFieldFloat(GetChildField(rect, "y"), float.NaN);
-                        rw = ReadFieldFloat(GetChildField(rect, "width"), float.NaN);
-                        rh = ReadFieldFloat(GetChildField(rect, "height"), float.NaN);
-                    }
+                    rect = GetChildField(sprite, "m_Rect");
+                    rx = ReadFieldFloat(GetChildField(rect, "x"), float.NaN);
+                    ry = ReadFieldFloat(GetChildField(rect, "y"), float.NaN);
+                    rw = ReadFieldFloat(GetChildField(rect, "width"), float.NaN);
+                    rh = ReadFieldFloat(GetChildField(rect, "height"), float.NaN);
                 }
                 if (!(rw >= 1 && rh >= 1) || !float.IsFinite(rx) || !float.IsFinite(ry))
                     throw new NotSupportedException("This Sprite has no supported atlas rectangle.");
