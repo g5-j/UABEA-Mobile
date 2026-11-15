@@ -26,6 +26,7 @@
     <PackageReference Include="Material.Icons.Avalonia" Version="2.4.0" />
     <PackageReference Include="AssetRipper.TextureDecoder" Version="1.2.0" />
     <PackageReference Include="Fmod5Sharp" Version="3.0.1" />
+    <PackageReference Include="NVorbis" Version="0.10.5" />
   </ItemGroup>
 
   <ItemGroup>
