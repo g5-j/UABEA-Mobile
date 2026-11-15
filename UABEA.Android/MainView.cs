@@ -2282,46 +2282,162 @@ public sealed class MainView : UserControl
         if (_currentAssets is null || _pendingAssetChanges.Count == 0 || _isBusy) return;
         var top = TopLevel.GetTopLevel(this);
         if (top is null) return;
+
         var instance = _currentAssets;
-        string fileName = Path.GetFileName(instance.name ?? "sharedassets.assets");
-        if (!fileName.EndsWith(".assets", StringComparison.OrdinalIgnoreCase) &&
-            !fileName.EndsWith(".asset", StringComparison.OrdinalIgnoreCase))
-            fileName = Path.GetFileNameWithoutExtension(fileName) + ".assets";
+        var bundle = _currentBundle;
+        bool saveWholeBundle = false;
+        if (bundle is not null)
+        {
+            var owner = top as Window;
+            if (owner is null)
+            {
+                _status.Text = "Could not open the bundle save options.";
+                return;
+            }
+
+            string? choice = await ShowBundleSaveChoiceAsync(owner);
+            if (choice is null) return;
+            saveWholeBundle = choice == "bundle";
+        }
+
+        string originalName = Path.GetFileName(saveWholeBundle
+            ? _currentFileName
+            : instance.name ?? "sharedassets.assets");
+        if (string.IsNullOrWhiteSpace(originalName))
+            originalName = saveWholeBundle ? "modified.unity3d" : "sharedassets.assets";
+        string extension = Path.GetExtension(originalName);
+        if (string.IsNullOrWhiteSpace(extension))
+            extension = saveWholeBundle ? ".unity3d" : ".assets";
+        string suggestedName = Path.GetFileNameWithoutExtension(originalName) + "-modified" + extension;
+
         var destination = await top.StorageProvider.SaveFilePickerAsync(new FilePickerSaveOptions
         {
-            Title = "Save modified assets file",
-            SuggestedFileName = fileName,
-            FileTypeChoices = new[] { new FilePickerFileType("Unity assets file") { Patterns = new[] { "*.assets", "*.asset" } } }
+            Title = saveWholeBundle ? "Save modified Unity bundle copy" : "Save modified assets file copy",
+            SuggestedFileName = suggestedName,
+            FileTypeChoices = saveWholeBundle
+                ? new[] { new FilePickerFileType("Unity bundle") { Patterns = new[] { "*.unity3d", "*.bundle", "*.assetbundle" } } }
+                : new[] { new FilePickerFileType("Unity assets file") { Patterns = new[] { "*.assets", "*.asset" } } }
         });
         if (destination is null) return;
-        string temp = Path.Combine(Path.GetTempPath(), "uabea-save-" + Guid.NewGuid().ToString("N") + ".assets");
+
+        string temp = Path.Combine(Path.GetTempPath(), "uabea-save-" + Guid.NewGuid().ToString("N") +
+            (saveWholeBundle ? ".unity3d" : ".assets"));
         try
         {
             _isBusy = true;
-            SetLoading(true, "Saving modified .assets file...");
+            SetLoading(true, saveWholeBundle ? "Building modified Unity bundle..." : "Building modified assets file...");
             var replacers = _pendingAssetChanges.Values.ToList();
             await Task.Run(() =>
             {
-                using var output = File.Create(temp);
-                using var writer = new AssetsFileWriter(output);
-                instance.file.Write(writer, 0, replacers);
+                byte[] modifiedAssets;
+                using (var assetsStream = new MemoryStream())
+                {
+                    using (var assetsWriter = new AssetsFileWriter(assetsStream))
+                        instance.file.Write(assetsWriter, 0, replacers);
+                    modifiedAssets = assetsStream.ToArray();
+                }
+
+                if (saveWholeBundle)
+                {
+                    if (bundle is null) throw new InvalidOperationException("The Unity bundle is no longer available.");
+                    string entryName = ResolveBundleAssetsEntryName(bundle, instance);
+                    var bundleReplacer = new BundleReplacerFromMemory(
+                        entryName, entryName, true, modifiedAssets, -1);
+                    using var output = File.Create(temp);
+                    using var writer = new AssetsFileWriter(output);
+                    bundle.file.Write(writer, new List<BundleReplacer> { bundleReplacer });
+                }
+                else
+                {
+                    File.WriteAllBytes(temp, modifiedAssets);
+                }
             });
+
             await using var target = await destination.OpenWriteAsync();
             await using var source = File.OpenRead(temp);
             await source.CopyToAsync(target);
             await target.FlushAsync();
-            int count = replacers.Count;
+
             _hasUnsavedChanges = false;
-            _status.Text = $"Saved {destination.Name}\nApplied {count} pending asset changes.\nOnly the opened .assets file was exported; the surrounding unity3d bundle was not exported.";
+            _status.Text = saveWholeBundle
+                ? $"Saved modified Unity bundle copy: {destination.Name}\nThe opened assets entry and its pending changes were included. The original file was not changed."
+                : $"Saved modified assets file copy: {destination.Name}\nApplied {_pendingAssetChanges.Count} pending asset changes. The surrounding Unity bundle was not included. The original file was not changed.";
             UpdateFloatingActions();
         }
-        catch (Exception ex) { _status.Text = "Save failed: " + ex.Message; }
+        catch (Exception ex)
+        {
+            _status.Text = "Save failed: " + ex.Message;
+        }
         finally
         {
             try { File.Delete(temp); } catch { }
             _isBusy = false;
             SetLoading(false);
         }
+    }
+
+    private async Task<string?> ShowBundleSaveChoiceAsync(Window owner)
+    {
+        var dialog = new Window
+        {
+            Title = "Save Unity bundle",
+            Width = 360,
+            Height = 260,
+            CanResize = false,
+            WindowStartupLocation = WindowStartupLocation.CenterOwner,
+            Background = SurfaceBrush,
+            Content = new StackPanel
+            {
+                Margin = new Thickness(20),
+                Spacing = 12,
+                Children =
+                {
+                    new TextBlock
+                    {
+                        Text = "Choose what to save",
+                        FontSize = 19,
+                        FontWeight = FontWeight.SemiBold,
+                        Foreground = TextBrush,
+                        TextWrapping = TextWrapping.Wrap
+                    },
+                    new TextBlock
+                    {
+                        Text = "This asset was opened from a Unity bundle.",
+                        FontSize = 14,
+                        Foreground = MutedBrush,
+                        TextWrapping = TextWrapping.Wrap
+                    }
+                }
+            }
+        };
+
+        var content = (StackPanel)dialog.Content!;
+        var bundleButton = new Button
+        {
+            Content = "Save entire Unity bundle",
+            MinHeight = 46,
+            HorizontalAlignment = HorizontalAlignment.Stretch
+        };
+        bundleButton.Click += (_, _) => dialog.Close("bundle");
+        var assetsButton = new Button
+        {
+            Content = "Save opened .assets file only",
+            MinHeight = 46,
+            HorizontalAlignment = HorizontalAlignment.Stretch
+        };
+        assetsButton.Click += (_, _) => dialog.Close("assets");
+        var cancelButton = new Button
+        {
+            Content = "Cancel",
+            MinHeight = 42,
+            HorizontalAlignment = HorizontalAlignment.Stretch
+        };
+        cancelButton.Click += (_, _) => dialog.Close(null);
+        content.Children.Add(bundleButton);
+        content.Children.Add(assetsButton);
+        content.Children.Add(cancelButton);
+
+        return await dialog.ShowDialog<string?>(owner);
     }
 
     private static string ResolveBundleAssetsEntryName(
@@ -2391,7 +2507,7 @@ public sealed class MainView : UserControl
 
         if (typeId == (int)AssetClassID.AudioClip)
         {
-            var field = manager.GetBaseField(instance, asset)
+            var field = GetAssetBaseField(instance, asset, manager)
                 ?? throw new InvalidDataException("AudioClip data could not be read.");
             string source = ReadFieldString(field["m_Resource.m_Source"]);
             ulong offset = ReadUnsignedField(field["m_Resource.m_Offset"]);
@@ -2451,7 +2567,7 @@ public sealed class MainView : UserControl
 
         if (typeId == (int)AssetClassID.TextAsset)
         {
-            var field = manager.GetBaseField(instance, asset)
+            var field = GetAssetBaseField(instance, asset, manager)
                 ?? throw new InvalidDataException("TextAsset data could not be read.");
             byte[] bytes = field["m_Script"]?.AsByteArray ?? Array.Empty<byte>();
             return new AssetExportPayload(bytes, ".txt", false);
@@ -2459,7 +2575,7 @@ public sealed class MainView : UserControl
 
         if (typeId == (int)AssetClassID.Mesh)
         {
-            var field = manager.GetBaseField(instance, asset)
+            var field = GetAssetBaseField(instance, asset, manager)
                 ?? throw new InvalidDataException("Mesh data could not be read.");
             MeshStreamInfo stream = MeshPreviewDataReader.ReadStreamInfo(field);
             byte[]? streamedData = null;
@@ -2539,7 +2655,7 @@ public sealed class MainView : UserControl
 
     private byte[] ExportSpritePng(AssetsManager manager, AssetsFileInstance instance, AssetFileInfo spriteAsset)
     {
-        var sprite = manager.GetBaseField(instance, spriteAsset)
+        var sprite = GetAssetBaseField(instance, spriteAsset, manager)
             ?? throw new InvalidDataException("Sprite data could not be read.");
         var renderData = GetChildField(sprite, "m_RD");
         var texturePointer = GetChildField(renderData, "texture");
@@ -3161,7 +3277,7 @@ public sealed class MainView : UserControl
                 {
                     if (!assetsByPath.TryGetValue(pathId, out var info))
                         return null;
-                    return manager.GetBaseField(instance, info);
+                    return GetAssetBaseField(instance, info, manager);
                 }
 
                 void AddGameObject(long gameObjectPathId, int depth)
@@ -3410,7 +3526,7 @@ public sealed class MainView : UserControl
         {
             var result = await Task.Run(() =>
             {
-                var sprite = manager.GetBaseField(instance, spriteAsset);
+                var sprite = GetAssetBaseField(instance, spriteAsset, manager);
                 if (sprite == null)
                     throw new InvalidDataException("Sprite data could not be read.");
 
@@ -3729,7 +3845,7 @@ public sealed class MainView : UserControl
             if (!string.Equals(Enum.GetName(typeof(AssetClassID), info.GetTypeId(instance.file)), "MeshFilter", StringComparison.Ordinal)) continue;
             try
             {
-                var filter = manager.GetBaseField(instance, info);
+                var filter = GetAssetBaseField(instance, info, manager);
                 long linkedMesh = ReadFieldInt64(GetChildField(GetChildField(filter, "m_Mesh"), "m_PathID"));
                 if (linkedMesh != meshPathId) continue;
                 gameObjectPathId = ReadFieldInt64(GetChildField(GetChildField(filter, "m_GameObject"), "m_PathID"));
@@ -3743,7 +3859,7 @@ public sealed class MainView : UserControl
             if (!string.Equals(Enum.GetName(typeof(AssetClassID), info.GetTypeId(instance.file)), "MeshRenderer", StringComparison.Ordinal)) continue;
             try
             {
-                var renderer = manager.GetBaseField(instance, info);
+                var renderer = GetAssetBaseField(instance, info, manager);
                 long rendererGameObject = ReadFieldInt64(GetChildField(GetChildField(renderer, "m_GameObject"), "m_PathID"));
                 if (rendererGameObject != gameObjectPathId) continue;
                 var materials = GetChildField(GetChildField(renderer, "m_Materials"), "Array");
@@ -3815,7 +3931,7 @@ public sealed class MainView : UserControl
         {
             var data = await Task.Run(() =>
             {
-                var field = manager.GetBaseField(instance, asset);
+                var field = GetAssetBaseField(instance, asset, manager);
                 if (field == null)
                     throw new InvalidDataException("Material data could not be read.");
 
@@ -4133,7 +4249,7 @@ public sealed class MainView : UserControl
         {
             var audioFile = await Task.Run(() =>
             {
-                var field = manager.GetBaseField(instance, asset);
+                var field = GetAssetBaseField(instance, asset, manager);
                 if (field == null)
                     throw new InvalidDataException("AudioClip data could not be read.");
 
@@ -4565,7 +4681,7 @@ public sealed class MainView : UserControl
         {
             meshData = await Task.Run(() =>
             {
-                var field = manager.GetBaseField(instance, asset);
+                var field = GetAssetBaseField(instance, asset, manager);
                 if (field == null)
                     throw new InvalidDataException("Mesh data could not be read.");
 
@@ -4978,7 +5094,7 @@ public sealed class MainView : UserControl
         {
             var result = await Task.Run(() =>
             {
-                var field = manager.GetBaseField(instance, asset);
+                var field = GetAssetBaseField(instance, asset, manager);
                 var bytes = field["m_Script"].AsByteArray ?? Array.Empty<byte>();
                 const int maxTextBytes = 1024 * 1024;
                 const int maxHexBytes = 4096;
