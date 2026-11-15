@@ -11,7 +11,6 @@ using System.Threading.Tasks;
 using AssetsTools.NET;
 using AssetsTools.NET.Extra;
 using AssetsTools.NET.Texture;
-using UABEAvalonia;
 using Fmod5Sharp;
 using Fmod5Sharp.FmodTypes;
 using NVorbis;
@@ -106,7 +105,7 @@ public sealed class MainView : UserControl
     private Button? _floatingActionButton;
     private Border? _floatingMenu;
     private System.Threading.CancellationTokenSource? _exportCancellation;
-    private AssetWorkspace? _assetWorkspace;
+    private readonly Dictionary<long, byte[]> _pendingAssetData = new();
 
     private enum BrowserPage { Home, Bundle, Assets, EntryDetails, AssetDetails }
 
@@ -445,7 +444,6 @@ public sealed class MainView : UserControl
         _sessionResourceWasExplicitlySelected = false;
         _pendingAssetChanges.Clear();
         _pendingDeleteIds.Clear();
-        _assetWorkspace = null;
         _selectedAssetIds.Clear();
         _selectionMode = false;
         _hasUnsavedChanges = false;
@@ -494,7 +492,6 @@ public sealed class MainView : UserControl
             tempDirectory = null;
             _currentBundle = result.Bundle;
             _currentAssets = result.Assets;
-            InitializeAssetWorkspace(_currentAssets, _assetsManager, _currentBundle is not null);
             _currentFileName = file.Name;
             _currentPage = result.Page;
             _currentRows = result.Rows;
@@ -2183,27 +2180,41 @@ public sealed class MainView : UserControl
         _items.Children.Add(button);
     }
 
-    private void InitializeAssetWorkspace(AssetsFileInstance? instance, AssetsManager? manager, bool fromBundle)
-    {
-        _assetWorkspace = null;
-        if (instance is null || manager is null) return;
-        var workspace = new AssetWorkspace(manager, fromBundle);
-        workspace.LoadAssetsFile(instance, false);
-        workspace.GenerateAssetsFileLookup();
-        _assetWorkspace = workspace;
-    }
-
     private void RegisterPendingAssetChange(AssetsFileInstance instance, AssetsReplacer replacer)
     {
-        _pendingAssetChanges[replacer.GetPathID()] = replacer;
-        _assetWorkspace?.AddReplacer(instance, replacer);
+        long pathId = replacer.GetPathID();
+        _pendingAssetChanges[pathId] = replacer;
+
+        if (replacer.GetType().Name.Contains("Remover", StringComparison.Ordinal))
+        {
+            _pendingAssetData.Remove(pathId);
+            return;
+        }
+
+        using var previewStream = new MemoryStream();
+        using (var previewWriter = new AssetsFileWriter(previewStream))
+            replacer.Write(previewWriter);
+        _pendingAssetData[pathId] = previewStream.ToArray();
     }
 
     private AssetTypeValueField? GetAssetBaseField(AssetsFileInstance instance, AssetFileInfo asset, AssetsManager? manager = null)
     {
-        var field = _assetWorkspace?.GetBaseField(instance, 0, asset.PathId);
-        if (field is not null) return field;
-        return (manager ?? _assetsManager)?.GetBaseField(instance, asset);
+        var activeManager = manager ?? _assetsManager;
+        if (activeManager is null) return null;
+
+        if (_pendingAssetData.TryGetValue(asset.PathId, out var replacementData))
+        {
+            var template = activeManager.GetTemplateBaseField(instance, asset);
+            if (template is not null)
+            {
+                using var stream = new MemoryStream(replacementData, writable: false);
+                using var reader = new AssetsFileReader(stream);
+                reader.BigEndian = instance.file.Reader.BigEndian;
+                return template.MakeValue(reader);
+            }
+        }
+
+        return activeManager.GetBaseField(instance, asset);
     }
 
     private Task SaveNewAssetPairAsync(AssetFileInfo textureTemplate, byte[] textureData, AssetFileInfo spriteTemplate, byte[] spriteData, long texturePathId, long spritePathId)
@@ -2801,7 +2812,6 @@ public sealed class MainView : UserControl
             if (result.IsSerialized && result.Assets is not null)
             {
                 _currentAssets = result.Assets;
-                InitializeAssetWorkspace(_currentAssets, manager, true);
                 _assetRows = result.Rows;
                 _currentPage = BrowserPage.Assets;
                 _currentRows = result.Rows.Select(row => new RowData(row.Name,
