@@ -5157,6 +5157,7 @@ public sealed class MainView : UserControl
             _filterBox.IsVisible = false;
             _loadMoreButton.IsVisible = _visibleRows < _currentRows.Count;
             UpdateNavigation();
+            UpdateFloatingActions();
             return;
         }
 
