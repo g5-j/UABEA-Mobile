@@ -125,10 +125,8 @@ internal static class UnityObjMeshImporter
             SetNumber(indexFormat, use32BitIndices ? 1u : 0u);
         }
 
-        var indexArray = GetRequiredField(mesh, "m_IndexBuffer.Array");
-        if (indexArray.TemplateField.ValueType != AssetValueType.ByteArray)
+        if (!TrySetByteArray(mesh, "m_IndexBuffer", indexBytes))
             throw new NotSupportedException("This Mesh uses an unsupported index-buffer representation.");
-        indexArray.AsByteArray = indexBytes;
 
         var subMeshes = GetRequiredField(mesh, "m_SubMeshes.Array");
         if (!subMeshes.TemplateField.IsArray)
@@ -215,7 +213,7 @@ internal static class UnityObjMeshImporter
 
                     case "vn":
                         if (parts.Length < 4) throw new FormatException("Normal requires X, Y and Z.");
-                        Vector3 normal = new(ParseFloat(parts[1]), ParseFloat(parts[2]), ParseFloat(parts[3]));
+                        Vector3 normal = -new Vector3(ParseFloat(parts[1]), ParseFloat(parts[2]), ParseFloat(parts[3]));
                         result.SourceNormals.Add(normal.LengthSquared() > 1e-12f ? Vector3.Normalize(normal) : Vector3.Zero);
                         if (result.SourceNormals.Count > MaxSourceElements)
                             throw new InvalidDataException("The OBJ exceeds the normal safety limit.");
@@ -435,10 +433,24 @@ internal static class UnityObjMeshImporter
     private static bool TrySetByteArray(AssetTypeValueField root, string path, byte[] data)
     {
         var field = GetField(root, path);
-        if (field == null || field.IsDummy || field.TemplateField.ValueType != AssetValueType.ByteArray)
-            return false;
-        field.AsByteArray = data;
-        return true;
+        if (field == null || field.IsDummy) return false;
+
+        if (field.TemplateField.ValueType == AssetValueType.ByteArray)
+        {
+            field.AsByteArray = data;
+            return true;
+        }
+
+        // Some TypeTrees expose TypelessData as a wrapper around its UInt8 Array.
+        foreach (string childName in new[] { "Array", "data", "m_Data", "_typelessdata" })
+        {
+            var child = GetField(field, childName);
+            if (child == null || child.IsDummy || child.TemplateField.ValueType != AssetValueType.ByteArray)
+                continue;
+            child.AsByteArray = data;
+            return true;
+        }
+        return false;
     }
 
     private static void SetNumberIfPresent(AssetTypeValueField root, string path, uint value)
