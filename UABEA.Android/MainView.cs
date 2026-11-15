@@ -2638,21 +2638,21 @@ public sealed class MainView : UserControl
         }
 
         else if (typeId == (int)AssetClassID.Material ||
-                 typeId == (int)AssetClassID.GameObject ||
+                 typeId == 1 ||
                  typeId == 1001 ||
-                 typeId == (int)AssetClassID.Mesh)
+                 typeId == 43)
         {
             string structuredType = typeId switch
             {
                 (int)AssetClassID.Material => "Material",
-                (int)AssetClassID.GameObject => "GameObject",
+                1 => "GameObject",
                 1001 => "PrefabInstance",
-                (int)AssetClassID.Mesh => "Mesh",
+                43 => "Mesh",
                 _ => "Unity asset"
             };
             var importStructuredButton = new Button
             {
-                Content = CreateIconLabel(MaterialIconKind.FileCode, $"Import {structuredType} JSON", OnPrimaryBrush, 15),
+                Content = CreateIconLabel(MaterialIconKind.FileUpload, $"Import {structuredType} JSON", OnPrimaryBrush, 15),
                 Background = SurfaceHighBrush,
                 Foreground = TextBrush,
                 BorderBrush = OutlineBrush,
