@@ -1399,13 +1399,31 @@ public sealed class MainView : UserControl
     private static void SetOptionalIntField(AssetTypeValueField root, string name, int value)
     {
         var field = GetChildField(root, name);
-        if (field is not null) field.AsInt = value;
+        if (field is null || field.Value is null) return;
+        switch (field.Value.ValueType)
+        {
+            case AssetValueType.Int8: field.AsSByte = checked((sbyte)value); break;
+            case AssetValueType.UInt8: field.AsByte = checked((byte)value); break;
+            case AssetValueType.Int16: field.AsShort = checked((short)value); break;
+            case AssetValueType.UInt16: field.AsUShort = checked((ushort)value); break;
+            case AssetValueType.Int32: field.AsInt = value; break;
+            case AssetValueType.UInt32: field.AsUInt = checked((uint)value); break;
+            case AssetValueType.Int64: field.AsLong = value; break;
+            case AssetValueType.UInt64: field.AsULong = checked((ulong)value); break;
+            default: throw new InvalidDataException($"AudioClip field '{name}' is not an integer.");
+        }
     }
 
     private static void SetOptionalFloatField(AssetTypeValueField root, string name, float value)
     {
         var field = GetChildField(root, name);
-        if (field is not null) field.AsFloat = value;
+        if (field is null || field.Value is null) return;
+        switch (field.Value.ValueType)
+        {
+            case AssetValueType.Float: field.AsFloat = value; break;
+            case AssetValueType.Double: field.AsDouble = value; break;
+            default: throw new InvalidDataException($"AudioClip field '{name}' is not a floating-point value.");
+        }
     }
 
     private static (byte[] Pcm16, int Channels, int SampleRate) DecodeWaveToPcm16(byte[] wave)
