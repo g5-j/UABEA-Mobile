@@ -352,19 +352,26 @@ internal static class UnityObjMeshImporter
         {
             Vector3 v = obj.Vertices[i];
             Vector3 n = obj.VertexNormals[i];
-            writer.Write(v.X); writer.Write(v.Y); writer.Write(v.Z);
-            writer.Write(n.X); writer.Write(n.Y); writer.Write(n.Z);
+            WriteFloat(writer, v.X); WriteFloat(writer, v.Y); WriteFloat(writer, v.Z);
+            WriteFloat(writer, n.X); WriteFloat(writer, n.Y); WriteFloat(writer, n.Z);
             if (hasUvs)
             {
                 if (writer.Position != (long)i * stride + uvOffset)
                     throw new InvalidDataException("The generated Mesh vertex layout is inconsistent.");
                 Vector2 uv = obj.VertexUvs[i];
-                writer.Write(uv.X); writer.Write(uv.Y);
+                WriteFloat(writer, uv.X); WriteFloat(writer, uv.Y);
             }
         }
         while (memory.Length < paddedLength)
             writer.Write((byte)0);
         return memory.ToArray();
+    }
+
+    private static void WriteFloat(AssetsFileWriter writer, float value)
+    {
+        // AssetsFileWriter honors endianness for integer primitives; write the
+        // IEEE-754 bit pattern through its endian-aware Int32 overload.
+        writer.Write(BitConverter.SingleToInt32Bits(value));
     }
 
     private static byte[] BuildIndexBuffer(List<int> indices, bool use32Bit, bool bigEndian)
