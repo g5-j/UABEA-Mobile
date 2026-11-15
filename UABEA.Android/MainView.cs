@@ -2342,6 +2342,11 @@ public sealed class MainView : UserControl
             ? _pendingAssetInstances.Values.Distinct().ToList()
             : new List<AssetsFileInstance> { activeInstance };
         if (changedFiles.Count == 0) return;
+        if (!saveWholeBundle && GetPendingAssetIds(activeInstance).Count == 0)
+        {
+            _status.Text = "The currently opened .assets file has no pending changes. Save the entire Unity bundle to include changes made in other bundle entries.";
+            return;
+        }
 
         string originalName = Path.GetFileName(saveWholeBundle
             ? _currentFileName
