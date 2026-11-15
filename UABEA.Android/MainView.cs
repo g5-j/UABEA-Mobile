@@ -1476,7 +1476,8 @@ public sealed class MainView : UserControl
             if (double.IsNaN(value) || double.IsInfinity(value)) value = 0;
             value = Math.Clamp(value, -1.0, 1.0);
             short sample = (short)Math.Clamp((int)Math.Round(value * (value < 0 ? 32768.0 : 32767.0)), short.MinValue, short.MaxValue);
-            BitConverter.GetBytes(sample).CopyTo(pcm, i * 2);
+            pcm[i * 2] = (byte)sample;
+            pcm[i * 2 + 1] = (byte)(sample >> 8);
         }
         return (pcm, channels, sampleRate);
     }
@@ -2498,7 +2499,7 @@ public sealed class MainView : UserControl
         {
             var importAudioButton = new Button
             {
-                Content = CreateIconLabel(MaterialIconKind.FileMusic, "Import audio (WAV / OGG)", OnPrimaryBrush, 15),
+                Content = CreateIconLabel(MaterialIconKind.MusicNote, "Import audio (WAV / OGG)", OnPrimaryBrush, 15),
                 Background = SurfaceHighBrush,
                 Foreground = TextBrush,
                 BorderBrush = OutlineBrush,
