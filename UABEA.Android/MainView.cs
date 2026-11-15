@@ -1948,6 +1948,67 @@ public sealed class MainView : UserControl
         finally { _isBusy = false; SetLoading(false); }
     }
 
+    private async Task ImportMeshObjAsync(AssetFileInfo asset)
+    {
+        if (_currentAssets is null || _assetsManager is null || _isBusy) return;
+        var topLevel = TopLevel.GetTopLevel(this);
+        if (topLevel is null) return;
+
+        var selected = await topLevel.StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
+        {
+            Title = "Choose replacement Wavefront OBJ mesh",
+            AllowMultiple = false,
+            FileTypeFilter = new[]
+            {
+                new FilePickerFileType("Wavefront OBJ mesh") { Patterns = new[] { "*.obj" } }
+            }
+        });
+        if (selected.Count == 0) return;
+
+        var instance = _currentAssets;
+        var manager = _assetsManager;
+        _isBusy = true;
+        SetLoading(true, "Importing OBJ mesh...");
+        try
+        {
+            string objText;
+            await using (var input = await selected[0].OpenReadAsync())
+            using (var memory = new MemoryStream())
+            {
+                await input.CopyToAsync(memory);
+                if (memory.Length == 0) throw new InvalidDataException("The selected OBJ file is empty.");
+                if (memory.Length > 128L * 1024 * 1024)
+                    throw new InvalidDataException("The OBJ file exceeds the 128 MB safety limit.");
+                objText = Encoding.UTF8.GetString(memory.ToArray());
+            }
+
+            var result = await Task.Run(() =>
+            {
+                var field = manager.GetBaseField(instance, asset)
+                    ?? throw new InvalidDataException("Mesh asset data could not be read.");
+                string summary = UnityObjMeshImporter.Import(
+                    field,
+                    objText,
+                    instance.file.Reader.BigEndian,
+                    instance.file.Metadata.UnityVersion);
+                byte[] serialized = field.WriteToByteArray(instance.file.Reader.BigEndian);
+                return (Serialized: serialized, Summary: summary);
+            });
+
+            await SaveAssetReplacementAsync(asset, result.Serialized, "Mesh OBJ import");
+            _status.Text = result.Summary + "\\nSaved as a new Unity file. Reopen it and inspect the Mesh preview before replacing the original.";
+        }
+        catch (Exception ex)
+        {
+            _status.Text = "Mesh OBJ import failed:\\n" + ex.Message;
+        }
+        finally
+        {
+            _isBusy = false;
+            SetLoading(false);
+        }
+    }
+
     private async Task ImportStructuredJsonAssetAsync(AssetFileInfo asset, string assetTypeName)
     {
         if (_currentAssets is null || _assetsManager is null || _isBusy) return;
@@ -2665,6 +2726,25 @@ public sealed class MainView : UserControl
                 "Imports a complete UABEA type-tree JSON dump. Existing references are preserved as supplied in the JSON; this does not create new Unity assets.");
             importStructuredButton.Click += async (_, _) => await ImportStructuredJsonAssetAsync(asset, structuredType);
             _items.Children.Add(importStructuredButton);
+        }
+
+        if (typeId == (int)AssetClassID.Mesh)
+        {
+            var importObjButton = new Button
+            {
+                Content = CreateIconLabel(MaterialIconKind.FileUpload, "Import Mesh (.OBJ)", OnPrimaryBrush, 15),
+                Background = SurfaceHighBrush,
+                Foreground = TextBrush,
+                BorderBrush = OutlineBrush,
+                BorderThickness = new Thickness(1),
+                CornerRadius = new CornerRadius(12),
+                MinHeight = 46,
+                HorizontalAlignment = HorizontalAlignment.Stretch
+            };
+            ToolTip.SetTip(importObjButton,
+                "Imports OBJ positions, UV0, normals and triangle faces. OBJ groups/material names become submeshes; MTL materials are not created.");
+            importObjButton.Click += async (_, _) => await ImportMeshObjAsync(asset);
+            _items.Children.Add(importObjButton);
         }
 
         if (typeId == (int)AssetClassID.TextAsset)
