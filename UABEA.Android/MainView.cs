@@ -1216,7 +1216,7 @@ public sealed class MainView : UserControl
         }
     }
 
-    private async Task ImportTextureImageAsync(AssetFileInfo asset)
+    private async Task ImportTextureImageAsync(AssetFileInfo asset, bool addNew = false)
     {
         if (_currentAssets is null || _assetsManager is null || _isBusy) return;
         var topLevel = TopLevel.GetTopLevel(this);
@@ -1303,7 +1303,7 @@ public sealed class MainView : UserControl
                 return field.WriteToByteArray(reader.BigEndian);
             });
 
-            await SaveAssetReplacementAsync(asset, serialized, "Texture2D image import");
+            await SaveAssetReplacementAsync(asset, serialized, "Texture2D image import", addNew);
         }
         catch (Exception ex)
         {
@@ -1316,7 +1316,7 @@ public sealed class MainView : UserControl
         }
     }
 
-    private async Task ImportAudioClipAsync(AssetFileInfo asset)
+    private async Task ImportAudioClipAsync(AssetFileInfo asset, bool addNew = false)
     {
         if (_currentAssets is null || _assetsManager is null || _isBusy) return;
         if (_currentBundle is not null)
@@ -1417,7 +1417,8 @@ public sealed class MainView : UserControl
             if (trackerField is not null) trackerField.AsBool = false;
 
             byte[] serialized = field.WriteToByteArray(instance.file.Reader.BigEndian);
-            var replacer = new AssetsReplacerFromMemory(asset.PathId,
+            long outputPathId = addNew ? GetNextAssetPathId(instance) : asset.PathId;
+            var replacer = new AssetsReplacerFromMemory(outputPathId,
                 asset.GetTypeId(instance.file), instance.file.GetScriptIndex(asset), serialized);
             temporaryAssets = Path.Combine(Path.GetTempPath(), "uabea-audio-" + Guid.NewGuid().ToString("N") + ".assets");
             await Task.Run(() =>
@@ -1640,7 +1641,7 @@ public sealed class MainView : UserControl
         return output.ToArray();
     }
 
-    private async Task ImportTextAssetAsync(AssetFileInfo asset)
+    private async Task ImportTextAssetAsync(AssetFileInfo asset, bool addNew = false)
     {
         if (_currentAssets is null || _assetsManager is null || _isBusy) return;
         var topLevel = TopLevel.GetTopLevel(this);
@@ -1677,13 +1678,13 @@ public sealed class MainView : UserControl
             if (script.TemplateField.ValueType != AssetValueType.ByteArray)
                 throw new NotSupportedException("This TextAsset uses a non-byte-array script layout.");
             script.AsByteArray = bytes;
-            await SaveAssetReplacementAsync(asset, field.WriteToByteArray(instance.file.Reader.BigEndian), "TextAsset import");
+            await SaveAssetReplacementAsync(asset, field.WriteToByteArray(instance.file.Reader.BigEndian), "TextAsset import", addNew);
         }
         catch (Exception ex) { _status.Text = "Text import failed:\n" + ex.Message; }
         finally { _isBusy = false; SetLoading(false); }
     }
 
-    private async Task ImportFontAssetAsync(AssetFileInfo asset)
+    private async Task ImportFontAssetAsync(AssetFileInfo asset, bool addNew = false)
     {
         if (_currentAssets is null || _assetsManager is null || _isBusy) return;
         var topLevel = TopLevel.GetTopLevel(this);
@@ -1727,7 +1728,7 @@ public sealed class MainView : UserControl
             var data = GetChildField(field, "m_FontData.Array");
             if (data is null) throw new InvalidDataException("Font data array is unavailable.");
             data.AsByteArray = bytes;
-            await SaveAssetReplacementAsync(asset, field.WriteToByteArray(reader.BigEndian), "Font import");
+            await SaveAssetReplacementAsync(asset, field.WriteToByteArray(reader.BigEndian), "Font import", addNew);
         }
         catch (Exception ex) { _status.Text = "Font import failed:\n" + ex.Message; }
         finally { _isBusy = false; SetLoading(false); }
@@ -1890,7 +1891,7 @@ public sealed class MainView : UserControl
         finally { _isBusy = false; SetLoading(false); }
     }
 
-    private async Task ImportCubemapAsync(AssetFileInfo asset)
+    private async Task ImportCubemapAsync(AssetFileInfo asset, bool addNew = false)
     {
         if (_currentAssets is null || _assetsManager is null || _isBusy) return;
         var topLevel = TopLevel.GetTopLevel(this);
@@ -2000,14 +2001,14 @@ public sealed class MainView : UserControl
                 return field.WriteToByteArray(reader.BigEndian);
             });
 
-            await SaveAssetReplacementAsync(asset, serialized, "Cubemap import");
+            await SaveAssetReplacementAsync(asset, serialized, "Cubemap import", addNew);
             _status.Text = "Cubemap import prepared. Save the modified Unity file to apply all six faces.";
         }
         catch (Exception ex) { _status.Text = "Cubemap import failed:\n" + ex.Message; }
         finally { _isBusy = false; SetLoading(false); }
     }
 
-    private async Task ImportMeshObjAsync(AssetFileInfo asset)
+    private async Task ImportMeshObjAsync(AssetFileInfo asset, bool addNew = false)
     {
         if (_currentAssets is null || _assetsManager is null || _isBusy) return;
         var topLevel = TopLevel.GetTopLevel(this);
@@ -2068,7 +2069,7 @@ public sealed class MainView : UserControl
             });
 
             _status.Text = result.Summary;
-            await SaveAssetReplacementAsync(asset, result.Serialized, "Mesh OBJ import");
+            await SaveAssetReplacementAsync(asset, result.Serialized, "Mesh OBJ import", addNew);
         }
         catch (Exception ex)
         {
@@ -2141,6 +2142,24 @@ public sealed class MainView : UserControl
         if (maxPathId == long.MaxValue)
             throw new InvalidOperationException("No free Path ID is available in this assets file.");
         return Math.Max(1, maxPathId + 1);
+    }
+
+    private void AddNewAssetImportButton(string label, Func<Task> action)
+    {
+        var button = new Button
+        {
+            Content = CreateIconLabel(MaterialIconKind.FilePlus, label, TextBrush, 15),
+            Background = SurfaceContainerBrush,
+            Foreground = TextBrush,
+            BorderBrush = OutlineBrush,
+            BorderThickness = new Thickness(1),
+            CornerRadius = new CornerRadius(12),
+            MinHeight = 44,
+            HorizontalAlignment = HorizontalAlignment.Stretch
+        };
+        ToolTip.SetTip(button, "Creates a separate Unity asset with a new Path ID. It does not replace the selected asset.");
+        button.Click += async (_, _) => await action();
+        _items.Children.Add(button);
     }
 
     private async Task SaveNewAssetDataAsync(AssetFileInfo sourceAsset, byte[] serializedData, string operation)
@@ -2785,6 +2804,7 @@ public sealed class MainView : UserControl
             };
             importImageButton.Click += async (_, _) => await ImportTextureImageAsync(asset);
             _items.Children.Add(importImageButton);
+            AddNewAssetImportButton("Import new Texture2D (PNG / JPG)", () => ImportTextureImageAsync(asset, true));
         }
         else if (typeId == (int)AssetClassID.TextAsset)
         {
@@ -2801,6 +2821,7 @@ public sealed class MainView : UserControl
             };
             importTextButton.Click += async (_, _) => await ImportTextAssetAsync(asset);
             _items.Children.Add(importTextButton);
+            AddNewAssetImportButton("Import new TextAsset", () => ImportTextAssetAsync(asset, true));
         }
         else if (typeId == (int)AssetClassID.AudioClip)
         {
@@ -2819,6 +2840,9 @@ public sealed class MainView : UserControl
             importAudioButton.IsEnabled = _currentBundle is null;
             importAudioButton.Click += async (_, _) => await ImportAudioClipAsync(asset);
             _items.Children.Add(importAudioButton);
+            var addAudioButton = new Button { Content = CreateIconLabel(MaterialIconKind.FilePlus, "Import new AudioClip (WAV / OGG)", TextBrush, 15), Background = SurfaceContainerBrush, Foreground = TextBrush, BorderBrush = OutlineBrush, BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(12), MinHeight = 44, HorizontalAlignment = HorizontalAlignment.Stretch, IsEnabled = _currentBundle is null };
+            addAudioButton.Click += async (_, _) => await ImportAudioClipAsync(asset, true);
+            _items.Children.Add(addAudioButton);
         }
         else if (typeId == (int)AssetClassID.Font)
         {
@@ -2835,6 +2859,7 @@ public sealed class MainView : UserControl
             };
             importFontButton.Click += async (_, _) => await ImportFontAssetAsync(asset);
             _items.Children.Add(importFontButton);
+            AddNewAssetImportButton("Import new Font (TTF / OTF)", () => ImportFontAssetAsync(asset, true));
         }
 
         else if (typeId == (int)AssetClassID.Sprite)
@@ -2870,6 +2895,7 @@ public sealed class MainView : UserControl
             };
             importCubemapButton.Click += async (_, _) => await ImportCubemapAsync(asset);
             _items.Children.Add(importCubemapButton);
+            AddNewAssetImportButton("Import new Cubemap (6 PNG ZIP)", () => ImportCubemapAsync(asset, true));
         }
 
         else if (typeId == (int)AssetClassID.Material ||
@@ -2919,6 +2945,7 @@ public sealed class MainView : UserControl
                 "Imports OBJ positions, UV0, normals and triangle faces. OBJ groups/material names become submeshes; MTL materials are not created.");
             importObjButton.Click += async (_, _) => await ImportMeshObjAsync(asset);
             _items.Children.Add(importObjButton);
+            AddNewAssetImportButton("Import new Mesh (OBJ)", () => ImportMeshObjAsync(asset, true));
         }
 
         if (typeId == (int)AssetClassID.TextAsset)
