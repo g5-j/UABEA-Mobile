@@ -96,6 +96,12 @@ public sealed class MainView : UserControl
     private string? _audioTempPath;
     private readonly List<string> _sessionResourcePaths = new();
     private bool _sessionResourceWasExplicitlySelected;
+    private readonly Dictionary<long, AssetsReplacer> _pendingAssetChanges = new();
+    private readonly HashSet<long> _selectedAssetIds = new();
+    private bool _selectionMode;
+    private bool _floatingMenuOpen;
+    private Button? _floatingActionButton;
+    private Border? _floatingMenu;
 
     private enum BrowserPage { Home, Bundle, Assets, EntryDetails, AssetDetails }
 
@@ -332,6 +338,7 @@ public sealed class MainView : UserControl
             bool isAssetEntry = _currentPage == BrowserPage.Assets && row.AssetInfo is not null;
             Action? exportAction = null;
             Action? openAction = null;
+            Action? holdAction = null;
             if (isBundleEntry)
             {
                 exportAction = () => _ = ExportBundleEntryAsync(row.Title);
@@ -340,10 +347,11 @@ public sealed class MainView : UserControl
             else if (isAssetEntry)
             {
                 exportAction = () => _ = ExportAssetAsync(row.AssetInfo!);
-                openAction = () => ShowAssetDetails(row.AssetInfo!);
+                openAction = () => { if (_selectionMode) ToggleAssetSelection(row.AssetInfo!); else ShowAssetDetails(row.AssetInfo!); };
+                holdAction = () => EnterSelectionMode(row.AssetInfo!);
             }
             return CreateActionRow(row.Title, row.Detail, row.Icon, row.Action,
-                exportAction, openAction);
+                exportAction, openAction, holdAction);
         }, supportsRecycling: true);
         var listBody = new Grid { RowDefinitions = new RowDefinitions("Auto,*") };
         listBody.Children.Add(_listHeader);
@@ -396,6 +404,7 @@ public sealed class MainView : UserControl
         viewerGrid.Children.Add(closeViewer);
         _imageViewerOverlay = new Border { Background = Brush.Parse("#FF000000"), IsVisible = false, Child = viewerGrid };
         _pageLayers.Children.Add(_imageViewerOverlay);
+        BuildFloatingActions();
         Content = _pageLayers;
         Background = BackgroundBrush;
     }
@@ -2763,6 +2772,7 @@ public sealed class MainView : UserControl
 
     private async void ShowAssetDetails(AssetFileInfo asset)
     {
+        if (_selectionMode) return;
         if (_currentAssets is null || _assetsManager is null) return;
         StopAudioPlayback();
         var instance = _currentAssets;
@@ -2810,211 +2820,15 @@ public sealed class MainView : UserControl
             asset.GetAbsoluteByteStart(instance.file).ToString("N0") + " bytes");
         AddDetail("Source file", instance.name);
 
-        var exportButton = new Button
-        {
-            Content = CreateIconLabel(MaterialIconKind.Export, "Export resource", OnPrimaryBrush, 15),
-            Background = PrimaryBrush,
-            Foreground = OnPrimaryBrush,
-            CornerRadius = new CornerRadius(12),
-            MinHeight = 46,
-            HorizontalAlignment = HorizontalAlignment.Stretch,
-            FontWeight = FontWeight.SemiBold
-        };
-        exportButton.Click += async (_, _) => await ExportAssetAsync(asset);
-        _items.Children.Add(exportButton);
-
-        var importRawButton = new Button
-        {
-            Content = CreateIconLabel(MaterialIconKind.FileUpload, "Replace raw data", OnPrimaryBrush, 15),
-            Background = SurfaceHighBrush,
-            Foreground = TextBrush,
-            BorderBrush = OutlineBrush,
-            BorderThickness = new Thickness(1),
-            CornerRadius = new CornerRadius(12),
-            MinHeight = 46,
-            HorizontalAlignment = HorizontalAlignment.Stretch,
-            FontWeight = FontWeight.SemiBold
-        };
-        ToolTip.SetTip(importRawButton, "Replace this asset with serialized raw data exported from UABEA.");
-        importRawButton.Click += async (_, _) => await ImportRawAssetAsync(asset);
-        _items.Children.Add(importRawButton);
-
-        var importNewAssetButton = new Button
-        {
-            Content = CreateIconLabel(MaterialIconKind.FilePlus, "Import new asset (.assetdata)", OnPrimaryBrush, 15),
-            Background = SurfaceHighBrush,
-            Foreground = TextBrush,
-            BorderBrush = OutlineBrush,
-            BorderThickness = new Thickness(1),
-            CornerRadius = new CornerRadius(12),
-            MinHeight = 46,
-            HorizontalAlignment = HorizontalAlignment.Stretch,
-            FontWeight = FontWeight.SemiBold
-        };
-        ToolTip.SetTip(importNewAssetButton,
-            "Adds a new asset of the same Unity type as this asset. The file must contain serialized raw asset data exported by UABEA.");
-        importNewAssetButton.Click += async (_, _) => await ImportNewRawAssetAsync(asset);
-        _items.Children.Add(importNewAssetButton);
-
-        if (typeId == (int)AssetClassID.Texture2D)
-        {
-            var importImageButton = new Button
-            {
-                Content = CreateIconLabel(MaterialIconKind.Image, "Replace image (PNG / JPG)", OnPrimaryBrush, 15),
-                Background = SurfaceHighBrush,
-                Foreground = TextBrush,
-                BorderBrush = OutlineBrush,
-                BorderThickness = new Thickness(1),
-                CornerRadius = new CornerRadius(12),
-                MinHeight = 46,
-                HorizontalAlignment = HorizontalAlignment.Stretch
-            };
-            importImageButton.Click += async (_, _) => await ImportTextureImageAsync(asset);
-            _items.Children.Add(importImageButton);
-            AddNewAssetImportButton("Import new Texture2D (PNG / JPG)", () => ImportTextureImageAsync(asset, true));
-        }
-        else if (typeId == (int)AssetClassID.TextAsset)
-        {
-            var importTextButton = new Button
-            {
-                Content = CreateIconLabel(MaterialIconKind.FileDocument, "Replace text / JSON / XML", OnPrimaryBrush, 15),
-                Background = SurfaceHighBrush,
-                Foreground = TextBrush,
-                BorderBrush = OutlineBrush,
-                BorderThickness = new Thickness(1),
-                CornerRadius = new CornerRadius(12),
-                MinHeight = 46,
-                HorizontalAlignment = HorizontalAlignment.Stretch
-            };
-            importTextButton.Click += async (_, _) => await ImportTextAssetAsync(asset);
-            _items.Children.Add(importTextButton);
-            AddNewAssetImportButton("Import new TextAsset", () => ImportTextAssetAsync(asset, true));
-        }
-        else if (typeId == (int)AssetClassID.AudioClip)
-        {
-            var importAudioButton = new Button
-            {
-                Content = CreateIconLabel(MaterialIconKind.MusicNote, "Replace audio (WAV / OGG)", OnPrimaryBrush, 15),
-                Background = SurfaceHighBrush,
-                Foreground = TextBrush,
-                BorderBrush = OutlineBrush,
-                BorderThickness = new Thickness(1),
-                CornerRadius = new CornerRadius(12),
-                MinHeight = 46,
-                HorizontalAlignment = HorizontalAlignment.Stretch
-            };
-            ToolTip.SetTip(importAudioButton, "Converts WAV/OGG to PCM16 in an FSB5 resource. Standalone .assets files only.");
-            importAudioButton.IsEnabled = _currentBundle is null;
-            importAudioButton.Click += async (_, _) => await ImportAudioClipAsync(asset);
-            _items.Children.Add(importAudioButton);
-            var addAudioButton = new Button { Content = CreateIconLabel(MaterialIconKind.FilePlus, "Import new AudioClip (WAV / OGG)", TextBrush, 15), Background = SurfaceContainerBrush, Foreground = TextBrush, BorderBrush = OutlineBrush, BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(12), MinHeight = 44, HorizontalAlignment = HorizontalAlignment.Stretch, IsEnabled = _currentBundle is null };
-            addAudioButton.Click += async (_, _) => await ImportAudioClipAsync(asset, true);
-            _items.Children.Add(addAudioButton);
-        }
-        else if (typeId == (int)AssetClassID.Font)
-        {
-            var importFontButton = new Button
-            {
-                Content = CreateIconLabel(MaterialIconKind.FileUpload, "Replace font (TTF / OTF)", OnPrimaryBrush, 15),
-                Background = SurfaceHighBrush,
-                Foreground = TextBrush,
-                BorderBrush = OutlineBrush,
-                BorderThickness = new Thickness(1),
-                CornerRadius = new CornerRadius(12),
-                MinHeight = 46,
-                HorizontalAlignment = HorizontalAlignment.Stretch
-            };
-            importFontButton.Click += async (_, _) => await ImportFontAssetAsync(asset);
-            _items.Children.Add(importFontButton);
-            AddNewAssetImportButton("Import new Font (TTF / OTF)", () => ImportFontAssetAsync(asset, true));
-        }
-
-        else if (typeId == (int)AssetClassID.Sprite)
-        {
-            var importSpriteButton = new Button
-            {
-                Content = CreateIconLabel(MaterialIconKind.Image, "Replace Sprite PNG (keep Atlas)", OnPrimaryBrush, 15),
-                Background = SurfaceHighBrush,
-                Foreground = TextBrush,
-                BorderBrush = OutlineBrush,
-                BorderThickness = new Thickness(1),
-                CornerRadius = new CornerRadius(12),
-                MinHeight = 46,
-                HorizontalAlignment = HorizontalAlignment.Stretch
-            };
-            ToolTip.SetTip(importSpriteButton, "Replaces only this Sprite's rectangle in its Texture2D atlas.");
-            importSpriteButton.Click += async (_, _) => await ImportSpriteImageAsync(asset);
-            _items.Children.Add(importSpriteButton);
-            AddNewAssetImportButton("Import new Sprite (PNG + Texture2D)", () => ImportSpriteImageAsync(asset, true));
-        }
-
-        else if (typeId == (int)AssetClassID.Cubemap)
-        {
-            var importCubemapButton = new Button
-            {
-                Content = CreateIconLabel(MaterialIconKind.Image, "Replace cubemap (6 PNG ZIP)", OnPrimaryBrush, 15),
-                Background = SurfaceHighBrush,
-                Foreground = TextBrush,
-                BorderBrush = OutlineBrush,
-                BorderThickness = new Thickness(1),
-                CornerRadius = new CornerRadius(12),
-                MinHeight = 46,
-                HorizontalAlignment = HorizontalAlignment.Stretch
-            };
-            importCubemapButton.Click += async (_, _) => await ImportCubemapAsync(asset);
-            _items.Children.Add(importCubemapButton);
-            AddNewAssetImportButton("Import new Cubemap (6 PNG ZIP)", () => ImportCubemapAsync(asset, true));
-        }
-
-        else if (typeId == (int)AssetClassID.Material ||
-                 typeId == 1 ||
-                 typeId == 1001 ||
-                 typeId == 43)
-        {
-            string structuredType = typeId switch
-            {
-                (int)AssetClassID.Material => "Material",
-                1 => "GameObject",
-                1001 => "PrefabInstance",
-                43 => "Mesh",
-                _ => "Unity asset"
-            };
-            var importStructuredButton = new Button
-            {
-                Content = CreateIconLabel(MaterialIconKind.FileUpload, $"Replace {structuredType} JSON", OnPrimaryBrush, 15),
-                Background = SurfaceHighBrush,
-                Foreground = TextBrush,
-                BorderBrush = OutlineBrush,
-                BorderThickness = new Thickness(1),
-                CornerRadius = new CornerRadius(12),
-                MinHeight = 46,
-                HorizontalAlignment = HorizontalAlignment.Stretch
-            };
-            ToolTip.SetTip(importStructuredButton,
-                "Imports a complete UABEA type-tree JSON dump. Existing references are preserved as supplied in the JSON; this does not create new Unity assets.");
-            importStructuredButton.Click += async (_, _) => await ImportStructuredJsonAssetAsync(asset, structuredType);
-            _items.Children.Add(importStructuredButton);
-        }
-
-        if (typeId == (int)AssetClassID.Mesh)
-        {
-            var importObjButton = new Button
-            {
-                Content = CreateIconLabel(MaterialIconKind.FileUpload, "Replace Mesh (.OBJ)", OnPrimaryBrush, 15),
-                Background = SurfaceHighBrush,
-                Foreground = TextBrush,
-                BorderBrush = OutlineBrush,
-                BorderThickness = new Thickness(1),
-                CornerRadius = new CornerRadius(12),
-                MinHeight = 46,
-                HorizontalAlignment = HorizontalAlignment.Stretch
-            };
-            ToolTip.SetTip(importObjButton,
-                "Imports OBJ positions, UV0, normals and triangle faces. OBJ groups/material names become submeshes; MTL materials are not created.");
-            importObjButton.Click += async (_, _) => await ImportMeshObjAsync(asset);
-            _items.Children.Add(importObjButton);
-            AddNewAssetImportButton("Import new Mesh (OBJ)", () => ImportMeshObjAsync(asset, true));
-        }
+        var extractButton = CreateDetailActionButton(MaterialIconKind.Export, "استخراج", PrimaryBrush, OnPrimaryBrush);
+        extractButton.Click += (_, _) => ShowAssetFormatMenu(asset, false);
+        _items.Children.Add(extractButton);
+        var replaceButton = CreateDetailActionButton(MaterialIconKind.FileUpload, "استبدال", SurfaceHighBrush, TextBrush);
+        replaceButton.Click += (_, _) => ShowAssetFormatMenu(asset, true);
+        _items.Children.Add(replaceButton);
+        var deleteButton = CreateDetailActionButton(MaterialIconKind.Delete, "حذف", Brush.Parse("#51252B"), TextBrush);
+        deleteButton.Click += (_, _) => QueueAssetDeletion(asset);
+        _items.Children.Add(deleteButton);
 
         if (typeId == (int)AssetClassID.TextAsset)
         {
@@ -5466,6 +5280,7 @@ public sealed class MainView : UserControl
 
     private void ShowAssetsContents()
     {
+        ExitSelectionMode();
         if (_currentAssets is null) return;
         _currentPage = BrowserPage.Assets;
         _assetListBox.IsVisible = true;
@@ -5945,8 +5760,8 @@ public sealed class MainView : UserControl
         });
     }
 
-    private static Control CreateActionRow(string title, string detail,
-        MaterialIconKind iconKind, Action action, Action? exportAction = null, Action? openAction = null)
+    private Control CreateActionRow(string title, string detail,
+        MaterialIconKind iconKind, Action action, Action? exportAction = null, Action? openAction = null, Action? holdAction = null)
     {
         var button = new Button
         {
@@ -6010,8 +5825,7 @@ public sealed class MainView : UserControl
         button.PointerPressed += (_, _) => suppressNextClick = false;
         button.Holding += (_, args) =>
         {
-            if (args.HoldingState.ToString() == "Started")
-                suppressNextClick = true;
+            if (args.HoldingState.ToString() == "Started") { suppressNextClick = true; holdAction?.Invoke(); }
         };
         button.Click += (_, _) =>
         {
