@@ -1377,8 +1377,18 @@ public sealed class MainView : UserControl
             if (validationAudio is null || validationAudio.Length == 0)
                 throw new InvalidDataException("The generated FSB5 sample could not be decoded.");
 
-            var field = await Task.Run(() => _assetsManager.GetBaseField(instance, asset)
-                ?? throw new InvalidDataException("AudioClip data could not be read."));
+            var field = await Task.Run(() =>
+            {
+                var template = _assetsManager.GetTemplateBaseField(instance, asset)
+                    ?? throw new InvalidDataException("AudioClip type information could not be read.");
+                var audioTemplate = GetChildField(template, "m_AudioData");
+                if (audioTemplate is null || audioTemplate.Children.Count == 0)
+                    throw new NotSupportedException("This AudioClip layout has no embedded audio-data array.");
+                audioTemplate.Children[0].ValueType = AssetValueType.ByteArray;
+                var reader = instance.file.Reader;
+                lock (reader)
+                    return template.MakeValue(reader, asset.GetAbsoluteByteStart(instance.file), null);
+            });
             var sourceField = GetChildField(field, "m_Resource.m_Source")
                 ?? throw new NotSupportedException("This AudioClip layout has no external resource source field.");
             var offsetField = GetChildField(field, "m_Resource.m_Offset")
@@ -1386,9 +1396,9 @@ public sealed class MainView : UserControl
             var sizeField = GetChildField(field, "m_Resource.m_Size")
                 ?? throw new NotSupportedException("This AudioClip layout has no resource size field.");
 
-            var embeddedAudio = GetChildField(field, "m_AudioData");
+            var embeddedAudio = GetChildField(field, "m_AudioData.Array");
             if (embeddedAudio is null || embeddedAudio.Value?.ValueType != AssetValueType.ByteArray)
-                throw new NotSupportedException("This Unity AudioClip layout does not expose embedded m_AudioData. To avoid creating a broken external .resource reference, this clip was not modified.");
+                throw new NotSupportedException("This Unity AudioClip layout does not expose a readable embedded m_AudioData byte array. The clip was not modified.");
             embeddedAudio.AsByteArray = fsbData;
             sourceField.AsString = "";
             offsetField.AsULong = 0;
@@ -5955,13 +5965,32 @@ public sealed class MainView : UserControl
         await ExportAssetsArchiveAsync(assets);
     }
 
-    private async void ReplaceSelectedAssets()
+    private void ReplaceSelectedAssets()
     {
         var assets = GetSelectedAssets();
-        if (assets.Count == 0) return;
-        ExitSelectionMode();
-        foreach (var asset in assets)
-            await ReplaceAssetAsync(asset, null);
+        if (assets.Count == 0 || _currentAssets is null) return;
+        var menu = new ContextMenu();
+        foreach (var group in assets.GroupBy(x => x.GetTypeId(_currentAssets.file)))
+        {
+            int typeId = group.Key;
+            string typeName = Enum.GetName(typeof(AssetClassID), typeId) ?? $"Type {typeId}";
+            var typeItem = new MenuItem { Header = $"{typeName} ({group.Count()})" };
+            foreach (var format in GetAssetFormats(typeId, true))
+            {
+                var formatItem = new MenuItem { Header = format.Label };
+                var matching = group.ToList();
+                formatItem.Click += async (_, _) =>
+                {
+                    ExitSelectionMode();
+                    foreach (var asset in matching)
+                        await ReplaceAssetAsync(asset, format.Key);
+                };
+                typeItem.Items.Add(formatItem);
+            }
+            menu.Items.Add(typeItem);
+        }
+        menu.PlacementTarget = _floatingActionButton;
+        menu.Open();
     }
 
     private void ShowAssetFormatMenu(AssetFileInfo asset, bool replace)
