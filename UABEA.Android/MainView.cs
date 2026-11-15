@@ -1349,6 +1349,166 @@ public sealed class MainView : UserControl
         finally { _isBusy = false; SetLoading(false); }
     }
 
+    private async Task ImportSpriteImageAsync(AssetFileInfo spriteAsset)
+    {
+        if (_currentAssets is null || _assetsManager is null || _isBusy) return;
+        var topLevel = TopLevel.GetTopLevel(this);
+        if (topLevel is null) return;
+
+        var selected = await topLevel.StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
+        {
+            Title = "Choose replacement Sprite PNG",
+            AllowMultiple = false,
+            FileTypeFilter = new[]
+            {
+                new FilePickerFileType("PNG image") { Patterns = new[] { "*.png" } }
+            }
+        });
+        if (selected.Count == 0) return;
+
+        var instance = _currentAssets;
+        var manager = _assetsManager;
+        _isBusy = true;
+        SetLoading(true, "Replacing Sprite atlas rectangle...");
+        try
+        {
+            byte[] encoded;
+            await using (var input = await selected[0].OpenReadAsync())
+            using (var memory = new MemoryStream())
+            {
+                await input.CopyToAsync(memory);
+                encoded = memory.ToArray();
+            }
+            if (encoded.Length == 0) throw new InvalidDataException("The selected PNG is empty.");
+
+            var result = await Task.Run(() =>
+            {
+                var sprite = manager.GetBaseField(instance, spriteAsset)
+                    ?? throw new InvalidDataException("Sprite data could not be read.");
+                var renderData = GetChildField(sprite, "m_RD");
+                var pointer = GetChildField(renderData, "texture");
+                if (pointer == null || pointer.IsDummy)
+                    pointer = GetChildField(sprite, "m_Texture");
+                long texturePathId = ReadFieldInt64(GetChildField(pointer, "m_PathID"));
+                var textureAsset = instance.file.AssetInfos.FirstOrDefault(x =>
+                    x.PathId == texturePathId &&
+                    x.GetTypeId(instance.file) == (int)AssetClassID.Texture2D);
+                if (textureAsset == null)
+                    throw new NotSupportedException("The Sprite's Texture2D is not in this assets file.");
+
+                var rect = GetChildField(renderData, "textureRect");
+                float rx = ReadFieldFloat(GetChildField(rect, "x"), float.NaN);
+                float ry = ReadFieldFloat(GetChildField(rect, "y"), float.NaN);
+                float rw = ReadFieldFloat(GetChildField(rect, "width"), float.NaN);
+                float rh = ReadFieldFloat(GetChildField(rect, "height"), float.NaN);
+                if (!(rw > 0 && rh > 0))
+                {
+                    if (!TryReadSpriteUvRect(renderData, 1, 1, out _, out _, out _, out _))
+                    {
+                        rect = GetChildField(sprite, "m_Rect");
+                        rx = ReadFieldFloat(GetChildField(rect, "x"), float.NaN);
+                        ry = ReadFieldFloat(GetChildField(rect, "y"), float.NaN);
+                        rw = ReadFieldFloat(GetChildField(rect, "width"), float.NaN);
+                        rh = ReadFieldFloat(GetChildField(rect, "height"), float.NaN);
+                    }
+                }
+                if (!(rw >= 1 && rh >= 1) || !float.IsFinite(rx) || !float.IsFinite(ry))
+                    throw new NotSupportedException("This Sprite has no supported atlas rectangle.");
+
+                var settings = GetChildField(renderData, "settingsRaw");
+                long packed = ReadFieldInt64(GetChildField(settings, "packed"));
+                long rotation = ReadFieldInt64(GetChildField(settings, "packingRotation"));
+                if (packed == 1 && rotation != 0)
+                    throw new NotSupportedException("This Sprite is rotated in the atlas. Import was stopped to protect neighboring sprites; unrotated atlas entries are supported.");
+
+                var textureField = ReadTextureFieldForPreview(manager, instance, textureAsset);
+                var texture = TextureFile.ReadTextureFile(textureField);
+                int width = texture.m_Width, height = texture.m_Height;
+                if (width <= 0 || height <= 0 || width > 8192 || height > 8192 ||
+                    (long)width * height > 32_000_000)
+                    throw new InvalidDataException("The target atlas dimensions are outside the safe import limit.");
+
+                byte[] atlasData = texture.pictureData ?? Array.Empty<byte>();
+                var streamData = GetChildField(textureField, "m_StreamData");
+                ulong streamOffset = ReadUnsignedField(GetChildField(streamData, "offset")!);
+                ulong streamSize = ReadUnsignedField(GetChildField(streamData, "size")!);
+                string streamPath = ReadFieldString(GetChildField(streamData, "path"));
+                if (streamSize > 0 && !string.IsNullOrWhiteSpace(streamPath))
+                    atlasData = ReadResourceWithBundleFallback(instance, streamPath, streamOffset, streamSize);
+                int[] atlasPixels = DecodeTexturePixelsToArgb(atlasData,
+                    (TextureFormat)texture.m_TextureFormat, width, height);
+
+                int targetWidth = Math.Max(1, (int)Math.Round(rw));
+                int targetHeight = Math.Max(1, (int)Math.Round(rh));
+                int x = (int)Math.Floor(rx);
+                int y = height - (int)Math.Ceiling(ry + rh);
+                if (x < 0 || y < 0 || x + targetWidth > width || y + targetHeight > height)
+                    throw new InvalidDataException("The Sprite rectangle lies outside its Texture2D atlas.");
+
+                using var source = global::Android.Graphics.BitmapFactory.DecodeByteArray(encoded, 0, encoded.Length)
+                    ?? throw new InvalidDataException("Android could not decode the selected PNG.");
+                if (source.Width <= 0 || source.Height <= 0 ||
+                    source.Width > 8192 || source.Height > 8192 ||
+                    (long)source.Width * source.Height > 32_000_000)
+                    throw new InvalidDataException("The replacement PNG exceeds the safe image size limit.");
+                using var atlas = global::Android.Graphics.Bitmap.CreateBitmap(
+                    width, height, global::Android.Graphics.Bitmap.Config.Argb8888!);
+                atlas.SetPixels(atlasPixels, 0, width, 0, 0, width, height);
+                using var canvas = new global::Android.Graphics.Canvas(atlas);
+                using var paint = new global::Android.Graphics.Paint(
+                    global::Android.Graphics.PaintFlags.FilterBitmap | global::Android.Graphics.PaintFlags.AntiAlias);
+                var destinationRect = new global::Android.Graphics.Rect(x, y, x + targetWidth, y + targetHeight);
+                canvas.DrawBitmap(source, null, destinationRect, paint);
+
+                var argb = new int[checked(width * height)];
+                atlas.GetPixels(argb, 0, width, 0, 0, width, height);
+                var rgba = new byte[checked(argb.Length * 4)];
+                for (int row = 0; row < height; row++)
+                {
+                    int srcRow = (height - 1 - row) * width;
+                    int dstRow = row * width * 4;
+                    for (int col = 0; col < width; col++)
+                    {
+                        int pixel = argb[srcRow + col], p = dstRow + col * 4;
+                        rgba[p] = (byte)(pixel >> 16);
+                        rgba[p + 1] = (byte)(pixel >> 8);
+                        rgba[p + 2] = (byte)pixel;
+                        rgba[p + 3] = (byte)(pixel >> 24);
+                    }
+                }
+
+                var template = manager.GetTemplateBaseField(instance, textureAsset)
+                    ?? throw new InvalidDataException("Texture2D template could not be read.");
+                var imageTemplate = template.Children.FirstOrDefault(x =>
+                    x.Name == "image data" || x.Name == "m_ImageData");
+                if (imageTemplate is null)
+                    throw new InvalidDataException("Texture2D image data field is unavailable.");
+                imageTemplate.ValueType = AssetValueType.ByteArray;
+                var reader = instance.file.Reader;
+                AssetTypeValueField replacementField;
+                lock (reader)
+                    replacementField = template.MakeValue(reader, textureAsset.GetAbsoluteByteStart(instance.file), null);
+                var replacementTexture = TextureFile.ReadTextureFile(replacementField);
+                replacementTexture.m_Width = width;
+                replacementTexture.m_Height = height;
+                replacementTexture.m_TextureFormat = (int)TextureFormat.RGBA32;
+                replacementTexture.m_CompleteImageSize = rgba.Length;
+                replacementTexture.m_MipCount = 1;
+                replacementTexture.m_MipMap = false;
+                replacementTexture.m_StreamingMipmaps = false;
+                replacementTexture.pictureData = rgba;
+                replacementTexture.m_StreamData = new TextureFile.StreamingInfo { offset = 0, size = 0, path = "" };
+                replacementTexture.WriteTo(replacementField);
+                return (textureAsset, replacementField.WriteToByteArray(reader.BigEndian));
+            });
+
+            await SaveAssetReplacementAsync(result.textureAsset, result.Item2, "Sprite atlas import");
+            _status.Text = "Sprite PNG imported into its existing atlas rectangle. Other atlas regions were preserved.";
+        }
+        catch (Exception ex) { _status.Text = "Sprite import failed:\n" + ex.Message; }
+        finally { _isBusy = false; SetLoading(false); }
+    }
+
     private async Task ImportCubemapAsync(AssetFileInfo asset)
     {
         if (_currentAssets is null || _assetsManager is null || _isBusy) return;
@@ -2048,6 +2208,24 @@ public sealed class MainView : UserControl
             };
             importFontButton.Click += async (_, _) => await ImportFontAssetAsync(asset);
             _items.Children.Add(importFontButton);
+        }
+
+        else if (typeId == (int)AssetClassID.Sprite)
+        {
+            var importSpriteButton = new Button
+            {
+                Content = CreateIconLabel(MaterialIconKind.Image, "Import Sprite PNG (keep Atlas)", OnPrimaryBrush, 15),
+                Background = SurfaceHighBrush,
+                Foreground = TextBrush,
+                BorderBrush = OutlineBrush,
+                BorderThickness = new Thickness(1),
+                CornerRadius = new CornerRadius(12),
+                MinHeight = 46,
+                HorizontalAlignment = HorizontalAlignment.Stretch
+            };
+            ToolTip.SetTip(importSpriteButton, "Replaces only this Sprite's rectangle in its Texture2D atlas.");
+            importSpriteButton.Click += async (_, _) => await ImportSpriteImageAsync(asset);
+            _items.Children.Add(importSpriteButton);
         }
 
         else if (typeId == (int)AssetClassID.Cubemap)
