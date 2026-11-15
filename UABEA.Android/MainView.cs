@@ -1159,152 +1159,62 @@ public sealed class MainView : UserControl
 
     private async Task ImportNewRawAssetAsync(AssetFileInfo sourceAsset)
     {
-        if (_currentAssets is null || _assetsManager is null || _isBusy)
-            return;
-
+        if (_currentAssets is null || _assetsManager is null || _isBusy) return;
         var topLevel = TopLevel.GetTopLevel(this);
-        if (topLevel is null)
-            return;
+        if (topLevel is null) return;
 
-        var selected = await topLevel.StorageProvider.OpenFilePickerAsync(
-            new FilePickerOpenOptions
+        var selected = await topLevel.StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
+        {
+            Title = "Select serialized asset data to add",
+            AllowMultiple = false,
+            FileTypeFilter = new[]
             {
-                Title = "Select serialized asset data to add",
-                AllowMultiple = false,
-                FileTypeFilter = new[]
-                {
-                    new FilePickerFileType("UABEA serialized asset data")
-                    {
-                        Patterns = new[] { "*.assetdata", "*.bin" }
-                    }
-                }
-            });
-        if (selected.Count == 0)
-            return;
-
-        var instance = _currentAssets;
-        var bundle = _currentBundle;
-        string sourceName = bundle is null ? instance.name : _currentFileName;
-        string extension = Path.GetExtension(sourceName);
-        if (string.IsNullOrWhiteSpace(extension))
-            extension = bundle is null ? ".assets" : ".bundle";
-
-        var destination = await topLevel.StorageProvider.SaveFilePickerAsync(
-            new FilePickerSaveOptions
-            {
-                Title = "Save Unity file with the new asset",
-                SuggestedFileName = Path.GetFileNameWithoutExtension(sourceName) + "-with-new-asset" + extension,
-                FileTypeChoices = new[]
-                {
-                    new FilePickerFileType("Modified Unity file") { Patterns = new[] { "*" + extension } }
-                }
-            });
-        if (destination is null)
-            return;
+                new FilePickerFileType("UABEA serialized asset data")
+                { Patterns = new[] { "*.assetdata", "*.bin" } }
+            }
+        });
+        if (selected.Count == 0) return;
 
         _isBusy = true;
         SetLoading(true, "Reading serialized asset data...");
-        string? temporaryOutput = null;
-        AssetFileInfo? addedInfo = null;
-
         try
         {
-            byte[] newData;
+            byte[] data;
             await using (var input = await selected[0].OpenReadAsync())
             using (var memory = new MemoryStream())
             {
                 await input.CopyToAsync(memory);
-                newData = memory.ToArray();
+                data = memory.ToArray();
             }
-            if (newData.Length == 0)
+            if (data.Length == 0)
                 throw new InvalidDataException("The selected asset data file is empty.");
+            if (data.LongLength > 256L * 1024 * 1024)
+                throw new InvalidDataException("The selected asset data exceeds the 256 MB safety limit.");
 
-            int classId = sourceAsset.GetTypeId(instance.file);
-            ushort scriptId = instance.file.GetScriptIndex(sourceAsset);
-            long maxPathId = instance.file.Metadata.AssetInfos.Count == 0
-                ? 0
-                : instance.file.Metadata.AssetInfos.Max(x => x.PathId);
-            if (maxPathId == long.MaxValue)
-                throw new InvalidOperationException("No free Path ID is available in this assets file.");
-            long newPathId = Math.Max(1, maxPathId + 1);
-
+            var instance = _currentAssets;
             var template = _assetsManager.GetTemplateBaseField(instance, sourceAsset)
                 ?? throw new InvalidDataException("The selected asset's type tree could not be loaded.");
-            using (var validationStream = new MemoryStream(newData, writable: false))
+            using (var validationStream = new MemoryStream(data, writable: false))
             using (var validationReader = new AssetsFileReader(validationStream))
             {
-                _ = template.MakeValue(validationReader, 0, null);
+                validationReader.BigEndian = instance.file.Reader.BigEndian;
+                _ = template.MakeValue(validationReader);
+                if (validationStream.Position != validationStream.Length)
+                    throw new InvalidDataException("The serialized data does not match the selected asset type or contains trailing bytes.");
             }
 
-            addedInfo = AssetFileInfo.Create(instance.file, newPathId, classId, scriptId)
-                ?? throw new NotSupportedException(
-                    "This Unity file does not contain a compatible type tree for the selected asset type.");
-            addedInfo.SetNewData(newData);
-
-            temporaryOutput = Path.Combine(
-                Path.GetTempPath(), "uabea-add-" + Guid.NewGuid().ToString("N") + extension);
-
-            instance.file.Metadata.AssetInfos.Add(addedInfo);
-            try
-            {
-                SetLoading(true, "Writing the new asset into the Unity file...");
-                await Task.Run(() =>
-                {
-                    if (bundle is null)
-                    {
-                        using var output = File.Create(temporaryOutput);
-                        using var writer = new AssetsFileWriter(output);
-                        instance.file.Write(writer);
-                        return;
-                    }
-
-                    string entryName = ResolveBundleAssetsEntryName(bundle, instance);
-                    using var modifiedAssets = new MemoryStream();
-                    using (var assetsWriter = new AssetsFileWriter(modifiedAssets))
-                        instance.file.Write(assetsWriter);
-
-                    var bundleReplacer = new BundleReplacerFromMemory(
-                        entryName, entryName, true, modifiedAssets.ToArray(), -1);
-                    using var bundleOutput = File.Create(temporaryOutput);
-                    using var bundleWriter = new AssetsFileWriter(bundleOutput);
-                    bundle.file.Write(bundleWriter, new List<BundleReplacer> { bundleReplacer });
-                });
-            }
-            finally
-            {
-                instance.file.Metadata.AssetInfos.Remove(addedInfo);
-            }
-
-            SetLoading(true, "Saving the updated Unity file...");
-            await using (var output = await destination.OpenWriteAsync())
-            await using (var input = File.OpenRead(temporaryOutput))
-            {
-                await input.CopyToAsync(output);
-                await output.FlushAsync();
-            }
-
-            _status.Text =
-                $"New asset added successfully\nType: {Enum.GetName(typeof(AssetClassID), classId) ?? classId.ToString()}\n" +
-                $"New Path ID: {newPathId}\nData: {FormatSize(newData.LongLength)}\n" +
-                $"Output: {destination.Name}\nReopen the saved file to view the new asset.";
+            await SaveNewAssetDataAsync(sourceAsset, data, "New raw asset import");
         }
         catch (Exception ex)
         {
-            if (addedInfo is not null)
-                instance.file.Metadata.AssetInfos.Remove(addedInfo);
-            _status.Text = "Could not add the new asset:\n" + ex.Message;
+            _status.Text = "Could not add the new asset:\\n" + ex.Message;
         }
         finally
         {
-            if (temporaryOutput is not null)
-            {
-                try { File.Delete(temporaryOutput); } catch { }
-            }
             _isBusy = false;
             SetLoading(false);
         }
     }
-
 
     private async Task ImportTextureImageAsync(AssetFileInfo asset)
     {
@@ -2223,8 +2133,93 @@ public sealed class MainView : UserControl
         }
     }
 
-    private async Task SaveAssetReplacementAsync(AssetFileInfo asset, byte[] serializedData, string operation)
+    private static long GetNextAssetPathId(AssetsFileInstance instance)
     {
+        long maxPathId = instance.file.Metadata.AssetInfos.Count == 0
+            ? 0
+            : instance.file.Metadata.AssetInfos.Max(x => x.PathId);
+        if (maxPathId == long.MaxValue)
+            throw new InvalidOperationException("No free Path ID is available in this assets file.");
+        return Math.Max(1, maxPathId + 1);
+    }
+
+    private async Task SaveNewAssetDataAsync(AssetFileInfo sourceAsset, byte[] serializedData, string operation)
+    {
+        var topLevel = TopLevel.GetTopLevel(this)
+            ?? throw new InvalidOperationException("Storage provider is unavailable.");
+        var instance = _currentAssets
+            ?? throw new InvalidOperationException("No assets file is open.");
+        var bundle = _currentBundle;
+        int classId = sourceAsset.GetTypeId(instance.file);
+        ushort scriptId = instance.file.GetScriptIndex(sourceAsset);
+        long newPathId = GetNextAssetPathId(instance);
+        var replacer = new AssetsReplacerFromMemory(newPathId, classId, scriptId, serializedData);
+
+        string sourceName = bundle is null ? instance.name : _currentFileName;
+        string extension = Path.GetExtension(sourceName);
+        if (string.IsNullOrWhiteSpace(extension))
+            extension = bundle is null ? ".assets" : ".bundle";
+        string suggested = Path.GetFileNameWithoutExtension(sourceName) + "-with-new-asset" + extension;
+        var destination = await topLevel.StorageProvider.SaveFilePickerAsync(new FilePickerSaveOptions
+        {
+            Title = "Save Unity file with new asset",
+            SuggestedFileName = suggested,
+            FileTypeChoices = new[]
+            {
+                new FilePickerFileType("Modified Unity file") { Patterns = new[] { "*" + extension } }
+            }
+        });
+        if (destination is null) return;
+
+        string temporaryOutput = Path.Combine(Path.GetTempPath(),
+            "uabea-add-" + Guid.NewGuid().ToString("N") + extension);
+        try
+        {
+            SetLoading(true, "Adding the new Unity asset...");
+            await Task.Run(() =>
+            {
+                var replacers = new List<AssetsReplacer> { replacer };
+                if (bundle is null)
+                {
+                    using var output = File.Create(temporaryOutput);
+                    using var writer = new AssetsFileWriter(output);
+                    instance.file.Write(writer, 0, replacers);
+                    return;
+                }
+
+                string entryName = ResolveBundleAssetsEntryName(bundle, instance);
+                using var modifiedAssets = new MemoryStream();
+                using (var assetsWriter = new AssetsFileWriter(modifiedAssets))
+                    instance.file.Write(assetsWriter, 0, replacers);
+                var bundleReplacer = new BundleReplacerFromMemory(
+                    entryName, entryName, true, modifiedAssets.ToArray(), -1);
+                using var bundleOutput = File.Create(temporaryOutput);
+                using var bundleWriter = new AssetsFileWriter(bundleOutput);
+                bundle.file.Write(bundleWriter, new List<BundleReplacer> { bundleReplacer });
+            });
+
+            await using var output = await destination.OpenWriteAsync();
+            await using var input = File.OpenRead(temporaryOutput);
+            await input.CopyToAsync(output);
+            await output.FlushAsync();
+            _status.Text = $"{operation} completed\\nNew Path ID: {newPathId}\\n" +
+                $"Type: {Enum.GetName(typeof(AssetClassID), classId) ?? classId.ToString()}\\n" +
+                $"Data: {FormatSize(serializedData.LongLength)}\\nOutput: {destination.Name}\\n" +
+                "Reopen the saved file to verify the new asset.";
+        }
+        finally
+        {
+            try { File.Delete(temporaryOutput); } catch { }
+        }
+    }
+
+    private async Task SaveAssetReplacementAsync(AssetFileInfo asset, byte[] serializedData, string operation, bool addNew = false)
+    {
+        if (addNew)
+        {
+            await SaveNewAssetDataAsync(asset, serializedData, operation);
+            return;
+        }
         var topLevel = TopLevel.GetTopLevel(this) ?? throw new InvalidOperationException("Storage provider is unavailable.");
         var instance = _currentAssets ?? throw new InvalidOperationException("No assets file is open.");
         var bundle = _currentBundle;
