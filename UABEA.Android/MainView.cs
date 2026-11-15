@@ -1331,12 +1331,6 @@ public sealed class MainView : UserControl
     private async Task ImportAudioClipAsync(AssetFileInfo asset, bool addNew = false)
     {
         if (_currentAssets is null || _assetsManager is null || _isBusy) return;
-        if (_currentBundle is not null)
-        {
-            _status.Text = "Audio import currently requires a standalone .assets file. Bundle resource replacement is not enabled yet; the bundle was not changed.";
-            return;
-        }
-
         var topLevel = TopLevel.GetTopLevel(this);
         if (topLevel is null) return;
         var selected = await topLevel.StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
@@ -1390,35 +1384,13 @@ public sealed class MainView : UserControl
             var sizeField = GetChildField(field, "m_Resource.m_Size")
                 ?? throw new NotSupportedException("This AudioClip layout has no resource size field.");
 
-            string currentSource = ReadFieldString(sourceField);
-            string resourceBaseName = string.IsNullOrWhiteSpace(currentSource)
-                ? Path.GetFileNameWithoutExtension(instance.name)
-                : Path.GetFileNameWithoutExtension(currentSource.Replace('/', Path.DirectorySeparatorChar));
-            string suggestedResourceName = resourceBaseName + ".resource";
-            var resourceDestination = await topLevel.StorageProvider.SaveFilePickerAsync(new FilePickerSaveOptions
-            {
-                Title = "Save the new AudioClip resource",
-                SuggestedFileName = suggestedResourceName,
-                FileTypeChoices = new[] { new FilePickerFileType("Unity resource") { Patterns = new[] { "*.resource" } } }
-            });
-            if (resourceDestination is null) return;
-
-            string assetExtension = Path.GetExtension(instance.name);
-            if (string.IsNullOrWhiteSpace(assetExtension)) assetExtension = ".assets";
-            var assetDestination = await topLevel.StorageProvider.SaveFilePickerAsync(new FilePickerSaveOptions
-            {
-                Title = "Save modified Unity assets file",
-                SuggestedFileName = Path.GetFileNameWithoutExtension(instance.name) + "-modified" + assetExtension,
-                FileTypeChoices = new[]
-                {
-                    new FilePickerFileType("Modified Unity assets") { Patterns = new[] { "*.assets", "*.asset" } }
-                }
-            });
-            if (assetDestination is null) return;
-
-            sourceField.AsString = Path.GetFileName(resourceDestination.Name);
+            var embeddedAudio = GetChildField(field, "m_AudioData");
+            if (embeddedAudio is null || embeddedAudio.Value?.ValueType != AssetValueType.ByteArray)
+                throw new NotSupportedException("This Unity AudioClip layout does not expose embedded m_AudioData. To avoid creating a broken external .resource reference, this clip was not modified.");
+            embeddedAudio.AsByteArray = fsbData;
+            sourceField.AsString = "";
             offsetField.AsULong = 0;
-            sizeField.AsULong = (ulong)fsbData.Length;
+            sizeField.AsULong = 0;
             SetOptionalIntField(field, "m_Channels", decoded.Channels);
             SetOptionalIntField(field, "m_Frequency", decoded.SampleRate);
             SetOptionalIntField(field, "m_BitsPerSample", 16);
@@ -1429,30 +1401,11 @@ public sealed class MainView : UserControl
             if (trackerField is not null) trackerField.AsBool = false;
 
             byte[] serialized = field.WriteToByteArray(instance.file.Reader.BigEndian);
-            long outputPathId = addNew ? GetNextAssetPathId(instance) : asset.PathId;
-            var replacer = new AssetsReplacerFromMemory(outputPathId,
-                asset.GetTypeId(instance.file), instance.file.GetScriptIndex(asset), serialized);
-            temporaryAssets = Path.Combine(Path.GetTempPath(), "uabea-audio-" + Guid.NewGuid().ToString("N") + ".assets");
-            await Task.Run(() =>
-            {
-                using var output = File.Create(temporaryAssets);
-                using var writer = new AssetsFileWriter(output);
-                instance.file.Write(writer, 0, new List<AssetsReplacer> { replacer });
-            });
-
-            await using (var resourceOutput = await resourceDestination.OpenWriteAsync())
-            {
-                await resourceOutput.WriteAsync(fsbData);
-                await resourceOutput.FlushAsync();
-            }
-            await using (var assetOutput = await assetDestination.OpenWriteAsync())
-            await using (var assetInput = File.OpenRead(temporaryAssets))
-            {
-                await assetInput.CopyToAsync(assetOutput);
-                await assetOutput.FlushAsync();
-            }
-
-            _status.Text = $"AudioClip import saved\nEncoding: PCM16 / FSB5\nChannels: {decoded.Channels}\nSample rate: {decoded.SampleRate} Hz\nResource: {resourceDestination.Name}\nAssets: {assetDestination.Name}\nKeep both files together and reopen the modified assets file to verify it.";
+            if (addNew)
+                await SaveNewAssetDataAsync(asset, serialized, "AudioClip import");
+            else
+                await SaveAssetReplacementAsync(asset, serialized, "AudioClip import");
+            _status.Text = $"AudioClip import prepared as embedded FSB5 data. Channels: {decoded.Channels}; sample rate: {decoded.SampleRate} Hz. Use the floating menu → Save.";
         }
         catch (Exception ex)
         {
