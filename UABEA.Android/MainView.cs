@@ -104,6 +104,7 @@ public sealed class MainView : UserControl
     private bool _hasUnsavedChanges;
     private Button? _floatingActionButton;
     private Border? _floatingMenu;
+    private System.Threading.CancellationTokenSource? _exportCancellation;
 
     private enum BrowserPage { Home, Bundle, Assets, EntryDetails, AssetDetails }
 
@@ -414,6 +415,12 @@ public sealed class MainView : UserControl
 
     public bool HandleSystemBack()
     {
+        if (_exportCancellation is { IsCancellationRequested: false } exportCancellation)
+        {
+            exportCancellation.Cancel();
+            _status.Text = "Cancelling export...";
+            return true;
+        }
         if (CloseFullscreenOverlay()) return true;
         if (_imageViewerOverlay.IsVisible) { CloseImageViewer(); return true; }
         if (_currentPage == BrowserPage.Home) return false;
@@ -439,6 +446,8 @@ public sealed class MainView : UserControl
         _selectedAssetIds.Clear();
         _selectionMode = false;
         _hasUnsavedChanges = false;
+        _currentPage = BrowserPage.Home;
+        UpdateFloatingActions();
         SetLoading(true, $"Copying {file.Name}...");
         _items.Children.Clear();
         _displayedRows.Clear();
@@ -486,6 +495,7 @@ public sealed class MainView : UserControl
             _currentPage = result.Page;
             _currentRows = result.Rows;
             _assetRows = result.AssetRows;
+            UpdateFloatingActions();
             _status.Text = result.Summary;
             _searchBox.IsVisible = result.Page is BrowserPage.Bundle or BrowserPage.Assets;
             _filterButton.IsVisible = _searchBox.IsVisible;
@@ -851,6 +861,10 @@ public sealed class MainView : UserControl
         });
         if (destination is null) return;
 
+        var cancellation = new System.Threading.CancellationTokenSource();
+        _exportCancellation = cancellation;
+        var cancellationToken = cancellation.Token;
+        _isBusy = true;
         SetLoading(true, $"Exporting {assets.Count} assets...");
         int exported = 0;
         int failedCount = 0;
@@ -862,6 +876,7 @@ public sealed class MainView : UserControl
             {
                 for (int index = 0; index < assets.Count; index++)
                 {
+                    cancellationToken.ThrowIfCancellationRequested();
                     var asset = assets[index];
                     string name = $"Asset_{index + 1}";
                     try
@@ -873,7 +888,7 @@ public sealed class MainView : UserControl
 
                         try
                         {
-                            payload = await Task.Run(() => BuildAssetExportPayload(manager, instance, asset, typeId));
+                            payload = await Task.Run(() => BuildAssetExportPayload(manager, instance, asset, typeId), cancellationToken);
                         }
                         catch (FileNotFoundException ex) when (!string.IsNullOrWhiteSpace(ex.FileName))
                         {
@@ -883,7 +898,7 @@ public sealed class MainView : UserControl
                             if (!selected)
                                 throw new InvalidOperationException("Required external resource was not selected; this asset was skipped.");
                             SetLoading(true, $"Retrying {name} ({index + 1}/{assets.Count})...");
-                            payload = await Task.Run(() => BuildAssetExportPayload(manager, instance, asset, typeId));
+                            payload = await Task.Run(() => BuildAssetExportPayload(manager, instance, asset, typeId), cancellationToken);
                         }
 
                         // Export using the Unity asset's own name only.
@@ -909,11 +924,11 @@ public sealed class MainView : UserControl
                             {
                                 long rawStart = asset.GetAbsoluteByteStart(instance.file);
                                 using var source = new SegmentStream(instance.file.Reader.BaseStream, rawStart, asset.ByteSize);
-                                await source.CopyToAsync(entryStream);
+                                await source.CopyToAsync(entryStream, 81920, cancellationToken);
                             }
                             else
                             {
-                                await entryStream.WriteAsync(payload.Data!);
+                                await entryStream.WriteAsync(payload.Data!, cancellationToken);
                             }
                         }
 
@@ -929,8 +944,13 @@ public sealed class MainView : UserControl
                 }
             }
 
-            await output.FlushAsync();
+            await output.FlushAsync(cancellationToken);
             _status.Text = $"Export completed\nSucceeded: {exported}\nFailed: {failedCount}\nTotal: {assets.Count}";
+        }
+        catch (OperationCanceledException)
+        {
+            int remaining = Math.Max(0, assets.Count - exported - failedCount);
+            _status.Text = $"Export cancelled\nSucceeded: {exported}\nFailed: {failedCount}\nNot processed: {remaining}\nThe ZIP may contain partial results.";
         }
         catch (Exception ex)
         {
@@ -938,6 +958,9 @@ public sealed class MainView : UserControl
         }
         finally
         {
+            if (ReferenceEquals(_exportCancellation, cancellation)) _exportCancellation = null;
+            cancellation.Dispose();
+            _isBusy = false;
             SetLoading(false);
         }
     }
@@ -2212,10 +2235,11 @@ public sealed class MainView : UserControl
             _pendingAssetChanges[asset.PathId] = remover;
             _pendingDeleteIds.Add(asset.PathId);
             _hasUnsavedChanges = true;
-            _status.Text = $"Asset {asset.PathId} marked for deletion. Use the floating menu → Save to apply it.";
+            _status.Text = $"Asset {asset.PathId} marked for deletion. Select Save changes to apply it.";
             CloseAssetDetailsLayer();
             _currentPage = BrowserPage.Assets;
             UpdateNavigation();
+            RefreshCurrentList();
             UpdateFloatingActions();
         }
         catch (Exception ex) { _status.Text = "Could not queue asset deletion: " + ex.Message; }
@@ -5894,8 +5918,9 @@ public sealed class MainView : UserControl
                     _status.Text = "No supported asset types are available for importing into this file.";
                     return;
                 }
-                importMenu.PlacementTarget = _floatingActionButton;
-                importMenu.Open();
+                var target = _floatingActionButton ?? this;
+                importMenu.PlacementTarget = target;
+                importMenu.Open(target);
             }));
             menu.Children.Add(CreateFloatingMenuButton("Extract all assets", MaterialIconKind.Download, () =>
             {
@@ -5921,7 +5946,7 @@ public sealed class MainView : UserControl
         _selectedAssetIds.Clear();
         _selectedAssetIds.Add(asset.PathId);
         _floatingMenuOpen = false;
-        _status.Text = "وضع التحديد مفعّل. اضغط على أصول أخرى لإضافتها إلى التحديد.";
+        // Selection mode is indicated by the floating action icon and selected rows.
         UpdateFloatingActions();
         RefreshCurrentList();
     }
@@ -5931,7 +5956,7 @@ public sealed class MainView : UserControl
         if (!_selectionMode) return;
         if (!_selectedAssetIds.Add(asset.PathId)) _selectedAssetIds.Remove(asset.PathId);
         if (_selectedAssetIds.Count == 0) { ExitSelectionMode(); return; }
-        _status.Text = $"تم تحديد {_selectedAssetIds.Count} أصل.";
+        // Keep selection mode free of redundant status text.
         UpdateFloatingActions();
         RefreshCurrentList();
     }
@@ -5956,7 +5981,9 @@ public sealed class MainView : UserControl
         var assets = GetSelectedAssets();
         foreach (var asset in assets) QueueAssetDeletion(asset);
         ExitSelectionMode();
-        _status.Text = $"تم وضع {assets.Count} أصل للحذف. احفظ التعديلات من القائمة العائمة.";
+        _status.Text = assets.Count == 0
+            ? "No assets were deleted."
+            : $"{assets.Count} asset(s) marked for deletion. Select Save changes to apply them.";
     }
 
     private async void ExportSelectedAssets()
@@ -5992,8 +6019,9 @@ public sealed class MainView : UserControl
             };
             menu.Items.Add(item);
         }
-        menu.PlacementTarget = placementTarget ?? (Control?)_floatingActionButton ?? this;
-        menu.Open();
+        var target = placementTarget ?? (Control?)_floatingActionButton ?? this;
+        menu.PlacementTarget = target;
+        menu.Open(target);
     }
 
     private async Task ReplaceAssetSafelyAsync(AssetFileInfo asset, string format)
