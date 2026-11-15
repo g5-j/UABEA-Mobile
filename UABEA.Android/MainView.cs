@@ -1733,7 +1733,7 @@ public sealed class MainView : UserControl
             }
             if (encoded.Length == 0) throw new InvalidDataException("The selected PNG is empty.");
 
-            long newTexturePathId = addNew ? GetNextAssetPathId(instance) : 0;
+            long newTexturePathId = addNew ? GetNextPendingPathId(instance, 2) : 0;
             long newSpritePathId = addNew ? checked(newTexturePathId + 1) : 0;
             var result = await Task.Run(() =>
             {
@@ -2128,6 +2128,26 @@ public sealed class MainView : UserControl
         return Math.Max(1, maxPathId + 1);
     }
 
+    private long GetNextPendingPathId(AssetsFileInstance instance, int count = 1)
+    {
+        long candidate = GetNextAssetPathId(instance);
+        while (true)
+        {
+            bool available = true;
+            for (int i = 0; i < count; i++)
+            {
+                long id = checked(candidate + i);
+                if (_pendingAssetChanges.ContainsKey(id) || instance.file.AssetInfos.Any(x => x.PathId == id))
+                {
+                    available = false;
+                    candidate = checked(id + 1);
+                    break;
+                }
+            }
+            if (available) return candidate;
+        }
+    }
+
     private void AddNewAssetImportButton(string label, Func<Task> action)
     {
         var button = new Button
@@ -2161,8 +2181,7 @@ public sealed class MainView : UserControl
     private Task SaveNewAssetDataAsync(AssetFileInfo sourceAsset, byte[] serializedData, string operation)
     {
         var instance = _currentAssets ?? throw new InvalidOperationException("No assets file is open.");
-        long newPathId = GetNextAssetPathId(instance);
-        while (_pendingAssetChanges.ContainsKey(newPathId)) newPathId = checked(newPathId + 1);
+        long newPathId = GetNextPendingPathId(instance);
         int classId = sourceAsset.GetTypeId(instance.file);
         ushort scriptId = instance.file.GetScriptIndex(sourceAsset);
         _pendingAssetChanges[newPathId] = new AssetsReplacerFromMemory(newPathId, classId, scriptId, serializedData);
