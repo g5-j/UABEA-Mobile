@@ -1157,6 +1157,155 @@ public sealed class MainView : UserControl
     }
 
 
+    private async Task ImportNewRawAssetAsync(AssetFileInfo sourceAsset)
+    {
+        if (_currentAssets is null || _assetsManager is null || _isBusy)
+            return;
+
+        var topLevel = TopLevel.GetTopLevel(this);
+        if (topLevel is null)
+            return;
+
+        var selected = await topLevel.StorageProvider.OpenFilePickerAsync(
+            new FilePickerOpenOptions
+            {
+                Title = "Select serialized asset data to add",
+                AllowMultiple = false,
+                FileTypeFilter = new[]
+                {
+                    new FilePickerFileType("UABEA serialized asset data")
+                    {
+                        Patterns = new[] { "*.assetdata", "*.bin" }
+                    }
+                }
+            });
+        if (selected.Count == 0)
+            return;
+
+        var instance = _currentAssets;
+        var bundle = _currentBundle;
+        string sourceName = bundle is null ? instance.name : _currentFileName;
+        string extension = Path.GetExtension(sourceName);
+        if (string.IsNullOrWhiteSpace(extension))
+            extension = bundle is null ? ".assets" : ".bundle";
+
+        var destination = await topLevel.StorageProvider.SaveFilePickerAsync(
+            new FilePickerSaveOptions
+            {
+                Title = "Save Unity file with the new asset",
+                SuggestedFileName = Path.GetFileNameWithoutExtension(sourceName) + "-with-new-asset" + extension,
+                FileTypeChoices = new[]
+                {
+                    new FilePickerFileType("Modified Unity file") { Patterns = new[] { "*" + extension } }
+                }
+            });
+        if (destination is null)
+            return;
+
+        _isBusy = true;
+        SetLoading(true, "Reading serialized asset data...");
+        string? temporaryOutput = null;
+        AssetFileInfo? addedInfo = null;
+
+        try
+        {
+            byte[] newData;
+            await using (var input = await selected[0].OpenReadAsync())
+            using (var memory = new MemoryStream())
+            {
+                await input.CopyToAsync(memory);
+                newData = memory.ToArray();
+            }
+            if (newData.Length == 0)
+                throw new InvalidDataException("The selected asset data file is empty.");
+
+            int classId = sourceAsset.GetTypeId(instance.file);
+            ushort scriptId = instance.file.GetScriptIndex(sourceAsset);
+            long maxPathId = instance.file.Metadata.AssetInfos.Count == 0
+                ? 0
+                : instance.file.Metadata.AssetInfos.Max(x => x.PathId);
+            if (maxPathId == long.MaxValue)
+                throw new InvalidOperationException("No free Path ID is available in this assets file.");
+            long newPathId = Math.Max(1, maxPathId + 1);
+
+            var template = _assetsManager.GetTemplateBaseField(instance, sourceAsset)
+                ?? throw new InvalidDataException("The selected asset's type tree could not be loaded.");
+            using (var validationStream = new MemoryStream(newData, writable: false))
+            using (var validationReader = new AssetsFileReader(validationStream))
+            {
+                _ = template.MakeValue(validationReader, 0, null);
+            }
+
+            addedInfo = AssetFileInfo.Create(instance.file, newPathId, classId, scriptId)
+                ?? throw new NotSupportedException(
+                    "This Unity file does not contain a compatible type tree for the selected asset type.");
+            addedInfo.SetNewData(newData);
+
+            temporaryOutput = Path.Combine(
+                Path.GetTempPath(), "uabea-add-" + Guid.NewGuid().ToString("N") + extension);
+
+            instance.file.Metadata.AssetInfos.Add(addedInfo);
+            try
+            {
+                SetLoading(true, "Writing the new asset into the Unity file...");
+                await Task.Run(() =>
+                {
+                    if (bundle is null)
+                    {
+                        using var output = File.Create(temporaryOutput);
+                        using var writer = new AssetsFileWriter(output);
+                        instance.file.Write(writer);
+                        return;
+                    }
+
+                    string entryName = ResolveBundleAssetsEntryName(bundle, instance);
+                    using var modifiedAssets = new MemoryStream();
+                    using (var assetsWriter = new AssetsFileWriter(modifiedAssets))
+                        instance.file.Write(assetsWriter);
+
+                    var bundleReplacer = new BundleReplacerFromMemory(
+                        entryName, entryName, true, modifiedAssets.ToArray(), -1);
+                    using var bundleOutput = File.Create(temporaryOutput);
+                    using var bundleWriter = new AssetsFileWriter(bundleOutput);
+                    bundle.file.Write(bundleWriter, new List<BundleReplacer> { bundleReplacer });
+                });
+            }
+            finally
+            {
+                instance.file.Metadata.AssetInfos.Remove(addedInfo);
+            }
+
+            SetLoading(true, "Saving the updated Unity file...");
+            await using (var output = await destination.OpenWriteAsync())
+            await using (var input = File.OpenRead(temporaryOutput))
+            {
+                await input.CopyToAsync(output);
+                await output.FlushAsync();
+            }
+
+            _status.Text =
+                $"New asset added successfully\nType: {Enum.GetName(typeof(AssetClassID), classId) ?? classId.ToString()}\n" +
+                $"New Path ID: {newPathId}\nData: {FormatSize(newData.LongLength)}\n" +
+                $"Output: {destination.Name}\nReopen the saved file to view the new asset.";
+        }
+        catch (Exception ex)
+        {
+            if (addedInfo is not null)
+                instance.file.Metadata.AssetInfos.Remove(addedInfo);
+            _status.Text = "Could not add the new asset:\n" + ex.Message;
+        }
+        finally
+        {
+            if (temporaryOutput is not null)
+            {
+                try { File.Delete(temporaryOutput); } catch { }
+            }
+            _isBusy = false;
+            SetLoading(false);
+        }
+    }
+
+
     private async Task ImportTextureImageAsync(AssetFileInfo asset)
     {
         if (_currentAssets is null || _assetsManager is null || _isBusy) return;
@@ -2595,7 +2744,7 @@ public sealed class MainView : UserControl
 
         var importRawButton = new Button
         {
-            Content = CreateIconLabel(MaterialIconKind.FileUpload, "Import / replace raw data", OnPrimaryBrush, 15),
+            Content = CreateIconLabel(MaterialIconKind.FileUpload, "Replace raw data", OnPrimaryBrush, 15),
             Background = SurfaceHighBrush,
             Foreground = TextBrush,
             BorderBrush = OutlineBrush,
@@ -2609,11 +2758,28 @@ public sealed class MainView : UserControl
         importRawButton.Click += async (_, _) => await ImportRawAssetAsync(asset);
         _items.Children.Add(importRawButton);
 
+        var importNewAssetButton = new Button
+        {
+            Content = CreateIconLabel(MaterialIconKind.FilePlus, "Import new asset (.assetdata)", OnPrimaryBrush, 15),
+            Background = SurfaceHighBrush,
+            Foreground = TextBrush,
+            BorderBrush = OutlineBrush,
+            BorderThickness = new Thickness(1),
+            CornerRadius = new CornerRadius(12),
+            MinHeight = 46,
+            HorizontalAlignment = HorizontalAlignment.Stretch,
+            FontWeight = FontWeight.SemiBold
+        };
+        ToolTip.SetTip(importNewAssetButton,
+            "Adds a new asset of the same Unity type as this asset. The file must contain serialized raw asset data exported by UABEA.");
+        importNewAssetButton.Click += async (_, _) => await ImportNewRawAssetAsync(asset);
+        _items.Children.Add(importNewAssetButton);
+
         if (typeId == (int)AssetClassID.Texture2D)
         {
             var importImageButton = new Button
             {
-                Content = CreateIconLabel(MaterialIconKind.Image, "Import image (PNG / JPG)", OnPrimaryBrush, 15),
+                Content = CreateIconLabel(MaterialIconKind.Image, "Replace image (PNG / JPG)", OnPrimaryBrush, 15),
                 Background = SurfaceHighBrush,
                 Foreground = TextBrush,
                 BorderBrush = OutlineBrush,
@@ -2629,7 +2795,7 @@ public sealed class MainView : UserControl
         {
             var importTextButton = new Button
             {
-                Content = CreateIconLabel(MaterialIconKind.FileDocument, "Import text / JSON / XML", OnPrimaryBrush, 15),
+                Content = CreateIconLabel(MaterialIconKind.FileDocument, "Replace text / JSON / XML", OnPrimaryBrush, 15),
                 Background = SurfaceHighBrush,
                 Foreground = TextBrush,
                 BorderBrush = OutlineBrush,
@@ -2645,7 +2811,7 @@ public sealed class MainView : UserControl
         {
             var importAudioButton = new Button
             {
-                Content = CreateIconLabel(MaterialIconKind.MusicNote, "Import audio (WAV / OGG)", OnPrimaryBrush, 15),
+                Content = CreateIconLabel(MaterialIconKind.MusicNote, "Replace audio (WAV / OGG)", OnPrimaryBrush, 15),
                 Background = SurfaceHighBrush,
                 Foreground = TextBrush,
                 BorderBrush = OutlineBrush,
@@ -2663,7 +2829,7 @@ public sealed class MainView : UserControl
         {
             var importFontButton = new Button
             {
-                Content = CreateIconLabel(MaterialIconKind.FileUpload, "Import font (TTF / OTF)", OnPrimaryBrush, 15),
+                Content = CreateIconLabel(MaterialIconKind.FileUpload, "Replace font (TTF / OTF)", OnPrimaryBrush, 15),
                 Background = SurfaceHighBrush,
                 Foreground = TextBrush,
                 BorderBrush = OutlineBrush,
@@ -2680,7 +2846,7 @@ public sealed class MainView : UserControl
         {
             var importSpriteButton = new Button
             {
-                Content = CreateIconLabel(MaterialIconKind.Image, "Import Sprite PNG (keep Atlas)", OnPrimaryBrush, 15),
+                Content = CreateIconLabel(MaterialIconKind.Image, "Replace Sprite PNG (keep Atlas)", OnPrimaryBrush, 15),
                 Background = SurfaceHighBrush,
                 Foreground = TextBrush,
                 BorderBrush = OutlineBrush,
@@ -2698,7 +2864,7 @@ public sealed class MainView : UserControl
         {
             var importCubemapButton = new Button
             {
-                Content = CreateIconLabel(MaterialIconKind.Image, "Import cubemap (6 PNG ZIP)", OnPrimaryBrush, 15),
+                Content = CreateIconLabel(MaterialIconKind.Image, "Replace cubemap (6 PNG ZIP)", OnPrimaryBrush, 15),
                 Background = SurfaceHighBrush,
                 Foreground = TextBrush,
                 BorderBrush = OutlineBrush,
@@ -2726,7 +2892,7 @@ public sealed class MainView : UserControl
             };
             var importStructuredButton = new Button
             {
-                Content = CreateIconLabel(MaterialIconKind.FileUpload, $"Import {structuredType} JSON", OnPrimaryBrush, 15),
+                Content = CreateIconLabel(MaterialIconKind.FileUpload, $"Replace {structuredType} JSON", OnPrimaryBrush, 15),
                 Background = SurfaceHighBrush,
                 Foreground = TextBrush,
                 BorderBrush = OutlineBrush,
@@ -2745,7 +2911,7 @@ public sealed class MainView : UserControl
         {
             var importObjButton = new Button
             {
-                Content = CreateIconLabel(MaterialIconKind.FileUpload, "Import Mesh (.OBJ)", OnPrimaryBrush, 15),
+                Content = CreateIconLabel(MaterialIconKind.FileUpload, "Replace Mesh (.OBJ)", OnPrimaryBrush, 15),
                 Background = SurfaceHighBrush,
                 Foreground = TextBrush,
                 BorderBrush = OutlineBrush,
