@@ -90,7 +90,7 @@ internal static class UnityObjMeshImporter
         SetChannel(channels.Children[0], 0, 0, 3);
         SetChannel(channels.Children[1], 0, 12, 3);
         if (hasUvs)
-            SetChannel(channels.Children[uvChannel], 0, uvOffset, 2);
+            SetChannel(channels.Children[uvChannel], 0, checked((byte)uvOffset), 2);
 
         // Unity 2018+ derives stream layouts from channel descriptors in many
         // serialized versions. If a particular TypeTree exposes m_Streams, keep
