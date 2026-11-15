@@ -1996,11 +1996,11 @@ public sealed class MainView : UserControl
             });
 
             await SaveAssetReplacementAsync(asset, result.Serialized, "Mesh OBJ import");
-            _status.Text = result.Summary + "\\nSaved as a new Unity file. Reopen it and inspect the Mesh preview before replacing the original.";
+            _status.Text = result.Summary + "\nSaved as a new Unity file. Reopen it and inspect the Mesh preview before replacing the original.";
         }
         catch (Exception ex)
         {
-            _status.Text = "Mesh OBJ import failed:\\n" + ex.Message;
+            _status.Text = "Mesh OBJ import failed:\n" + ex.Message;
         }
         finally
         {
