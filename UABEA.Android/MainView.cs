@@ -11,6 +11,7 @@ using System.Threading.Tasks;
 using AssetsTools.NET;
 using AssetsTools.NET.Extra;
 using AssetsTools.NET.Texture;
+using UABEAvalonia;
 using Fmod5Sharp;
 using Fmod5Sharp.FmodTypes;
 using NVorbis;
@@ -105,6 +106,7 @@ public sealed class MainView : UserControl
     private Button? _floatingActionButton;
     private Border? _floatingMenu;
     private System.Threading.CancellationTokenSource? _exportCancellation;
+    private AssetWorkspace? _assetWorkspace;
 
     private enum BrowserPage { Home, Bundle, Assets, EntryDetails, AssetDetails }
 
@@ -443,6 +445,7 @@ public sealed class MainView : UserControl
         _sessionResourceWasExplicitlySelected = false;
         _pendingAssetChanges.Clear();
         _pendingDeleteIds.Clear();
+        _assetWorkspace = null;
         _selectedAssetIds.Clear();
         _selectionMode = false;
         _hasUnsavedChanges = false;
@@ -491,6 +494,7 @@ public sealed class MainView : UserControl
             tempDirectory = null;
             _currentBundle = result.Bundle;
             _currentAssets = result.Assets;
+            InitializeAssetWorkspace(_currentAssets, _assetsManager, _currentBundle is not null);
             _currentFileName = file.Name;
             _currentPage = result.Page;
             _currentRows = result.Rows;
@@ -632,12 +636,12 @@ public sealed class MainView : UserControl
         return result;
     }
 
-    private static string TryReadAssetName(AssetsManager manager, AssetsFileInstance instance,
+    private string TryReadAssetName(AssetsManager manager, AssetsFileInstance instance,
         AssetFileInfo info, string fallbackType)
     {
         try
         {
-            var baseField = manager.GetBaseField(instance, info);
+            var baseField = GetAssetBaseField(instance, info, manager);
             var nameField = baseField["m_Name"];
             var name = nameField?.AsString;
             if (!string.IsNullOrWhiteSpace(name))
@@ -1651,7 +1655,7 @@ public sealed class MainView : UserControl
             }
             if (bytes.Length == 0) throw new InvalidDataException("The selected text file is empty.");
 
-            var field = await Task.Run(() => _assetsManager.GetBaseField(instance, asset)
+            var field = await Task.Run(() => GetAssetBaseField(instance, asset, _assetsManager)
                 ?? throw new InvalidDataException("TextAsset data could not be read."));
             var script = GetChildField(field, "m_Script");
             if (script is null) throw new InvalidDataException("This TextAsset has no m_Script payload.");
@@ -1750,7 +1754,7 @@ public sealed class MainView : UserControl
             long newSpritePathId = addNew ? checked(newTexturePathId + 1) : 0;
             var result = await Task.Run(() =>
             {
-                var sprite = manager.GetBaseField(instance, spriteAsset)
+                var sprite = GetAssetBaseField(instance, spriteAsset, manager)
                     ?? throw new InvalidDataException("Sprite data could not be read.");
                 var renderData = GetChildField(sprite, "m_RD");
                 var pointer = GetChildField(renderData, "texture");
@@ -2041,7 +2045,7 @@ public sealed class MainView : UserControl
 
             var result = await Task.Run(() =>
             {
-                var field = manager.GetBaseField(instance, asset)
+                var field = GetAssetBaseField(instance, asset, manager)
                     ?? throw new InvalidDataException("Mesh asset data could not be read.");
                 string summary = UnityObjMeshImporter.Import(
                     field,
@@ -2179,14 +2183,37 @@ public sealed class MainView : UserControl
         _items.Children.Add(button);
     }
 
+    private void InitializeAssetWorkspace(AssetsFileInstance? instance, AssetsManager? manager, bool fromBundle)
+    {
+        _assetWorkspace = null;
+        if (instance is null || manager is null) return;
+        var workspace = new AssetWorkspace(manager, fromBundle);
+        workspace.LoadAssetsFile(instance, false);
+        workspace.GenerateAssetsFileLookup();
+        _assetWorkspace = workspace;
+    }
+
+    private void RegisterPendingAssetChange(AssetsFileInstance instance, AssetsReplacer replacer)
+    {
+        _pendingAssetChanges[replacer.GetPathID()] = replacer;
+        _assetWorkspace?.AddReplacer(instance, replacer);
+    }
+
+    private AssetTypeValueField? GetAssetBaseField(AssetsFileInstance instance, AssetFileInfo asset, AssetsManager? manager = null)
+    {
+        var field = _assetWorkspace?.GetBaseField(instance, 0, asset.PathId);
+        if (field is not null) return field;
+        return (manager ?? _assetsManager)?.GetBaseField(instance, asset);
+    }
+
     private Task SaveNewAssetPairAsync(AssetFileInfo textureTemplate, byte[] textureData, AssetFileInfo spriteTemplate, byte[] spriteData, long texturePathId, long spritePathId)
     {
         var instance = _currentAssets ?? throw new InvalidOperationException("No assets file is open.");
-        _pendingAssetChanges[texturePathId] = new AssetsReplacerFromMemory(texturePathId,
-            textureTemplate.GetTypeId(instance.file), instance.file.GetScriptIndex(textureTemplate), textureData);
+        RegisterPendingAssetChange(instance, new AssetsReplacerFromMemory(texturePathId,
+            textureTemplate.GetTypeId(instance.file), instance.file.GetScriptIndex(textureTemplate), textureData));
         _hasUnsavedChanges = true;
-        _pendingAssetChanges[spritePathId] = new AssetsReplacerFromMemory(spritePathId,
-            spriteTemplate.GetTypeId(instance.file), instance.file.GetScriptIndex(spriteTemplate), spriteData);
+        RegisterPendingAssetChange(instance, new AssetsReplacerFromMemory(spritePathId,
+            spriteTemplate.GetTypeId(instance.file), instance.file.GetScriptIndex(spriteTemplate), spriteData));
         _status.Text = "New Sprite and Texture2D are pending. Use the floating menu → Save to export the modified .assets file.";
         UpdateFloatingActions();
         return Task.CompletedTask;
@@ -2198,7 +2225,7 @@ public sealed class MainView : UserControl
         long newPathId = GetNextPendingPathId(instance);
         int classId = sourceAsset.GetTypeId(instance.file);
         ushort scriptId = instance.file.GetScriptIndex(sourceAsset);
-        _pendingAssetChanges[newPathId] = new AssetsReplacerFromMemory(newPathId, classId, scriptId, serializedData);
+        RegisterPendingAssetChange(instance, new AssetsReplacerFromMemory(newPathId, classId, scriptId, serializedData));
         _hasUnsavedChanges = true;
         _status.Text = $"{operation} is pending. New Path ID: {newPathId}. Use the floating menu → Save.";
         UpdateFloatingActions();
@@ -2211,7 +2238,7 @@ public sealed class MainView : UserControl
         var instance = _currentAssets ?? throw new InvalidOperationException("No assets file is open.");
         int classId = asset.GetTypeId(instance.file);
         ushort scriptId = instance.file.GetScriptIndex(asset);
-        _pendingAssetChanges[asset.PathId] = new AssetsReplacerFromMemory(asset.PathId, classId, scriptId, serializedData);
+        RegisterPendingAssetChange(instance, new AssetsReplacerFromMemory(asset.PathId, classId, scriptId, serializedData));
         _hasUnsavedChanges = true;
         _status.Text = $"{operation} prepared for asset {asset.PathId}. Changes are pending; use the floating menu → Save.";
         UpdateFloatingActions();
@@ -2232,7 +2259,7 @@ public sealed class MainView : UserControl
             }) ?? throw new MissingMethodException("AssetsRemover(int, long) constructor was not found.");
             var remover = constructor.Invoke(new object[] { 0, asset.PathId }) as AssetsReplacer
                 ?? throw new InvalidOperationException("Could not create an asset remover.");
-            _pendingAssetChanges[asset.PathId] = remover;
+            RegisterPendingAssetChange(_currentAssets ?? throw new InvalidOperationException("No assets file is open."), remover);
             _pendingDeleteIds.Add(asset.PathId);
             _hasUnsavedChanges = true;
             _status.Text = $"Asset {asset.PathId} marked for deletion. Select Save changes to apply it.";
@@ -2658,6 +2685,7 @@ public sealed class MainView : UserControl
             if (result.IsSerialized && result.Assets is not null)
             {
                 _currentAssets = result.Assets;
+                InitializeAssetWorkspace(_currentAssets, manager, true);
                 _assetRows = result.Rows;
                 _currentPage = BrowserPage.Assets;
                 _currentRows = result.Rows.Select(row => new RowData(row.Name,
@@ -3693,7 +3721,7 @@ public sealed class MainView : UserControl
         return pixels;
     }
 
-    private static long FindMaterialForMesh(AssetsManager manager, AssetsFileInstance instance, long meshPathId)
+    private long FindMaterialForMesh(AssetsManager manager, AssetsFileInstance instance, long meshPathId)
     {
         long gameObjectPathId = 0;
         foreach (var info in instance.file.AssetInfos)
@@ -3731,12 +3759,12 @@ public sealed class MainView : UserControl
         return 0;
     }
 
-    private static long FindFirstMaterialTexturePathId(AssetsManager manager, AssetsFileInstance instance, long materialPathId)
+    private long FindFirstMaterialTexturePathId(AssetsManager manager, AssetsFileInstance instance, long materialPathId)
     {
         if (materialPathId == 0) return 0;
         var materialAsset = instance.file.AssetInfos.FirstOrDefault(info => info.PathId == materialPathId);
         if (materialAsset == null) return 0;
-        var material = manager.GetBaseField(instance, materialAsset);
+        var material = GetAssetBaseField(instance, materialAsset, manager);
         var saved = GetChildField(material, "m_SavedProperties");
         var textures = GetChildField(GetChildField(saved, "m_TexEnvs"), "Array");
         if (textures == null || textures.IsDummy) return 0;
@@ -3802,7 +3830,7 @@ public sealed class MainView : UserControl
                     {
                         try
                         {
-                            var shaderField = manager.GetBaseField(instance, shaderAsset);
+                            var shaderField = GetAssetBaseField(instance, shaderAsset, manager);
                             string actualShaderName = ReadFieldString(GetChildField(shaderField, "m_Name"));
                             if (!string.IsNullOrWhiteSpace(actualShaderName)) shaderLabel = $"{actualShaderName} • Path ID {shaderPathId}";
                         }
@@ -6037,6 +6065,8 @@ public sealed class MainView : UserControl
         try
         {
             await ReplaceAssetAsync(asset, format);
+            if (_currentAssets is not null && _currentPage == BrowserPage.AssetDetails)
+                ShowAssetDetails(asset);
         }
         catch (Exception ex)
         {
