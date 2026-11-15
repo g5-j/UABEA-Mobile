@@ -2214,7 +2214,7 @@ public sealed class MainView : UserControl
                 {
                     string entry = ResolveBundleAssetsEntryName(bundle, instance);
                     using var data = new MemoryStream();
-                    using (var writer = new AssetsFileWriter(data)) instance.file.Write(writer, 0, replacers);
+                    using (var memoryWriter = new AssetsFileWriter(data)) instance.file.Write(memoryWriter, 0, replacers);
                     var br = new BundleReplacerFromMemory(entry, entry, true, data.ToArray(), -1);
                     using var output = File.Create(temp);
                     using var writer = new AssetsFileWriter(output);
