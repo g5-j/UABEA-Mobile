@@ -49,22 +49,52 @@ public sealed class BundleWorkspace : IDisposable
         ValidateName(name);
         previousName ??= name;
 
-        if (_lookup.TryGetValue(previousName, out var old))
+        // The workspace must own the stream for as long as bundle serialization
+        // may need it. Callers often pass temporary streams that are disposed
+        // as soon as the import/asset-serialization scope ends.
+        long originalPosition = data.CanSeek ? data.Position : 0;
+        var ownedData = new MemoryStream();
+        try
         {
-            int index = _items.IndexOf(old);
-            var replacement = new BundleWorkspaceItem(name, old.OriginalName, old.IsNew,
-                isSerialized, true, false, data);
-            if (index >= 0) _items[index] = replacement;
-            if (old.IsNew || old.IsModified) old.Stream.Dispose();
-            _lookup.Remove(previousName);
-            _lookup[name] = replacement;
-            _removedFiles.Remove(old.OriginalName);
-            return;
+            if (data.CanSeek) data.Position = 0;
+            data.CopyTo(ownedData);
+            ownedData.Position = 0;
+        }
+        catch
+        {
+            ownedData.Dispose();
+            throw;
+        }
+        finally
+        {
+            if (data.CanSeek)
+                data.Position = Math.Min(originalPosition, data.Length);
         }
 
-        var added = new BundleWorkspaceItem(name, name, true, isSerialized, true, false, data);
-        _items.Add(added);
-        _lookup[name] = added;
+        try
+        {
+            if (_lookup.TryGetValue(previousName, out var old))
+            {
+                int index = _items.IndexOf(old);
+                var replacement = new BundleWorkspaceItem(name, old.OriginalName, old.IsNew,
+                    isSerialized, true, false, ownedData);
+                if (index >= 0) _items[index] = replacement;
+                if (old.IsNew || old.IsModified) old.Stream.Dispose();
+                _lookup.Remove(previousName);
+                _lookup[name] = replacement;
+                _removedFiles.Remove(old.OriginalName);
+                return;
+            }
+
+            var added = new BundleWorkspaceItem(name, name, true, isSerialized, true, false, ownedData);
+            _items.Add(added);
+            _lookup[name] = added;
+        }
+        catch
+        {
+            ownedData.Dispose();
+            throw;
+        }
     }
 
     public void RenameFile(string originalName, string newName)
