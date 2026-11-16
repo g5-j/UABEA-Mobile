@@ -1441,6 +1441,7 @@ public sealed class MainView : UserControl
         if (selected.Count == 0) return;
 
         var instance = _currentAssets;
+        var manager = _assetsManager;
         _isBusy = true;
         SetLoading(true, "Decoding replacement image...");
         try
@@ -1455,60 +1456,7 @@ public sealed class MainView : UserControl
             if (encoded.Length == 0) throw new InvalidDataException("The selected image is empty.");
 
             byte[] serialized = await Task.Run(() =>
-            {
-                using var bitmap = global::Android.Graphics.BitmapFactory.DecodeByteArray(encoded, 0, encoded.Length)
-                    ?? throw new InvalidDataException("Android could not decode this PNG/JPG image.");
-                int width = bitmap.Width;
-                int height = bitmap.Height;
-                if (width <= 0 || height <= 0 || width > 8192 || height > 8192 ||
-                    (long)width * height > 32_000_000)
-                    throw new InvalidDataException("Image dimensions exceed the safe import limit (8192 per side / 32 MP).");
-
-                var argb = new int[checked(width * height)];
-                bitmap.GetPixels(argb, 0, width, 0, 0, width, height);
-                var rgba = new byte[checked(width * height * 4)];
-                for (int y = 0; y < height; y++)
-                {
-                    int sourceRow = (height - 1 - y) * width;
-                    int targetRow = y * width * 4;
-                    for (int x = 0; x < width; x++)
-                    {
-                        int pixel = argb[sourceRow + x];
-                        int p = targetRow + x * 4;
-                        rgba[p] = (byte)(pixel >> 16);
-                        rgba[p + 1] = (byte)(pixel >> 8);
-                        rgba[p + 2] = (byte)pixel;
-                        rgba[p + 3] = (byte)(pixel >> 24);
-                    }
-                }
-
-                var template = _assetsManager.GetTemplateBaseField(instance, asset)
-                    ?? throw new InvalidDataException("Texture2D type information could not be read.");
-                var imageTemplate = template.Children.FirstOrDefault(x => x.Name == "image data" || x.Name == "m_ImageData");
-                if (imageTemplate is null) throw new InvalidDataException("Texture2D has no image data field.");
-                imageTemplate.ValueType = AssetValueType.ByteArray;
-                var blobTemplate = template.Children.FirstOrDefault(x => x.Name == "m_PlatformBlob");
-                if (blobTemplate is not null && blobTemplate.Children.Count > 0)
-                    blobTemplate.Children[0].ValueType = AssetValueType.ByteArray;
-
-                AssetTypeValueField field;
-                var reader = instance.file.Reader;
-                lock (reader)
-                    field = template.MakeValue(reader, asset.GetAbsoluteByteStart(instance.file), null);
-
-                var texture = TextureFile.ReadTextureFile(field);
-                texture.m_Width = width;
-                texture.m_Height = height;
-                texture.m_TextureFormat = (int)TextureFormat.RGBA32;
-                texture.m_CompleteImageSize = rgba.Length;
-                texture.m_MipCount = 1;
-                texture.m_MipMap = false;
-                texture.m_StreamingMipmaps = false;
-                texture.pictureData = rgba;
-                texture.m_StreamData = new TextureFile.StreamingInfo { offset = 0, size = 0, path = "" };
-                texture.WriteTo(field);
-                return field.WriteToByteArray(reader.BigEndian);
-            });
+                TextureAssetImporter.CreateReplacementData(manager!, instance, asset, encoded));
 
             await SaveAssetReplacementAsync(asset, serialized, "Texture2D image import", addNew);
         }
@@ -2606,6 +2554,8 @@ public sealed class MainView : UserControl
                 }
             });
 
+            await Task.Run(() => ValidateSavedOutput(temp, saveWholeBundle, savedAssetIds));
+
             await using var target = await destination.OpenWriteAsync();
             await using var source = File.OpenRead(temp);
             await source.CopyToAsync(target);
@@ -2629,6 +2579,41 @@ public sealed class MainView : UserControl
             try { File.Delete(temp); } catch { }
             _isBusy = false;
             SetLoading(false);
+        }
+    }
+
+    private static void ValidateSavedOutput(string path, bool isBundle, IReadOnlyCollection<AssetID> savedAssetIds)
+    {
+        var verifier = new AssetsManager();
+        try
+        {
+            if (isBundle)
+            {
+                var verifiedBundle = verifier.LoadBundleFile(path, false);
+                if (verifiedBundle.file.BlockAndDirInfo.DirectoryInfos.Length == 0)
+                    throw new InvalidDataException("The saved Unity bundle contains no readable directory entries.");
+                return;
+            }
+
+            var verifiedAssets = verifier.LoadAssetsFile(path, false);
+            var availableIds = verifiedAssets.file.AssetInfos.Select(x => x.PathId).ToHashSet();
+            foreach (var assetId in savedAssetIds)
+                if (!availableIds.Contains(assetId.pathId))
+                    throw new InvalidDataException($"Saved .assets file is missing modified asset Path ID {assetId.pathId}.");
+
+            verifier.LoadClassDatabaseFromPackage(verifiedAssets.file.Metadata.UnityVersion);
+            foreach (var assetId in savedAssetIds)
+            {
+                var asset = verifiedAssets.file.AssetInfos.FirstOrDefault(x => x.PathId == assetId.pathId)
+                    ?? throw new InvalidDataException($"Could not locate modified asset Path ID {assetId.pathId} after saving.");
+                if (verifier.GetBaseField(verifiedAssets, asset) is null)
+                    throw new InvalidDataException($"Modified asset Path ID {assetId.pathId} could not be deserialized after saving.");
+            }
+        }
+        finally
+        {
+            verifier.UnloadAllAssetsFiles(true);
+            verifier.UnloadAllBundleFiles();
         }
     }
 
