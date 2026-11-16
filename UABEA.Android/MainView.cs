@@ -833,7 +833,7 @@ public sealed class MainView : UserControl
         if (selected.Count == 0) return;
         try
         {
-            var memory = new MemoryStream();
+            using var memory = new MemoryStream();
             await using (var input = await selected[0].OpenReadAsync())
                 await input.CopyToAsync(memory);
             if (memory.Length == 0) throw new InvalidDataException("The selected file is empty.");
@@ -937,9 +937,12 @@ public sealed class MainView : UserControl
             {
                 var replacers = _bundleWorkspace.GetReplacers();
                 if (replacers.Count == 0) throw new InvalidOperationException("There are no bundle entry changes to save.");
-                using var output = File.Create(temp);
-                using var writer = new AssetsFileWriter(output);
-                _currentBundle.file.Write(writer, replacers);
+                using (var output = File.Create(temp))
+                using (var writer = new AssetsFileWriter(output))
+                    _currentBundle.file.Write(writer, replacers);
+
+                if (!File.Exists(temp) || new FileInfo(temp).Length == 0)
+                    throw new InvalidDataException("The rebuilt Unity bundle is empty. The destination was not written.");
             });
             await using var outputStream = await destination.OpenWriteAsync();
             await using var inputStream = File.OpenRead(temp);
@@ -2529,9 +2532,12 @@ public sealed class MainView : UserControl
                     if (bundleReplacers.Count == 0)
                         throw new InvalidOperationException("No modified serialized entries were found in this bundle.");
 
-                    using var output = File.Create(temp);
-                    using var writer = new AssetsFileWriter(output);
-                    bundle.file.Write(writer, bundleReplacers);
+                    using (var output = File.Create(temp))
+                    using (var writer = new AssetsFileWriter(output))
+                        bundle.file.Write(writer, bundleReplacers);
+
+                    if (!File.Exists(temp) || new FileInfo(temp).Length == 0)
+                        throw new InvalidDataException("The rebuilt Unity bundle is empty. The destination was not written.");
                 }
                 else
                 {
