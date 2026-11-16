@@ -6452,13 +6452,13 @@ public sealed class MainView : UserControl
     {
         var formats = new List<(string Key, string Label)>();
         if (typeId == (int)AssetClassID.Texture2D)
-            formats.AddRange(replace ? new() { ("png", "PNG image"), ("jpg", "JPG image") } : new() { ("png", "PNG image") });
+            formats.AddRange(replace ? new List<(string Key, string Label)> { ("png", "PNG image"), ("jpg", "JPG image") } : new List<(string Key, string Label)> { ("png", "PNG image") });
         else if (typeId == (int)AssetClassID.Sprite)
             formats.Add(("png", "PNG image"));
         else if (typeId == (int)AssetClassID.AudioClip)
-            formats.AddRange(replace ? new() { ("wav", "WAV audio"), ("ogg", "OGG audio") } : new() { ("audio", "Original decoded audio (WAV / OGG)") });
+            formats.AddRange(replace ? new List<(string Key, string Label)> { ("wav", "WAV audio"), ("ogg", "OGG audio") } : new List<(string Key, string Label)> { ("audio", "Original decoded audio (WAV / OGG)") });
         else if (typeId == (int)AssetClassID.Font)
-            formats.AddRange(replace ? new() { ("ttf", "TTF font"), ("otf", "OTF font") } : new() { ("font", "Embedded font (TTF / OTF)") });
+            formats.AddRange(replace ? new List<(string Key, string Label)> { ("ttf", "TTF font"), ("otf", "OTF font") } : new List<(string Key, string Label)> { ("font", "Embedded font (TTF / OTF)") });
         else if (typeId == (int)AssetClassID.TextAsset)
             formats.Add(replace ? ("text", "Text / TXT / JSON / XML / CSV / YAML / BYTES") : ("text", "Text file (.txt)"));
         else if (typeId == (int)AssetClassID.Cubemap)
