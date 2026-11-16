@@ -2607,8 +2607,9 @@ public sealed class MainView : UserControl
             {
                 var asset = verifiedAssets.file.AssetInfos.FirstOrDefault(x => x.PathId == assetId.pathId)
                     ?? throw new InvalidDataException($"Could not locate modified asset Path ID {assetId.pathId} after saving.");
-                if (verifier.GetBaseField(verifiedAssets, asset) is null)
-                    throw new InvalidDataException($"Modified asset Path ID {assetId.pathId} could not be deserialized after saving.");
+                if (asset.GetTypeId(verifiedAssets.file) == (int)AssetClassID.Texture2D &&
+                    verifier.GetBaseField(verifiedAssets, asset) is null)
+                    throw new InvalidDataException($"Modified Texture2D Path ID {assetId.pathId} could not be deserialized after saving.");
             }
         }
         finally
