@@ -98,6 +98,7 @@ public sealed class BundleWorkspace : IDisposable
 
         foreach (var item in _items)
         {
+            if (item.Stream.CanSeek) item.Stream.Position = 0;
             if (item.IsNew)
             {
                 replacers.Add(new BundleReplacerFromStream(item.Name, item.Name,
