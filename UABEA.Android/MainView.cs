@@ -85,6 +85,7 @@ public sealed class MainView : UserControl
     private long _lastZoomTap;
     private bool _zoomGestureUsed;
     private BundleFileInstance? _currentBundle;
+    private AssetBundleCompressionType _currentBundleCompression = AssetBundleCompressionType.None;
     private AssetsFileInstance? _currentAssets;
     private string _currentFileName = "";
     private BrowserPage _currentPage = BrowserPage.Home;
@@ -118,7 +119,8 @@ public sealed class MainView : UserControl
     private sealed record RowData(string Title, string Detail, MaterialIconKind Icon, Action Action, AssetFileInfo? AssetInfo = null);
     private sealed record OpenResult(AssetsManager Manager, BundleFileInstance? Bundle,
         AssetsFileInstance? Assets, List<RowData> Rows, List<AssetRow> AssetRows,
-        string Summary, BrowserPage Page);
+        string Summary, BrowserPage Page,
+        AssetBundleCompressionType? BundleCompression = null);
     private sealed record AssetRow(AssetFileInfo Info, string Name, string TypeName);
     private sealed record AssetExportPayload(byte[]? Data, string Extension, bool IsRaw);
 
@@ -511,6 +513,7 @@ public sealed class MainView : UserControl
             _currentTempDirectory = tempDirectory;
             tempDirectory = null;
             _currentBundle = result.Bundle;
+            _currentBundleCompression = result.BundleCompression ?? AssetBundleCompressionType.None;
             _currentAssets = result.Assets;
             _currentFileName = file.Name;
             _currentPage = result.Page;
@@ -573,7 +576,14 @@ public sealed class MainView : UserControl
             header.StartsWith("UnityRaw", StringComparison.Ordinal) ||
             header.StartsWith("UnityWeb", StringComparison.Ordinal))
         {
-            var bundle = manager.LoadBundleFile(path, true);
+            // Read the original block compression before any LZMA unpacking.
+            // BundleFile.Write produces an uncompressed UnityFS file; the save
+            // pipeline must Pack it again using this original compression.
+            var bundle = manager.LoadBundleFile(path, false);
+            var originalCompression = bundle.file.GetCompressionType();
+            if (bundle.file.DataIsCompressed)
+                bundle.file = BundleHelper.UnpackBundle(bundle.file);
+
             var rows = new List<RowData>();
             var entries = bundle.file.BlockAndDirInfo.DirectoryInfos;
             foreach (var entry in entries)
@@ -587,7 +597,8 @@ public sealed class MainView : UserControl
                     GetEntryIcon(capturedName), () => { }));
             }
             return new OpenResult(manager, bundle, null, rows, new List<AssetRow>(),
-                $"Bundle: {fileName}\nEntries: {rows.Count}", BrowserPage.Bundle);
+                $"Bundle: {fileName}\nEntries: {rows.Count}", BrowserPage.Bundle,
+                originalCompression);
         }
 
         if (AssetsFile.IsAssetsFile(path))
@@ -917,6 +928,58 @@ public sealed class MainView : UserControl
         _bundleWorkspaceOverlay = null;
     }
 
+    private static void WriteBundleCopyWithOriginalCompression(
+        BundleFileInstance sourceBundle,
+        List<BundleReplacer> replacers,
+        string outputPath,
+        AssetBundleCompressionType originalCompression)
+    {
+        if (sourceBundle is null)
+            throw new ArgumentNullException(nameof(sourceBundle));
+        if (replacers is null || replacers.Count == 0)
+            throw new InvalidOperationException("There are no bundle changes to write.");
+
+        string uncompressedPath = outputPath + ".uncompressed";
+        try
+        {
+            // First apply the bundle replacers. AssetBundleFile.Write intentionally
+            // writes an uncompressed bundle; it is an intermediate, not the final file.
+            using (var output = File.Create(uncompressedPath))
+            using (var writer = new AssetsFileWriter(output))
+                sourceBundle.file.Write(writer, replacers);
+
+            var intermediateInfo = new FileInfo(uncompressedPath);
+            if (!intermediateInfo.Exists || intermediateInfo.Length == 0)
+                throw new InvalidDataException("The intermediate Unity bundle is empty.");
+
+            // Re-open the intermediate through AssetsTools.NET and pack it back
+            // using the compression type detected from the original input bundle.
+            var packManager = new AssetsManager();
+            try
+            {
+                var uncompressedBundle = packManager.LoadBundleFile(uncompressedPath, false);
+                if (uncompressedBundle.file.DataIsCompressed)
+                    throw new InvalidDataException("The intermediate bundle was unexpectedly compressed.");
+
+                using (var packedOutput = File.Create(outputPath))
+                using (var packedWriter = new AssetsFileWriter(packedOutput))
+                    uncompressedBundle.file.Pack(packedWriter, originalCompression);
+            }
+            finally
+            {
+                packManager.UnloadAllBundleFiles();
+            }
+
+            var finalInfo = new FileInfo(outputPath);
+            if (!finalInfo.Exists || finalInfo.Length == 0)
+                throw new InvalidDataException("The compressed Unity bundle output is empty.");
+        }
+        finally
+        {
+            try { File.Delete(uncompressedPath); } catch { }
+        }
+    }
+
     private async Task SaveBundleWorkspaceAsync()
     {
         if (_currentBundle is null || !_bundleWorkspace.Modified || _isBusy) return;
@@ -937,12 +1000,8 @@ public sealed class MainView : UserControl
             {
                 var replacers = _bundleWorkspace.GetReplacers();
                 if (replacers.Count == 0) throw new InvalidOperationException("There are no bundle entry changes to save.");
-                using (var output = File.Create(temp))
-                using (var writer = new AssetsFileWriter(output))
-                    _currentBundle.file.Write(writer, replacers);
-
-                if (!File.Exists(temp) || new FileInfo(temp).Length == 0)
-                    throw new InvalidDataException("The rebuilt Unity bundle is empty. The destination was not written.");
+                WriteBundleCopyWithOriginalCompression(
+                    _currentBundle, replacers, temp, _currentBundleCompression);
             });
             await using var outputStream = await destination.OpenWriteAsync();
             await using var inputStream = File.OpenRead(temp);
@@ -2532,12 +2591,8 @@ public sealed class MainView : UserControl
                     if (bundleReplacers.Count == 0)
                         throw new InvalidOperationException("No modified serialized entries were found in this bundle.");
 
-                    using (var output = File.Create(temp))
-                    using (var writer = new AssetsFileWriter(output))
-                        bundle.file.Write(writer, bundleReplacers);
-
-                    if (!File.Exists(temp) || new FileInfo(temp).Length == 0)
-                        throw new InvalidDataException("The rebuilt Unity bundle is empty. The destination was not written.");
+                    WriteBundleCopyWithOriginalCompression(
+                        bundle, bundleReplacers, temp, _currentBundleCompression);
                 }
                 else
                 {
