@@ -83,6 +83,7 @@ jobs:
             exit 1
           fi
           dotnet run --project TexturePreviewSmokeTest/TexturePreviewSmokeTest.csproj -- "$ASSETS_FILE" ReleaseFiles/classdata.tpk
+          test -s "$RUNNER_TEMP/sharedassets-fixture/texture-preview-output/report.txt"
 
       - name: Prepare stable release signing key
         env:
