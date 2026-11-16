@@ -580,7 +580,7 @@ public sealed class MainView : UserControl
             // BundleFile.Write produces an uncompressed UnityFS file; the save
             // pipeline must Pack it again using this original compression.
             var bundle = manager.LoadBundleFile(path, false);
-            var originalCompression = bundle.file.GetCompressionType();
+            var originalCompression = bundle.file.GetCompressionType(bundle.file.BlockAndDirInfo.BlockInfos);
             if (bundle.file.DataIsCompressed)
                 bundle.file = BundleHelper.UnpackBundle(bundle.file);
 
@@ -963,7 +963,7 @@ public sealed class MainView : UserControl
 
                 using (var packedOutput = File.Create(outputPath))
                 using (var packedWriter = new AssetsFileWriter(packedOutput))
-                    uncompressedBundle.file.Pack(packedWriter, originalCompression);
+                    uncompressedBundle.file.Pack(uncompressedBundle.file.DataReader, packedWriter, originalCompression, true, null);
             }
             finally
             {
