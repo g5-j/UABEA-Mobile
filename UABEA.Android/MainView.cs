@@ -422,6 +422,7 @@ public sealed class MainView : UserControl
 
     public bool HandleSystemBack()
     {
+        if (_bundleWorkspaceOverlay is not null) { CloseBundleRename(); return true; }
         if (_saveChoiceOverlay is not null)
         {
             CompleteBundleSaveChoice(null);
@@ -840,6 +841,8 @@ public sealed class MainView : UserControl
                 throw new InvalidDataException("The selected file exceeds the 1 GB import limit.");
             memory.Position = 0;
             string name = replaceName ?? Path.GetFileName(selected[0].Name);
+            if (replaceName is null && _bundleWorkspace.TryGetFile(name, out _))
+                throw new IOException("A bundle entry with that name already exists. Use Replace from the entry menu.");
             bool serialized = Path.GetExtension(name).Equals(".assets", StringComparison.OrdinalIgnoreCase) ||
                 Path.GetExtension(name).Equals(".asset", StringComparison.OrdinalIgnoreCase);
             _bundleWorkspace.AddOrReplaceFile(memory, name, serialized);
