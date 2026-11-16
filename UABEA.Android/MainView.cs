@@ -2601,6 +2601,7 @@ public sealed class MainView : UserControl
                 if (!availableIds.Contains(assetId.pathId))
                     throw new InvalidDataException($"Saved .assets file is missing modified asset Path ID {assetId.pathId}.");
 
+            verifier.LoadClassPackage(EnsureClassDataFile());
             verifier.LoadClassDatabaseFromPackage(verifiedAssets.file.Metadata.UnityVersion);
             foreach (var assetId in savedAssetIds)
             {
