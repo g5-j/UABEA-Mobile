@@ -1112,6 +1112,67 @@ public sealed class MainView : UserControl
         }
     }
 
+    private async Task ExportRawAssetAsync(AssetFileInfo asset)
+    {
+        if (_currentAssets is null || _isBusy) return;
+        var instance = _currentAssets;
+        var top = TopLevel.GetTopLevel(this);
+        if (top is null) return;
+        string name = "Asset";
+        try
+        {
+            name = TryReadAssetName(_assetsManager!, instance, asset, "Asset");
+            byte[]? pending = _assetWorkspace is not null &&
+                _assetWorkspace.TryGetPreviewData(instance, asset.PathId, out var data) ? data : null;
+            byte[] raw = await Task.Run(() => AssetImportExport.ExportRaw(instance, asset, pending));
+            var destination = await top.StorageProvider.SaveFilePickerAsync(new FilePickerSaveOptions
+            {
+                Title = "Export raw serialized asset",
+                SuggestedFileName = SanitizeExportName(name),
+                DefaultExtension = "assetdata",
+                FileTypeChoices = new[] { new FilePickerFileType("Raw asset data") { Patterns = new[] { "*.assetdata", "*.bin" } } }
+            });
+            if (destination is null) return;
+            await using var output = await destination.OpenWriteAsync();
+            await output.WriteAsync(raw);
+            await output.FlushAsync();
+            _status.Text = $"Exported raw asset data: {name}\n{FormatSize(raw.LongLength)}";
+        }
+        catch (Exception ex) { _status.Text = "Raw asset export failed: " + ex.Message; }
+    }
+
+    private async Task ExportAssetDumpAsync(AssetFileInfo asset)
+    {
+        if (_currentAssets is null || _assetsManager is null || _isBusy) return;
+        var instance = _currentAssets;
+        var manager = _assetsManager;
+        var top = TopLevel.GetTopLevel(this);
+        if (top is null) return;
+        try
+        {
+            string name = await Task.Run(() => TryReadAssetName(manager, instance, asset, "Asset"));
+            byte[] json = await Task.Run(() =>
+            {
+                var field = GetAssetBaseField(instance, asset, manager)
+                    ?? throw new InvalidDataException("Asset data could not be read for JSON dump export.");
+                return AssetImportExport.ExportTypeTreeDump(field);
+            });
+            var destination = await top.StorageProvider.SaveFilePickerAsync(new FilePickerSaveOptions
+            {
+                Title = "Export type-tree JSON dump",
+                SuggestedFileName = SanitizeExportName(name),
+                DefaultExtension = "json",
+                FileTypeChoices = new[] { new FilePickerFileType("JSON type-tree dump") { Patterns = new[] { "*.json" } } }
+            });
+            if (destination is null) return;
+            await using var output = await destination.OpenWriteAsync();
+            await output.WriteAsync(json);
+            await output.FlushAsync();
+            _status.Text = $"Exported JSON dump: {name}\n{FormatSize(json.LongLength)}";
+        }
+        catch (Exception ex) { _status.Text = "JSON dump export failed: " + ex.Message; }
+    }
+
     private async Task ExportAssetAsync(AssetFileInfo asset, bool resourceRetry = false)
     {
         if (_currentAssets is null || _assetsManager is null || _isBusy) return;
@@ -6345,7 +6406,16 @@ public sealed class MainView : UserControl
                 try
                 {
                     if (replace)
-                        await ReplaceAssetSafelyAsync(asset, format.Key);
+                    {
+                        if (format.Key == "json")
+                            await ImportStructuredJsonAssetAsync(asset, Enum.GetName(typeof(AssetClassID), typeId) ?? $"Type_{typeId}");
+                        else
+                            await ReplaceAssetSafelyAsync(asset, format.Key);
+                    }
+                    else if (format.Key == "raw")
+                        await ExportRawAssetAsync(asset);
+                    else if (format.Key == "json")
+                        await ExportAssetDumpAsync(asset);
                     else
                         await ExportAssetAsync(asset);
                 }
@@ -6380,15 +6450,25 @@ public sealed class MainView : UserControl
 
     private static List<(string Key, string Label)> GetAssetFormats(int typeId, bool replace)
     {
-        if (typeId == (int)AssetClassID.Texture2D) return replace ? new() { ("png", "PNG image"), ("jpg", "JPG image") } : new() { ("png", "PNG image") };
-        if (typeId == (int)AssetClassID.Sprite) return replace ? new() { ("png", "PNG image") } : new() { ("png", "PNG image") };
-        if (typeId == (int)AssetClassID.AudioClip) return replace ? new() { ("wav", "WAV audio"), ("ogg", "OGG audio") } : new() { ("audio", "Original decoded audio (WAV / OGG)") };
-        if (typeId == (int)AssetClassID.Font) return replace ? new() { ("ttf", "TTF font"), ("otf", "OTF font") } : new() { ("font", "Embedded font (TTF / OTF)") };
-        if (typeId == (int)AssetClassID.TextAsset) return replace ? new() { ("text", "Text / TXT / JSON / XML / CSV / YAML / BYTES") } : new() { ("text", "Text file (.txt)") };
-        if (typeId == (int)AssetClassID.Cubemap) return replace ? new() { ("zip", "ZIP with six PNG faces") } : new() { ("zip", "ZIP with six PNG faces") };
-        if (typeId == (int)AssetClassID.Mesh) return replace ? new() { ("obj", "Wavefront OBJ model") } : new() { ("obj", "Wavefront OBJ model") };
-        if (typeId == (int)AssetClassID.Material || typeId == 1 || typeId == 1001) return replace ? new() { ("json", "Unity type-tree JSON") } : new() { ("raw", "Raw serialized asset data") };
-        return new() { (replace ? "raw" : "raw", "Raw serialized asset data (.assetdata)") };
+        var formats = new List<(string Key, string Label)>();
+        if (typeId == (int)AssetClassID.Texture2D)
+            formats.AddRange(replace ? new() { ("png", "PNG image"), ("jpg", "JPG image") } : new() { ("png", "PNG image") });
+        else if (typeId == (int)AssetClassID.Sprite)
+            formats.Add(("png", "PNG image"));
+        else if (typeId == (int)AssetClassID.AudioClip)
+            formats.AddRange(replace ? new() { ("wav", "WAV audio"), ("ogg", "OGG audio") } : new() { ("audio", "Original decoded audio (WAV / OGG)") });
+        else if (typeId == (int)AssetClassID.Font)
+            formats.AddRange(replace ? new() { ("ttf", "TTF font"), ("otf", "OTF font") } : new() { ("font", "Embedded font (TTF / OTF)") });
+        else if (typeId == (int)AssetClassID.TextAsset)
+            formats.Add(replace ? ("text", "Text / TXT / JSON / XML / CSV / YAML / BYTES") : ("text", "Text file (.txt)"));
+        else if (typeId == (int)AssetClassID.Cubemap)
+            formats.Add(("zip", "ZIP with six PNG faces"));
+        else if (typeId == (int)AssetClassID.Mesh)
+            formats.Add(("obj", "Wavefront OBJ model"));
+
+        formats.Add(("raw", "Raw serialized asset data (.assetdata)"));
+        formats.Add(("json", "Type-tree JSON dump"));
+        return formats;
     }
 
     private async Task ReplaceAssetAsync(AssetFileInfo asset, string? format)
@@ -6396,6 +6476,11 @@ public sealed class MainView : UserControl
         if (_currentAssets is null) return;
         int typeId = asset.GetTypeId(_currentAssets.file);
         if (format is null || format == "raw") { await ImportRawAssetAsync(asset); return; }
+        if (format == "json")
+        {
+            await ImportStructuredJsonAssetAsync(asset, Enum.GetName(typeof(AssetClassID), typeId) ?? $"Type_{typeId}");
+            return;
+        }
         if (typeId == (int)AssetClassID.Texture2D) await ImportTextureImageAsync(asset);
         else if (typeId == (int)AssetClassID.Sprite) await ImportSpriteImageAsync(asset);
         else if (typeId == (int)AssetClassID.AudioClip) await ImportAudioClipAsync(asset);
@@ -6403,8 +6488,6 @@ public sealed class MainView : UserControl
         else if (typeId == (int)AssetClassID.TextAsset) await ImportTextAssetAsync(asset);
         else if (typeId == (int)AssetClassID.Cubemap) await ImportCubemapAsync(asset);
         else if (typeId == (int)AssetClassID.Mesh) await ImportMeshObjAsync(asset);
-        else if (typeId == (int)AssetClassID.Material || typeId == 1 || typeId == 1001)
-            await ImportStructuredJsonAssetAsync(asset, typeId == 1 ? "GameObject" : typeId == 1001 ? "PrefabInstance" : "Material");
     }
 
     private static Control CreateInfoRow(string title, string detail, MaterialIconKind iconKind)
