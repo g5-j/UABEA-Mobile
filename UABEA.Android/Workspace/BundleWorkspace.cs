@@ -86,8 +86,8 @@ public sealed class BundleWorkspace : IDisposable
             throw new FileNotFoundException("Bundle entry was not found.", name);
         _lookup.Remove(name);
         _items.Remove(item);
-        if (item.IsNew) item.Stream.Dispose();
-        else _removedFiles.Add(item.OriginalName);
+        if (item.IsNew || item.IsModified) item.Stream.Dispose();
+        if (!item.IsNew) _removedFiles.Add(item.OriginalName);
     }
 
     public List<BundleReplacer> GetReplacers()
