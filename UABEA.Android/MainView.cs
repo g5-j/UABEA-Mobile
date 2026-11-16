@@ -1165,10 +1165,11 @@ public sealed class MainView : UserControl
             await using var output = await destination.OpenWriteAsync();
             if (payload.IsRaw)
             {
-                var reader = instance.file.Reader;
-                long start = asset.GetAbsoluteByteStart(instance.file);
-                using var source = new SegmentStream(reader.BaseStream, start, asset.ByteSize);
-                await source.CopyToAsync(output);
+                byte[] rawBytes = AssetImportExport.ExportRaw(instance, asset,
+                    _assetWorkspace is not null &&
+                    _assetWorkspace.TryGetPreviewData(instance, asset.PathId, out var pendingRaw)
+                        ? pendingRaw : null);
+                await output.WriteAsync(rawBytes);
             }
             else
             {
@@ -1201,59 +1202,22 @@ public sealed class MainView : UserControl
 
     private async Task ImportRawAssetAsync(AssetFileInfo asset)
     {
-        if (_currentAssets is null || _assetsManager is null || _isBusy)
-            return;
-
+        if (_currentAssets is null || _isBusy) return;
         var topLevel = TopLevel.GetTopLevel(this);
-        if (topLevel is null)
-            return;
-
-        var selected = await topLevel.StorageProvider.OpenFilePickerAsync(
-            new FilePickerOpenOptions
+        if (topLevel is null) return;
+        var selected = await topLevel.StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
+        {
+            Title = "Select serialized raw asset data",
+            AllowMultiple = false,
+            FileTypeFilter = new[]
             {
-                Title = "Select serialized raw asset data",
-                AllowMultiple = false,
-                FileTypeFilter = new[]
-                {
-                    new FilePickerFileType("UABEA raw asset data")
-                    {
-                        Patterns = new[] { "*.assetdata", "*.bin", "*.*" }
-                    }
-                }
-            });
-
-        if (selected.Count == 0)
-            return;
-
-        var instance = _currentAssets;
-        var bundle = _currentBundle;
-        string sourceName = bundle is null ? instance.name : _currentFileName;
-        string extension = Path.GetExtension(sourceName);
-        if (string.IsNullOrWhiteSpace(extension))
-            extension = bundle is null ? ".assets" : ".bundle";
-
-        string suggestedName = Path.GetFileNameWithoutExtension(sourceName) + "-modified" + extension;
-        var destination = await topLevel.StorageProvider.SaveFilePickerAsync(
-            new FilePickerSaveOptions
-            {
-                Title = "Save modified Unity file",
-                SuggestedFileName = suggestedName,
-                FileTypeChoices = new[]
-                {
-                    new FilePickerFileType("Modified Unity file")
-                    {
-                        Patterns = new[] { "*" + extension }
-                    }
-                }
-            });
-
-        if (destination is null)
-            return;
+                new FilePickerFileType("UABEA raw asset data") { Patterns = new[] { "*.assetdata", "*.bin", "*.*" } }
+            }
+        });
+        if (selected.Count == 0) return;
 
         _isBusy = true;
-        SetLoading(true, "Reading replacement data...");
-        string? temporaryOutput = null;
-
+        SetLoading(true, "Reading raw replacement data...");
         try
         {
             byte[] replacementData;
@@ -1263,73 +1227,25 @@ public sealed class MainView : UserControl
                 await input.CopyToAsync(memory);
                 replacementData = memory.ToArray();
             }
-
             if (replacementData.Length == 0)
                 throw new InvalidDataException("The selected replacement file is empty.");
+            if (replacementData.LongLength > 512L * 1024 * 1024)
+                throw new InvalidDataException("The raw replacement exceeds the 512 MB safety limit.");
 
-            int classId = asset.GetTypeId(instance.file);
-            ushort monoId = instance.file.GetScriptIndex(asset);
-            var assetReplacer = new AssetsReplacerFromMemory(
-                asset.PathId, classId, monoId, replacementData);
-
-            temporaryOutput = Path.Combine(
-                Path.GetTempPath(), "uabea-replace-" + Guid.NewGuid().ToString("N") + extension);
-
-            SetLoading(true, "Writing modified Unity data...");
-            await Task.Run(() =>
-            {
-                if (bundle is null)
-                {
-                    using var output = File.Create(temporaryOutput);
-                    using var writer = new AssetsFileWriter(output);
-                    instance.file.Write(writer, 0, new List<AssetsReplacer> { assetReplacer });
-                    return;
-                }
-
-                string entryName = ResolveBundleAssetsEntryName(bundle, instance);
-                using var modifiedAssets = new MemoryStream();
-                using (var assetsWriter = new AssetsFileWriter(modifiedAssets))
-                {
-                    instance.file.Write(
-                        assetsWriter, 0, new List<AssetsReplacer> { assetReplacer });
-                }
-
-                var bundleReplacer = new BundleReplacerFromMemory(
-                    entryName, entryName, true, modifiedAssets.ToArray(), -1);
-                using var bundleOutput = File.Create(temporaryOutput);
-                using var bundleWriter = new AssetsFileWriter(bundleOutput);
-                bundle.file.Write(bundleWriter, new List<BundleReplacer> { bundleReplacer });
-            });
-
-            SetLoading(true, "Saving modified file...");
-            await using (var output = await destination.OpenWriteAsync())
-            await using (var input = File.OpenRead(temporaryOutput))
-            {
-                await input.CopyToAsync(output);
-                await output.FlushAsync();
-            }
-
-            _status.Text =
-                $"Raw asset replacement saved\nAsset: {asset.PathId}\n" +
-                $"Type: {Enum.GetName(typeof(AssetClassID), classId) ?? classId.ToString()}\n" +
-                $"Replacement: {FormatSize(replacementData.LongLength)}\n" +
-                $"Output: {destination.Name}\nReopen the saved file to inspect the replacement.";
+            // Raw import is queued in the active AssetWorkspace, just like UABEA.
+            // It no longer writes a separate output file immediately.
+            await SaveAssetReplacementAsync(asset, replacementData, "Raw asset replacement");
         }
         catch (Exception ex)
         {
-            _status.Text = $"Could not replace asset:\n{ex.Message}";
+            _status.Text = "Could not replace asset: " + ex.Message;
         }
         finally
         {
-            if (temporaryOutput is not null)
-            {
-                try { File.Delete(temporaryOutput); } catch { }
-            }
             _isBusy = false;
             SetLoading(false);
         }
     }
-
 
     private async Task ImportNewRawAssetAsync(AssetFileInfo sourceAsset)
     {
