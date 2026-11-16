@@ -69,6 +69,8 @@ public sealed class MainView : UserControl
     private readonly System.Threading.SemaphoreSlim _assetNameLock = new(1, 1);
 
     private AssetsManager? _assetsManager;
+    private AssetWorkspace? _assetWorkspace;
+    private readonly BundleWorkspace _bundleWorkspace = new();
     private string? _currentTempDirectory;
     private Border _loadingOverlay = null!;
     private Border _imageViewerOverlay = null!;
@@ -451,6 +453,9 @@ public sealed class MainView : UserControl
         _isBusy = true;
         _sessionResourcePaths.Clear();
         _sessionResourceWasExplicitlySelected = false;
+        _assetWorkspace?.Dispose();
+        _assetWorkspace = null;
+        _bundleWorkspace.Reset(null);
         _pendingAssetChanges.Clear();
         _pendingAssetInstances.Clear();
         _savedAssetChanges.Clear();
@@ -498,6 +503,8 @@ public sealed class MainView : UserControl
             _assetsManager?.UnloadAllAssetsFiles(true);
             if (_currentTempDirectory is not null) { try { Directory.Delete(_currentTempDirectory, true); } catch { } }
             _assetsManager = result.Manager;
+            _assetWorkspace = new AssetWorkspace(result.Manager, result.Bundle is not null);
+            _bundleWorkspace.Reset(result.Bundle);
             _sessionResourcePaths.Clear();
             _sessionResourcePaths.AddRange(selectedResourcePaths);
             _currentTempDirectory = tempDirectory;
@@ -2196,6 +2203,7 @@ public sealed class MainView : UserControl
     {
         // Same identity model as UABEA's AssetWorkspace: source file + Path ID.
         var assetId = new AssetID(instance.path, replacer.GetPathID());
+        _assetWorkspace?.AddReplacer(instance, replacer);
         _pendingAssetChanges[assetId] = replacer;
         _pendingAssetInstances[assetId] = instance;
         _savedAssetChanges.Remove(assetId);
@@ -2206,10 +2214,16 @@ public sealed class MainView : UserControl
             return;
         }
 
-        using var previewStream = new MemoryStream();
-        using (var previewWriter = new AssetsFileWriter(previewStream))
-            replacer.Write(previewWriter);
-        _pendingAssetData[assetId] = previewStream.ToArray();
+        if (_assetWorkspace is not null &&
+            _assetWorkspace.TryGetPreviewData(instance, replacer.GetPathID(), out var workspacePreview))
+            _pendingAssetData[assetId] = workspacePreview;
+        else
+        {
+            using var previewStream = new MemoryStream();
+            using (var previewWriter = new AssetsFileWriter(previewStream))
+                replacer.Write(previewWriter);
+            _pendingAssetData[assetId] = previewStream.ToArray();
+        }
     }
 
     private AssetTypeValueField? GetAssetBaseField(AssetsFileInstance instance, AssetFileInfo asset, AssetsManager? manager = null)
@@ -2217,7 +2231,7 @@ public sealed class MainView : UserControl
         var activeManager = manager ?? _assetsManager;
         if (activeManager is null) return null;
 
-        if (_pendingAssetData.TryGetValue(new AssetID(instance.path, asset.PathId), out var replacementData))
+        if ((_assetWorkspace?.TryGetPreviewData(instance, asset.PathId, out var workspaceData) == true && (replacementData = workspaceData) is not null) || _pendingAssetData.TryGetValue(new AssetID(instance.path, asset.PathId), out replacementData))
         {
             var template = activeManager.GetTemplateBaseField(instance, asset);
             if (template is not null)
@@ -2305,19 +2319,17 @@ public sealed class MainView : UserControl
 
     private List<AssetsReplacer> GetPendingAssetReplacers(AssetsFileInstance instance)
     {
-        return _pendingAssetChanges
+        return _assetWorkspace?.GetReplacersForFile(instance) ?? _pendingAssetChanges
             .Where(pair => _pendingAssetInstances.TryGetValue(pair.Key, out var owner) &&
                 ReferenceEquals(owner, instance))
-            .Select(pair => pair.Value)
-            .ToList();
+            .Select(pair => pair.Value).ToList();
     }
 
     private List<AssetID> GetPendingAssetIds(AssetsFileInstance instance)
     {
-        return _pendingAssetChanges.Keys
+        return _assetWorkspace?.GetAssetIdsForFile(instance) ?? _pendingAssetChanges.Keys
             .Where(id => _pendingAssetInstances.TryGetValue(id, out var owner) &&
-                ReferenceEquals(owner, instance))
-            .ToList();
+                ReferenceEquals(owner, instance)).ToList();
     }
 
     private async Task SavePendingAssetsAsync()
@@ -2385,7 +2397,7 @@ public sealed class MainView : UserControl
                     if (bundle is null)
                         throw new InvalidOperationException("The Unity bundle is no longer available.");
 
-                    var bundleReplacers = new List<BundleReplacer>();
+                    _bundleWorkspace.Reset(bundle);
                     foreach (var changedFile in changedFiles)
                     {
                         var replacers = GetPendingAssetReplacers(changedFile);
@@ -2396,10 +2408,10 @@ public sealed class MainView : UserControl
                             changedFile.file.Write(assetsWriter, 0, replacers);
 
                         string entryName = ResolveBundleAssetsEntryName(bundle, changedFile);
-                        bundleReplacers.Add(new BundleReplacerFromMemory(
-                            entryName, entryName, true, changedAssetsStream.ToArray(), -1));
+                        _bundleWorkspace.AddOrReplaceFile(changedAssetsStream, entryName, true);
                     }
 
+                    var bundleReplacers = _bundleWorkspace.GetReplacers();
                     if (bundleReplacers.Count == 0)
                         throw new InvalidOperationException("No modified serialized entries were found in this bundle.");
 
