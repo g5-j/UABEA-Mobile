@@ -1,6 +1,7 @@
 using AssetsTools.NET;
 using AssetsTools.NET.Extra;
 using AssetsTools.NET.Texture;
+using TexturePlugin;
 using SixLabors.ImageSharp;
 using SixLabors.ImageSharp.PixelFormats;
 using SixLabors.ImageSharp.Processing;
