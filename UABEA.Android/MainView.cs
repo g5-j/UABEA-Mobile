@@ -1234,7 +1234,11 @@ public sealed class MainView : UserControl
 
             // Raw import is queued in the active AssetWorkspace, just like UABEA.
             // It no longer writes a separate output file immediately.
-            await SaveAssetReplacementAsync(asset, replacementData, "Raw asset replacement");
+            var instance = _currentAssets ?? throw new InvalidOperationException("No assets file is open.");
+            RegisterPendingAssetChange(instance, AssetImportExport.ImportRaw(instance, asset, replacementData));
+            _hasUnsavedChanges = true;
+            _status.Text = $"Raw replacement queued for asset {asset.PathId}. Use Save changes to export the modified file.";
+            UpdateFloatingActions();
         }
         catch (Exception ex)
         {
@@ -2189,7 +2193,7 @@ public sealed class MainView : UserControl
                 ?? throw new InvalidDataException($"{assetTypeName} type information could not be read.");
 
             byte[] serialized = await Task.Run(() =>
-                UnityJsonAssetImporter.Import(template, json, instance.file.Reader.BigEndian));
+                AssetImportExport.ImportTypeTreeDump(template, json, instance.file.Reader.BigEndian));
 
             await SaveAssetReplacementAsync(asset, serialized, $"{assetTypeName} JSON import");
         }
