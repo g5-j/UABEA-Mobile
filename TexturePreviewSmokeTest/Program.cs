@@ -2,6 +2,8 @@ using UABEA.Mobile;
 using AssetsTools.NET;
 using AssetsTools.NET.Extra;
 using AssetsTools.NET.Texture;
+using SixLabors.ImageSharp;
+using SixLabors.ImageSharp.PixelFormats;
 
 static AssetTypeValueField ReadTextureField(AssetsManager manager, AssetsFileInstance instance, AssetFileInfo asset)
 {
@@ -161,6 +163,65 @@ foreach (var asset in instance.file.AssetInfos)
         }
     }
 }
+
+int replacementRoundTrips = 0;
+foreach (var candidate in instance.file.AssetInfos.Where(x => x.GetTypeId(instance.file) == (int)AssetClassID.Texture2D))
+{
+    try
+    {
+        var originalField = ReadTextureField(manager, instance, candidate);
+        var originalTexture = TextureFile.ReadTextureFile(originalField);
+        if (originalTexture.m_Width <= 0 || originalTexture.m_Height <= 0 ||
+            originalTexture.m_Width > 4096 || originalTexture.m_Height > 4096) continue;
+
+        using var replacementImage = new Image<Rgba32>(originalTexture.m_Width, originalTexture.m_Height,
+            new Rgba32(64, 128, 192, 255));
+        using var png = new MemoryStream();
+        replacementImage.SaveAsPng(png);
+        byte[] replacementData = TextureAssetImporter.CreateReplacementData(manager, instance, candidate, png.ToArray());
+        var replacer = new AssetsReplacerFromMemory(candidate.PathId,
+            candidate.GetTypeId(instance.file), instance.file.GetScriptIndex(candidate), replacementData);
+        string roundTripPath = Path.Combine(output, "texture-replacement-roundtrip.assets");
+        using (var outputStream = File.Create(roundTripPath))
+        using (var writer = new AssetsFileWriter(outputStream))
+            instance.file.Write(writer, 0, new List<AssetsReplacer> { replacer });
+
+        var verifyManager = new AssetsManager();
+        try
+        {
+            var verified = verifyManager.LoadAssetsFile(roundTripPath, false);
+            verifyManager.LoadClassDatabaseFromPackage(verified.file.Metadata.UnityVersion);
+            var verifiedAsset = verified.file.AssetInfos.FirstOrDefault(x => x.PathId == candidate.PathId)
+                ?? throw new InvalidDataException("Replaced Texture2D Path ID disappeared after save.");
+            var verifiedField = ReadTextureField(verifyManager, verified, verifiedAsset);
+            var verifiedTexture = TextureFile.ReadTextureFile(verifiedField);
+            if (verifiedTexture.m_Width != originalTexture.m_Width ||
+                verifiedTexture.m_Height != originalTexture.m_Height ||
+                verifiedTexture.m_TextureFormat != originalTexture.m_TextureFormat ||
+                verifiedTexture.pictureData == null || verifiedTexture.pictureData.Length == 0)
+                throw new InvalidDataException("Reopened Texture2D metadata or image payload did not match the replacement.");
+            _ = DecodeAndValidate(verifiedTexture.pictureData, (TextureFormat)verifiedTexture.m_TextureFormat,
+                verifiedTexture.m_Width, verifiedTexture.m_Height);
+        }
+        finally
+        {
+            verifyManager.UnloadAllAssetsFiles(true);
+            verifyManager.UnloadAllBundleFiles();
+        }
+
+        replacementRoundTrips++;
+        report.Add($"PASS Texture2D replacement save/reopen round-trip id={candidate.PathId} format={(TextureFormat)originalTexture.m_TextureFormat}");
+        break;
+    }
+    catch (Exception ex)
+    {
+        report.Add($"Texture2D replacement round-trip candidate id={candidate.PathId} not usable: {ex.GetType().Name}: {ex.Message}");
+    }
+}
+if (replacementRoundTrips == 0)
+    throw new InvalidDataException("No Texture2D in the fixture could complete an import, save, reopen and decode round-trip.");
+report.Add($"PASS Texture2D replacement round-trips={replacementRoundTrips}");
+
 report.Insert(1, $"SUMMARY textures={textureCount}, decoded={decodedCount}, missing-resource={missingResourceCount}, failed={failedCount}; sprites={spriteCount}, sourceTexturesDecoded={spriteTextureResolved}");
 File.WriteAllLines(Path.Combine(output, "report.txt"), report);
 Console.WriteLine($"UnityVersion={instance.file.Metadata.UnityVersion}");
