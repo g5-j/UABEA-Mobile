@@ -37,14 +37,6 @@ public sealed class AssetWorkspace : IDisposable
         NewAssets[id] = replacer;
         AssetFiles[id] = file;
 
-        if (previewData is null)
-        {
-            using var stream = new MemoryStream();
-            using (var writer = new AssetsFileWriter(stream))
-                replacer.Write(writer);
-            previewData = stream.ToArray();
-        }
-
         if (replacer is AssetsRemover)
         {
             NewAssetData.Remove(id);
@@ -52,6 +44,13 @@ public sealed class AssetWorkspace : IDisposable
         }
         else
         {
+            if (previewData is null)
+            {
+                using var stream = new MemoryStream();
+                using (var writer = new AssetsFileWriter(stream))
+                    replacer.Write(writer);
+                previewData = stream.ToArray();
+            }
             NewAssetData[id] = previewData;
             RemovedAssets.Remove(id);
         }
