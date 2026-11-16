@@ -190,6 +190,7 @@ foreach (var candidate in instance.file.AssetInfos.Where(x => x.GetTypeId(instan
         try
         {
             var verified = verifyManager.LoadAssetsFile(roundTripPath, false);
+            verifyManager.LoadClassPackage(classDataPath);
             verifyManager.LoadClassDatabaseFromPackage(verified.file.Metadata.UnityVersion);
             var verifiedAsset = verified.file.AssetInfos.FirstOrDefault(x => x.PathId == candidate.PathId)
                 ?? throw new InvalidDataException("Replaced Texture2D Path ID disappeared after save.");
