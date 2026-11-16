@@ -1,0 +1,1339 @@
+4  2648  2835 D ReflectUtils: 	at com.android.systemui.shared.recents.system.RemoteAnimationTargetCompat.wrap(RemoteAnimationTargetCompat.java:212)
+11-16 21:26:11.024  2648  2835 D ReflectUtils: 	at com.android.systemui.shared.recents.system.RemoteAnimationTargetCompat.wrapAppsForCompat(RemoteAnimationTargetCompat.java:232)
+11-16 21:26:11.024  2648  2835 D ReflectUtils: 	at com.android.systemui.shared.recents.system.WindowTransitionCompat$2.lambda$startAnimation$0(WindowTransitionCompat.java:140)
+11-16 21:26:11.024  2648  2835 D ReflectUtils: 	at com.android.systemui.shared.recents.system.WindowTransitionCompat$2.$r8$lambda$hcqKCUwnRuMqtvMJ6DPLae5xnFA(WindowTransitionCompat.java:0)
+11-16 21:26:11.024  2648  2835 D ReflectUtils: 	at com.android.systemui.shared.recents.system.WindowTransitionCompat$2$$ExternalSyntheticLambda1.run(R8$$SyntheticClass:10)
+11-16 21:26:11.024  2648  2835 D ReflectUtils: 	at android.os.Handler.handleCallback(Handler.java:959)
+11-16 21:26:11.024  2648  2835 D ReflectUtils: 	at android.os.Handler.dispatchMessage(Handler.java:100)
+11-16 21:26:11.024  2648  2835 D ReflectUtils: 	at android.os.Looper.loopOnce(Looper.java:249)
+11-16 21:26:11.024  2648  2835 D ReflectUtils: 	at android.os.Looper.loop(Looper.java:337)
+11-16 21:26:11.024  2648  2835 D ReflectUtils: 	at android.os.HandlerThread.run(HandlerThread.java:85)
+11-16 21:26:11.024  2648  2835 W TransitionInfoExpose.ChangeExpose: getAllowEnterPip: return null from reflection, use default value false
+11-16 21:26:11.024  2648  2835 D TransitionUtil: get key :ComponentInfo{com.miui.home/com.miui.home.launcher.Launcher}#1
+11-16 21:26:11.024  2648  2835 I TransitionUtil: rootLeash = Surface(name=Transition Root #1743: Task=11922#40727)/@0x916f562
+11-16 21:26:11.025  1211  2003 I BufferQueueDebug: [TL_Surface(name=Task=1#47)/@0x5996c2d_transition-leash#40732](this:0xb40000784a735e50,id:-1,api:0,p:-1,c:-1) BufferQueue core=(1211:/system/bin/surfaceflinger)
+11-16 21:26:11.025  2648  2835 I TransitionUtil: setupLeash isAppOpening = true
+11-16 21:26:11.025  2648  2835 I TransitionUtil: setLayer leash6 = Surface(name=TL_Surface(name=Task=1#47)/@0x5996c2d_transition-leash#40732)/@0x66574, layer = 1
+11-16 21:26:11.026  2648  2835 D ReflectUtils: callObjectMethod
+11-16 21:26:11.026  2648  2835 D ReflectUtils: java.lang.NoSuchMethodException: android.window.TransitionInfo$Change.getAllowEnterPip []
+11-16 21:26:11.026  2648  2835 D ReflectUtils: 	at java.lang.Class.getMethod(Class.java:2941)
+11-16 21:26:11.026  2648  2835 D ReflectUtils: 	at java.lang.Class.getDeclaredMethod(Class.java:2920)
+11-16 21:26:11.026  2648  2835 D ReflectUtils: 	at com.miui.launcher.utils.ReflectUtils.callObjectMethod(ReflectUtils.java:35)
+11-16 21:26:11.026  2648  2835 D ReflectUtils: 	at com.android.hideapi.TransitionInfoExpose$ChangeExpose.getAllowEnterPip(TransitionInfoExpose.java:119)
+11-16 21:26:11.026  2648  2835 D ReflectUtils: 	at com.android.wm.shell.util.TransitionUtil.newTarget(TransitionUtil.java:583)
+11-16 21:26:11.026  2648  2835 D ReflectUtils: 	at com.android.wm.shell.util.TransitionUtil.newTarget(TransitionUtil.java:520)
+11-16 21:26:11.026  2648  2835 D ReflectUtils: 	at com.android.wm.shell.util.TransitionUtil.newTarget(TransitionUtil.java:511)
+11-16 21:26:11.026  2648  2835 D ReflectUtils: 	at com.android.systemui.shared.recents.system.RemoteAnimationTargetCompat.wrap(RemoteAnimationTargetCompat.java:212)
+11-16 21:26:11.026  2648  2835 D ReflectUtils: 	at com.android.systemui.shared.recents.system.RemoteAnimationTargetCompat.wrapAppsForCompat(RemoteAnimationTargetCompat.java:232)
+11-16 21:26:11.026  2648  2835 D ReflectUtils: 	at com.android.systemui.shared.recents.system.WindowTransitionCompat$2.lambda$startAnimation$0(WindowTransitionCompat.java:140)
+11-16 21:26:11.026  2648  2835 D ReflectUtils: 	at com.android.systemui.shared.recents.system.WindowTransitionCompat$2.$r8$lambda$hcqKCUwnRuMqtvMJ6DPLae5xnFA(WindowTransitionCompat.java:0)
+11-16 21:26:11.026  2648  2835 D ReflectUtils: 	at com.android.systemui.shared.recents.system.WindowTransitionCompat$2$$ExternalSyntheticLambda1.run(R8$$SyntheticClass:10)
+11-16 21:26:11.026  2648  2835 D ReflectUtils: 	at android.os.Handler.handleCallback(Handler.java:959)
+11-16 21:26:11.026  2648  2835 D ReflectUtils: 	at android.os.Handler.dispatchMessage(Handler.java:100)
+11-16 21:26:11.026  2648  2835 D ReflectUtils: 	at android.os.Looper.loopOnce(Looper.java:249)
+11-16 21:26:11.026  2648  2835 D ReflectUtils: 	at android.os.Looper.loop(Looper.java:337)
+11-16 21:26:11.026  2648  2835 D ReflectUtils: 	at android.os.HandlerThread.run(HandlerThread.java:85)
+11-16 21:26:11.026  2648  2835 W TransitionInfoExpose.ChangeExpose: getAllowEnterPip: return null from reflection, use default value false
+11-16 21:26:11.026  2648  2835 D TAG     : obtainElement: false
+11-16 21:26:11.026  2648  2835 D TAG     : java.lang.RuntimeException
+11-16 21:26:11.026  2648  2835 D TAG     : 	at com.android.systemui.shared.recents.system.RemoteAnimationTargetCompat.obtainElement(RemoteAnimationTargetCompat.java:116)
+11-16 21:26:11.026  2648  2835 D TAG     : 	at com.android.systemui.shared.recents.system.RemoteAnimationTargetCompat.<init>(RemoteAnimationTargetCompat.java:94)
+11-16 21:26:11.026  2648  2835 D TAG     : 	at com.android.systemui.shared.recents.system.RemoteAnimationTargetCompat.wrap(RemoteAnimationTargetCompat.java:188)
+11-16 21:26:11.026  2648  2835 D TAG     : 	at com.android.systemui.shared.recents.system.RemoteAnimationTargetCompat.wrapAppsForCompat(RemoteAnimationTargetCompat.java:233)
+11-16 21:26:11.026  2648  2835 D TAG     : 	at com.android.systemui.shared.recents.system.WindowTransitionCompat$2.lambda$startAnimation$0(WindowTransitionCompat.java:140)
+11-16 21:26:11.026  2648  2835 D TAG     : 	at com.android.systemui.shared.recents.system.WindowTransitionCompat$2.$r8$lambda$hcqKCUwnRuMqtvMJ6DPLae5xnFA(WindowTransitionCompat.java:0)
+11-16 21:26:11.026  2648  2835 D TAG     : 	at com.android.systemui.shared.recents.system.WindowTransitionCompat$2$$ExternalSyntheticLambda1.run(R8$$SyntheticClass:10)
+11-16 21:26:11.026  2648  2835 D TAG     : 	at android.os.Handler.handleCallback(Handler.java:959)
+11-16 21:26:11.026  2648  2835 D TAG     : 	at android.os.Handler.dispatchMessage(Handler.java:100)
+11-16 21:26:11.026  2648  2835 D TAG     : 	at android.os.Looper.loopOnce(Looper.java:249)
+11-16 21:26:11.026  2648  2835 D TAG     : 	at android.os.Looper.loop(Looper.java:337)
+11-16 21:26:11.026  2648  2835 D TAG     : 	at android.os.HandlerThread.run(HandlerThread.java:85)
+11-16 21:26:11.026  2648  2835 D TAG     : obtainElement: 0.0
+11-16 21:26:11.026  2648  2835 D TAG     : java.lang.RuntimeException
+11-16 21:26:11.026  2648  2835 D TAG     : 	at com.android.systemui.shared.recents.system.RemoteAnimationTargetCompat.obtainCornerRadius(RemoteAnimationTargetCompat.java:104)
+11-16 21:26:11.026  2648  2835 D TAG     : 	at com.android.systemui.shared.recents.system.RemoteAnimationTargetCompat.<init>(RemoteAnimationTargetCompat.java:95)
+11-16 21:26:11.026  2648  2835 D TAG     : 	at com.android.systemui.shared.recents.system.RemoteAnimationTargetCompat.wrap(RemoteAnimationTargetCompat.java:188)
+11-16 21:26:11.026  2648  2835 D TAG     : 	at com.android.systemui.shared.recents.system.RemoteAnimationTargetCompat.wrapAppsForCompat(RemoteAnimationTargetCompat.java:233)
+11-16 21:26:11.026  2648  2835 D TAG     : 	at com.android.systemui.shared.recents.system.WindowTransitionCompat$2.lambda$startAnimation$0(WindowTransitionCompat.java:140)
+11-16 21:26:11.026  2648  2835 D TAG     : 	at com.android.systemui.shared.recents.system.WindowTransitionCompat$2.$r8$lambda$hcqKCUwnRuMqtvMJ6DPLae5xnFA(WindowTransitionCompat.java:0)
+11-16 21:26:11.026  2648  2835 D TAG     : 	at com.android.systemui.shared.recents.system.WindowTransitionCompat$2$$ExternalSyntheticLambda1.run(R8$$SyntheticClass:10)
+11-16 21:26:11.026  2648  2835 D TAG     : 	at android.os.Handler.handleCallback(Handler.java:959)
+11-16 21:26:11.026  2648  2835 D TAG     : 	at android.os.Handler.dispatchMessage(Handler.java:100)
+11-16 21:26:11.026  2648  2835 D TAG     : 	at android.os.Looper.loopOnce(Looper.java:249)
+11-16 21:26:11.026  2648  2835 D TAG     : 	at android.os.Looper.loop(Looper.java:337)
+11-16 21:26:11.026  2648  2835 D TAG     : 	at android.os.HandlerThread.run(HandlerThread.java:85)
+11-16 21:26:11.026  1211  1211 W SurfaceFlinger: commitOffscreenLayers Layer 0xb40000784a6dc440 not alive
+11-16 21:26:11.026  2648  2835 D TAG     : obtainElement: false
+11-16 21:26:11.026  2648  2835 D TAG     : java.lang.RuntimeException
+11-16 21:26:11.026  2648  2835 D TAG     : 	at com.android.systemui.shared.recents.system.RemoteAnimationTargetCompat.obtainElement(RemoteAnimationTargetCompat.java:116)
+11-16 21:26:11.026  2648  2835 D TAG     : 	at com.android.systemui.shared.recents.system.RemoteAnimationTargetCompat.<init>(RemoteAnimationTargetCompat.java:94)
+11-16 21:26:11.026  2648  2835 D TAG     : 	at com.android.systemui.shared.recents.system.RemoteAnimationTargetCompat.wrap(RemoteAnimationTargetCompat.java:188)
+11-16 21:26:11.026  2648  2835 D TAG     : 	at com.android.systemui.shared.recents.system.RemoteAnimationTargetCompat.wrapAppsForCompat(RemoteAnimationTargetCompat.java:233)
+11-16 21:26:11.026  2648  2835 D TAG     : 	at com.android.systemui.shared.recents.system.WindowTransitionCompat$2.lambda$startAnimation$0(WindowTransitionCompat.java:140)
+11-16 21:26:11.026  2648  2835 D TAG     : 	at com.android.systemui.shared.recents.system.WindowTransitionCompat$2.$r8$lambda$hcqKCUwnRuMqtvMJ6DPLae5xnFA(WindowTransitionCompat.java:0)
+11-16 21:26:11.026  2648  2835 D TAG     : 	at com.android.systemui.shared.recents.system.WindowTransitionCompat$2$$ExternalSyntheticLambda1.run(R8$$SyntheticClass:10)
+11-16 21:26:11.026  2648  2835 D TAG     : 	at android.os.Handler.handleCallback(Handler.java:959)
+11-16 21:26:11.026  2648  2835 D TAG     : 	at android.os.Handler.dispatchMessage(Handler.java:100)
+11-16 21:26:11.026  2648  2835 D TAG     : 	at android.os.Looper.loopOnce(Looper.java:249)
+11-16 21:26:11.026  2648  2835 D TAG     : 	at android.os.Looper.loop(Looper.java:337)
+11-16 21:26:11.026  2648  2835 D TAG     : 	at android.os.HandlerThread.run(HandlerThread.java:85)
+11-16 21:26:11.026  2648  2835 D TAG     : obtainElement: 0.0
+11-16 21:26:11.026  2648  2835 D TAG     : java.lang.RuntimeException
+11-16 21:26:11.026  2648  2835 D TAG     : 	at com.android.systemui.shared.recents.system.RemoteAnimationTargetCompat.obtainCornerRadius(RemoteAnimationTargetCompat.java:104)
+11-16 21:26:11.026  2648  2835 D TAG     : 	at com.android.systemui.shared.recents.system.RemoteAnimationTargetCompat.<init>(RemoteAnimationTargetCompat.java:95)
+11-16 21:26:11.026  2648  2835 D TAG     : 	at com.android.systemui.shared.recents.system.RemoteAnimationTargetCompat.wrap(RemoteAnimationTargetCompat.java:188)
+11-16 21:26:11.026  2648  2835 D TAG     : 	at com.android.systemui.shared.recents.system.RemoteAnimationTargetCompat.wrapAppsForCompat(RemoteAnimationTargetCompat.java:233)
+11-16 21:26:11.026  2648  2835 D TAG     : 	at com.android.systemui.shared.recents.system.WindowTransitionCompat$2.lambda$startAnimation$0(WindowTransitionCompat.java:140)
+11-16 21:26:11.026  2648  2835 D TAG     : 	at com.android.systemui.shared.recents.system.WindowTransitionCompat$2.$r8$lambda$hcqKCUwnRuMqtvMJ6DPLae5xnFA(WindowTransitionCompat.java:0)
+11-16 21:26:11.026  2648  2835 D TAG     : 	at com.android.systemui.shared.recents.system.WindowTransitionCompat$2$$ExternalSyntheticLambda1.run(R8$$SyntheticClass:10)
+11-16 21:26:11.026  2648  2835 D TAG     : 	at android.os.Handler.handleCallback(Handler.java:959)
+11-16 21:26:11.026  2648  2835 D TAG     : 	at android.os.Handler.dispatchMessage(Handler.java:100)
+11-16 21:26:11.026  2648  2835 D TAG     : 	at android.os.Looper.loopOnce(Looper.java:249)
+11-16 21:26:11.026  2648  2835 D TAG     : 	at android.os.Looper.loop(Looper.java:337)
+11-16 21:26:11.026  2648  2835 D TAG     : 	at android.os.HandlerThread.run(HandlerThread.java:85)
+11-16 21:26:11.026  1927  2476 W UserManagerService: Requested status bar icon for non-badged user 0
+11-16 21:26:11.027  1155  1219 I libPowerHal: [PD] MTKPOWER_HINT_APP_TOUCH update cmd:410000 param:0, pr:6
+11-16 21:26:11.027  1211  1388 E LayerState: Stripped attempt to set eInputInfoChanged in sanitize
+11-16 21:26:11.028  1155  1219 I libPowerHal: value: 0
+11-16 21:26:11.028  1155  1219 I libPowerHal: [PD] MTKPOWER_HINT_APP_TOUCH update cmd:410000 param:0 pr:6
+11-16 21:26:11.029  1155  1219 I libPowerHal: [perfLockRel] Done for hdl : 119967
+11-16 21:26:11.029  1211  1388 I BufferQueueDebug: [TempStatusBarLeash for - Surface(name=WindowToken{1829d7a type=2000 android.os.BinderProxy@109179c}#102)/@0x6f4692b#40733](this:0xb40000784a7b2e90,id:-1,api:0,p:-1,c:-1) BufferQueue core=(1211:/system/bin/surfaceflinger)
+11-16 21:26:11.029  1155  1219 I libPowerHal: [perfLockAcq] idx:3 hdl:119972 hint:-1 pid:1927 tid:2256 duration:1000 lock_user:system_server => ret_hdl:119972
+11-16 21:26:11.029  1927  2778 D AppLock_AccessControlImpl: activityResume packageName: com.termux userId: 0 enabled: true
+11-16 21:26:11.029  1155  1219 I libPowerHal: [setGPUFreq] system_server user set gpu freq min:0, max:-1
+11-16 21:26:11.029  1927  2778 D AppLock_AccessControlImpl: activityResume lockMode: 1
+11-16 21:26:11.029  1155  1219 I libPowerHal: system_server: set gpu opp level max: 0
+11-16 21:26:11.029  1155  1219 I libPowerHal: [setGPUFreq] Soft min/max = (0, 0); Hard min/max = (31, 0)
+11-16 21:26:11.029  1155  1219 I libPowerHal: [setGPUFreq] final min/max = (0, 0)
+11-16 21:26:11.029  1155  1219 I libPowerHal: system_server: set gpu opp level: 0
+11-16 21:26:11.029  1927  2393 E BarFollowAnimation: isHomeDark = 0 currentDark = 0 isFullGesture = false
+11-16 21:26:11.029  1155  1219 I libPowerHal: system_server: set gpu opp level max: 0
+11-16 21:26:11.029  1927  2393 E BarFollowAnimation: isHomeDark = 0 currentDark = 0 isFullGesture = false
+11-16 21:26:11.029   942   942 D SecurityManager: checkAccessControl flag1
+11-16 21:26:11.030  1927  2393 D BarFollowAnimation:  startStatusBarAnimation  mLastTransitionFinished = true mIsFromRecents = false isRecent = false mIsFromApp = true mStatusState = -1 mCurrentFakeStatusBarAlpha =  0.0 mCurrentStatusBarAlpha = 1.0
+11-16 21:26:11.030  1155  1219 I libPowerHal: [perfLockAcq] Done for hdl : 119972
+11-16 21:26:11.031  2648  4126 D IconCustomizer: Generate customized icon for com.termux.png, false
+11-16 21:26:11.032  1211  1388 I SurfaceFlinger: onHandleDestroyed: name=Surface(name=5e1188 StatusBar#103)/@0x90d1746 - animation-leash of insets_animation#40709, layerId=40709, parentId=0
+11-16 21:26:11.032  2648  4126 W Bitmap  : Called getDensity() on a recycle()'d bitmap! This is undefined behavior!
+11-16 21:26:11.032  1211  1761 I SurfaceFlinger: onHandleDestroyed: name=Surface(name=176fb13 NavigationBar0#99)/@0xb80c705 - animation-leash of insets_animation#40710, layerId=40710, parentId=0
+11-16 21:26:11.035  2648  4126 W IconCustomizer: Density abnormal: context density=251 systemDensity=274
+11-16 21:26:11.036  2648  4126 D TaskSnapshotCompatVV: getIsInvalidateFromTaskSnapshot, isInvalidate=false
+11-16 21:26:11.036  2648  4126 D RecentsTaskLoader: reloadTasksData [TaskKey{id=11895, stackId=0, baseIntent=Intent { act=android.intent.action.MAIN cat=[android.intent.category.LAUNCHER] flg=0x10200000 cmp=com.openai.chatgpt/.MainActivity }, userId=0, lastActiveTime=144434507, windowingMode=1, isThumbnailBlur=false, isAccessLocked=false, isScreening=false, topActivity=ComponentInfo{com.openai.chatgpt/com.openai.chatgpt.MainActivity}, mHashCode=355287497}, title=ChatGPT, titleDescription=ChatGPT, bounds=null, isLaunchTarget=false, isStackTask=true, isSystemApp=false, isDockable=true, baseActivity=ComponentInfo{com.openai.chatgpt/com.openai.chatgpt.MainActivity}, isLocked=false, mNeedHide=false, hasMultipleTasks=false, cti1Key=, cti2Key=] 
+11-16 21:26:11.037  2648  4126 W IconCustomizer: Density abnormal: context density=251 systemDensity=274
+11-16 21:26:11.037  2648  4126 W IconCustomizer: Density abnormal: context density=251 systemDensity=274
+11-16 21:26:11.042  1927  4339 E PlaybackActivityMonitorStubImpl: set volume is only for active music playertrackPlayer
+11-16 21:26:11.044  2648  4126 D TaskSnapshotCompatVV: getIsInvalidateFromTaskSnapshot, isInvalidate=false
+11-16 21:26:11.044  2648  4126 D RecentsTaskLoader: reloadTasksData [TaskKey{id=11894, stackId=0, baseIntent=Intent { act=android.intent.action.MAIN cat=[android.intent.category.LAUNCHER] flg=0x10200000 cmp=bin.mt.plus/.MainLightIcon }, userId=0, lastActiveTime=144330041, windowingMode=1, isThumbnailBlur=false, isAccessLocked=false, isScreening=false, topActivity=ComponentInfo{bin.mt.plus/bin.mt.plus.Main}, mHashCode=355257706}, title=MT Manager, titleDescription=MT Manager, bounds=null, isLaunchTarget=true, isStackTask=true, isSystemApp=false, isDockable=true, baseActivity=ComponentInfo{bin.mt.plus/bin.mt.plus.Main}, isLocked=false, mNeedHide=false, hasMultipleTasks=false, cti1Key=, cti2Key=] 
+11-16 21:26:11.044  1211  1211 I BufferQueueProducer: [Miui Fake StatusBar#50](this:0xb40000784a615aa0,id:-1,api:0,p:-1,c:1211) queueBuffer: fps=0.08 dur=12526.87 max=12526.87 min=12526.87
+11-16 21:26:11.045  2648  4126 D TaskSnapshotCompatVV: getIsInvalidateFromTaskSnapshot, isInvalidate=false
+11-16 21:26:11.045  2648  4126 D RecentsTaskLoader: reloadTasksData [TaskKey{id=11920, stackId=0, baseIntent=Intent { act=android.intent.action.MAIN cat=[android.intent.category.LAUNCHER] flg=0x10200000 cmp=com.g5j.uabeamobile/crc64db1c392adadf9a19.MainActivity }, userId=0, lastActiveTime=144099330, windowingMode=1, isThumbnailBlur=false, isAccessLocked=false, isScreening=false, topActivity=ComponentInfo{com.g5j.uabeamobile/crc64db1c392adadf9a19.MainActivity}, mHashCode=356032272}, title=UABE Avalonia, titleDescription=UABE Avalonia, bounds=null, isLaunchTarget=true, isStackTask=true, isSystemApp=false, isDockable=true, baseActivity=ComponentInfo{com.g5j.uabeamobile/crc64db1c392adadf9a19.MainActivity}, isLocked=false, mNeedHide=false, hasMultipleTasks=false, cti1Key=, cti2Key=] 
+11-16 21:26:11.045  2648  4126 D RecentsTaskLoader: reloadTasksData [TaskKey{id=11896, stackId=0, baseIntent=Intent { act=android.intent.action.MAIN cat=[android.intent.category.LAUNCHER] flg=0x10200000 cmp=com.android.chrome/com.google.android.apps.chrome.Main }, userId=0, lastActiveTime=143791482, windowingMode=1, isThumbnailBlur=false, isAccessLocked=false, isScreening=false, topActivity=ComponentInfo{com.android.chrome/org.chromium.chrome.browser.app.download.home.DownloadActivity}, mHashCode=355317288}, title=Chrome, titleDescription=Chrome, bounds=null, isLaunchTarget=true, isStackTask=true, isSystemApp=true, isDockable=true, baseActivity=ComponentInfo{com.android.chrome/org.chromium.chrome.browser.ChromeTabbedActivity}, isLocked=false, mNeedHide=false, hasMultipleTasks=false, cti1Key=, cti2Key=] 
+11-16 21:26:11.045  2648  4126 D RecentsTaskLoader: reloadTasksData [TaskKey{id=11887, stackId=0, baseIntent=Intent { act=android.intent.action.MAIN cat=[android.intent.category.LAUNCHER] flg=0x10200000 cmp=com.discord/.main.MainDefault }, userId=0, lastActiveTime=143765265, windowingMode=1, isThumbnailBlur=false, isAccessLocked=false, isScreening=false, topActivity=ComponentInfo{com.discord/com.discord.main.MainActivity}, mHashCode=355049169}, title=Discord, titleDescription=Discord, bounds=null, isLaunchTarget=false, isStackTask=true, isSystemApp=false, isDockable=true, baseActivity=ComponentInfo{com.discord/com.discord.main.MainActivity}, isLocked=true, mNeedHide=false, hasMultipleTasks=false, cti1Key=, cti2Key=] 
+11-16 21:26:11.045  1211  1211 I BufferQueueDebug: [Surface(name=176fb13 NavigationBar0#99)/@0xb80c705 - animation-leash of insets_animation#40710](this:0xb40000784a681510,id:-1,api:0,p:-1,c:1211) onDestructor()
+11-16 21:26:11.046  1211  1211 I BufferQueueDebug: [Surface(name=5e1188 StatusBar#103)/@0x90d1746 - animation-leash of insets_animation#40709](this:0xb40000784a72ef30,id:-1,api:0,p:-1,c:1211) onDestructor()
+11-16 21:26:11.046  1927  2476 I ATMSImpl: cacheTasksForDefaultDisplay size=7
+11-16 21:26:11.047  2648  2835 I WindowTransitionCompat: onAnimationStart appsCompat size = 2, isWallpaperTransition=false, isReturnToHome=false
+11-16 21:26:11.047  2648  2835 I WindowElement: c504e02 onOpeningWindowTransitionStart
+11-16 21:26:11.047  2648  2835 D WindowTransitionCompat: startAnimation end
+11-16 21:26:11.047  2648  2648 I WindowElement: c504e02 MAIN_THREAD:onOpeningWindowTransitionStart
+11-16 21:26:11.048  2648  4126 D RecentsModel: getRunningTask ignoreActivityType : 2 ,ignoreWindowMode:5
+11-16 21:26:11.048  2648  4126 W RecentsModel: getRunningTask   taskInfo=TaskInfo{userId=0 taskId=11922 displayId=0 isRunning=true baseIntent=Intent { act=android.intent.action.MAIN cat=[android.intent.category.LAUNCHER] flg=0x10200000 cmp=com.termux/.app.TermuxActivity } baseActivity=ComponentInfo{com.termux/com.termux.app.TermuxActivity} topActivity=ComponentInfo{com.termux/com.termux.app.TermuxActivity} origActivity=null realActivity=ComponentInfo{com.termux/com.termux.app.TermuxActivity} numActivities=1 lastActiveTime=144528736 supportsSplitScreenMultiWindow=true supportsMultiWindow=true resizeMode=2 isResizeable=true minWidth=-1 minHeight=-1 defaultMinSize=200 token=WCT{android.window.IWindowContainerToken$Stub$Proxy@1bd841f} topActivityType=1 pictureInPictureParams=null shouldDockBigOverlays=false launchIntoPipHostTaskId=-1 lastParentTaskIdBeforePip=-1 displayCutoutSafeInsets=Rect(0, 68 - 0, 0) topActivityInfo=ActivityInfo{aece36c com.termux.app.TermuxActivity} launchCookies=[] positionInParent=Point(0, 0) parentTaskId=-1 isFocused=true isVisible=true isVisibleRequested=true isSleeping=false locusId=null displayAreaFeatureId=1 isTopActivityTransparent=false appCompatTaskInfo=AppCompatTaskInfo { topActivityInSizeCompat=false topActivityEligibleForLetterboxEducation= falseisLetterboxEducationEnabled= false isLetterboxDoubleTapEnabled= false topActivityEligibleForUserAspectRatioButton= false topActivityBoundsLetterboxed= false isFromLetterboxDoubleTap= false topActivityLetterboxVerticalPosition= -1 topActivityLetterboxHorizontalPosition= -1 topActivityLetterboxWidth=720 topActivityLetterboxHeight=1600 isUserFullscreenOverrideEnabled=false isSystemFullscreenOverrideEnabled=false cameraCompatTaskInfo=CameraCompatTaskInfo { cameraCompatControlState=hidden freeformCameraCompatMode=inactive}} isImmersive=false mTopActivityRequestOrientation=-1 mBehindAppLockPkg=null mOriginatingUid=0 isEmbedded=false shouldBeVisible=true mIsCastMode=false mTopActivityMediaSize=null mTopActivityRecordName=ActivityRecord{a27a7b1 u0 com.termux/.app.TermuxActivity t11922} mTopActivityOrientation=-1}
+11-16 21:26:11.048  2648  2648 D BoostRtHelper: boostGesture priority
+11-16 21:26:11.049  2648  2648 D Launcher.Boost: setTurboSchedActionWithPriority::threadIds = [2648, 2813, 2835, 2912]
+11-16 21:26:11.049  2648  2648 D AnimatorDurationScaleHelper: isCloseAnimator=false
+11-16 21:26:11.049  2648  2648 E ClipAnimationHelper: updateSourceStack  mSourceInsets=Rect(0, 0 - 0, 0), mSourceStackBounds=Rect(0, 0 - 720, 1600)
+11-16 21:26:11.049  2648  4126 E ActivityManagerWrapper: get all recent tasks force including 11922
+11-16 21:26:11.049  2648  2648 D ClipAnimationHelper: updateSourceStackBounds, mSourceStackBounds=Rect(0, 0 - 720, 1600)
+11-16 21:26:11.049  2648  2648 E ClipAnimationHelper: updateHomeStack  mSourceInsets=Rect(0, 0 - 0, 0), mHomeStackBounds=Rect(0, 0 - 720, 1600)
+11-16 21:26:11.049  2648  2648 E ClipAnimationHelper: updateTargetRect  mSourceRect=RectF(0.0, 0.0, 720.0, 1600.0)   mTargetRect=RectF(0.0, 0.0, 720.0, 1600.0)   mSourceWindowClipInsets=RectF(0.0, 0.0, 0.0, 0.0)   mHomeStackBounds=Rect(0, 0 - 720, 1600)   targetRect=Rect(0, 0 - 720, 1600)
+11-16 21:26:11.049  2648  2648 D HomeLayerElement: bindHomeLeash com.android.systemui.shared.recents.system.SurfaceControlCompat@5afed35
+11-16 21:26:11.049  2648  2648 D HomeLayerElement: java.lang.Exception
+11-16 21:26:11.049  2648  2648 D HomeLayerElement: 	at com.miui.home.recents.anim.HomeLayerElement.bindHomeLeash(HomeLayerElement.kt:86)
+11-16 21:26:11.049  2648  2648 D HomeLayerElement: 	at com.miui.home.recents.anim.WindowElement.startRemoteAnimation(WindowElement.kt:402)
+11-16 21:26:11.049  2648  2648 D HomeLayerElement: 	at com.miui.home.recents.anim.WindowElement$init$1.onOpeningWindowTransitionStart$lambda-0(WindowElement.kt:1146)
+11-16 21:26:11.049  2648  2648 D HomeLayerElement: 	at com.miui.home.recents.anim.WindowElement$init$1.$r8$lambda$AlIECH7uESUZ-O2POLAkVmDDVsk(WindowElement.kt:0)
+11-16 21:26:11.049  2648  2648 D HomeLayerElement: 	at com.miui.home.recents.anim.WindowElement$init$1$$ExternalSyntheticLambda0.run(R8$$SyntheticClass:8)
+11-16 21:26:11.049  2648  2648 D HomeLayerElement: 	at android.os.Handler.handleCallback(Handler.java:959)
+11-16 21:26:11.049  2648  2648 D HomeLayerElement: 	at android.os.Handler.dispatchMessage(Handler.java:100)
+11-16 21:26:11.049  2648  2648 D HomeLayerElement: 	at android.os.Looper.loopOnce(Looper.java:249)
+11-16 21:26:11.049  2648  2648 D HomeLayerElement: 	at android.os.Looper.loop(Looper.java:337)
+11-16 21:26:11.049  2648  2648 D HomeLayerElement: 	at android.app.ActivityThread.main(ActivityThread.java:9493)
+11-16 21:26:11.049  2648  2648 D HomeLayerElement: 	at java.lang.reflect.Method.invoke(Native Method)
+11-16 21:26:11.049  2648  2648 D HomeLayerElement: 	at com.android.internal.os.RuntimeInit$MethodAndArgsCaller.run(RuntimeInit.java:636)
+11-16 21:26:11.049  2648  2648 D HomeLayerElement: 	at com.android.internal.os.ZygoteInit.main(ZygoteInit.java:1005)
+11-16 21:26:11.049  2648  2648 I AnimStateManager: onAnimParamsReady windowElement = com.miui.home.recents.anim.WindowElement@c504e02
+11-16 21:26:11.049  2648  2648 D WindowElement: c504e02 animTo, params=RectFParams(targetApps=com.miui.home.recents.util.RemoteAnimationTargetSet@340433b, startRect=RectF(160.15997, 424.9679, 551.84, 1295.368), targetRect=RectF(0.0, 0.0, 720.0, 1600.0), startRadius=28.0, endRadius=66.0, startAlpha=1.0, endAlpha=1.0, animType=OPEN_FROM_RECENTS, ignoreIcon=true, showTask=true, isQuickSwitchMode=false, targetView=com.miui.home.recents.views.TaskView{c5268c4 VFE...CL. ........ 160,389-551,1273}, animListener=com.miui.home.recents.anim.WindowAnimParamsProvider$getRecentLaunchAnimParams$listener$1@17aca58, clipAnimationHelper=com.miui.home.recents.util.ClipAnimationHelper@2ff27b1, clearLastListener=false, currentDisplayRotation=0, homeRotation=0, needFinishOnAnimEnd=true, currentTaskIndex=0, isSplitModeBack=false, isUseTranslucentAnim=false, runningTaskId=0, touchRange=2, hasAnimTarget=true), isRunning()=false
+11-16 21:26:11.049  2648  2648 D WindowElement: c504e02 updateFloatingIconView, animType=OPEN_FROM_RECENTS
+11-16 21:26:11.050  2648  2648 D WindowElement: c504e02 updateFloatingIconView, oldTargetView=null, params.targetView=com.miui.home.recents.views.TaskView{c5268c4 VFE...CL. ........ 160,389-551,1273}
+11-16 21:26:11.050  2648  2648 D WindowElement: c504e02 handleFloatingIconViewWhenNotHomeAnimTarget, reset
+11-16 21:26:11.050  2648  2648 D WindowElement: c504e02 updateFloatingIconView, handleFloatingIconViewClass handled
+11-16 21:26:11.050  2648  2648 D WindowElement: c504e02 bindIconLayerLeashIfNeeded false  false  Surface(name=TL_Surface(name=Task=1#47)/@0x5996c2d_transition-leash#40732)/@0x66574 target = com.miui.home.recents.views.TaskView{c5268c4 VFE...CL. ........ 160,389-551,1273}
+11-16 21:26:11.050  2648  2648 D FloatingIconLayer2: c0ec749 bindHomeLeash
+11-16 21:26:11.050  2648  2648 D FloatingIconLayer2: java.lang.Exception
+11-16 21:26:11.050  2648  2648 D FloatingIconLayer2: 	at com.miui.home.recents.views.FloatingIconLayer2.bindHomeLeash(FloatingIconLayer2.kt:140)
+11-16 21:26:11.050  2648  2648 D FloatingIconLayer2: 	at com.miui.home.recents.anim.WindowElement.bindIconLayerLeashIfNeeded(WindowElement.kt:1085)
+11-16 21:26:11.050  2648  2648 D FloatingIconLayer2: 	at com.miui.home.recents.anim.WindowElement.animTo(WindowElement.kt:986)
+11-16 21:26:11.050  2648  2648 D FloatingIconLayer2: 	at com.miui.home.recents.anim.StateManager.handleAllElementParams(StateManager.kt:301)
+11-16 21:26:11.050  2648  2648 D FloatingIconLayer2: 	at com.miui.home.recents.anim.StateManager.onAnimParamsReady(StateManager.kt:240)
+11-16 21:26:11.050  2648  2648 D FloatingIconLayer2: 	at com.miui.home.recents.anim.WindowElement.startRemoteAnimation(WindowElement.kt:408)
+11-16 21:26:11.050  2648  2648 D FloatingIconLayer2: 	at com.miui.home.recents.anim.WindowElement$init$1.onOpeningWindowTransitionStart$lambda-0(WindowElement.kt:1146)
+11-16 21:26:11.050  2648  2648 D FloatingIconLayer2: 	at com.miui.home.recents.anim.WindowElement$init$1.$r8$lambda$AlIECH7uESUZ-O2POLAkVmDDVsk(WindowElement.kt:0)
+11-16 21:26:11.050  2648  2648 D FloatingIconLayer2: 	at com.miui.home.recents.anim.WindowElement$init$1$$ExternalSyntheticLambda0.run(R8$$SyntheticClass:8)
+11-16 21:26:11.050  2648  2648 D FloatingIconLayer2: 	at android.os.Handler.handleCallback(Handler.java:959)
+11-16 21:26:11.050  2648  2648 D FloatingIconLayer2: 	at android.os.Handler.dispatchMessage(Handler.java:100)
+11-16 21:26:11.050  2648  2648 D FloatingIconLayer2: 	at android.os.Looper.loopOnce(Looper.java:249)
+11-16 21:26:11.050  2648  2648 D FloatingIconLayer2: 	at android.os.Looper.loop(Looper.java:337)
+11-16 21:26:11.050  2648  2648 D FloatingIconLayer2: 	at android.app.ActivityThread.main(ActivityThread.java:9493)
+11-16 21:26:11.050  2648  2648 D FloatingIconLayer2: 	at java.lang.reflect.Method.invoke(Native Method)
+11-16 21:26:11.050  2648  2648 D FloatingIconLayer2: 	at com.android.internal.os.RuntimeInit$MethodAndArgsCaller.run(RuntimeInit.java:636)
+11-16 21:26:11.050  2648  2648 D FloatingIconLayer2: 	at com.android.internal.os.ZygoteInit.main(ZygoteInit.java:1005)
+11-16 21:26:11.054  2648  2993 D EventBus: No subscribers registered for event class com.miui.home.recents.messages.RecentTasksChangedEvent
+11-16 21:26:11.055  2648  2993 D EventBus: No subscribers registered for event class org.greenrobot.eventbus.NoSubscriberEvent
+11-16 21:26:11.056  2648  4126 E ActivityManagerWrapper: getRecentTasksForceIncludingTaskIdIfValid: getRecentTasks: size=6
+11-16 21:26:11.056  2648  4126 E ActivityManagerWrapper:  mainTaskId=11922   userId=0   windowMode=1   baseIntent=Intent { act=android.intent.action.MAIN flag=270532608 cmp=ComponentInfo{com.termux/com.termux.app.TermuxActivity} }
+11-16 21:26:11.056  2648  4126 E ActivityManagerWrapper:  mainTaskId=11895   userId=0   windowMode=1   baseIntent=Intent { act=android.intent.action.MAIN flag=270532608 cmp=ComponentInfo{com.openai.chatgpt/com.openai.chatgpt.MainActivity} }
+11-16 21:26:11.056  2648  4126 E ActivityManagerWrapper:  mainTaskId=11894   userId=0   windowMode=1   baseIntent=Intent { act=android.intent.action.MAIN flag=270532608 cmp=ComponentInfo{bin.mt.plus/bin.mt.plus.MainLightIcon} }
+11-16 21:26:11.056  2648  4126 E ActivityManagerWrapper:  mainTaskId=11920   userId=0   windowMode=1   baseIntent=Intent { act=android.intent.action.MAIN flag=270532608 cmp=ComponentInfo{com.g5j.uabeamobile/crc64db1c392adadf9a19.MainActivity} }
+11-16 21:26:11.056  2648  4126 E ActivityManagerWrapper:  mainTaskId=11896   userId=0   windowMode=1   baseIntent=Intent { act=android.intent.action.MAIN flag=270532608 cmp=ComponentInfo{com.android.chrome/com.google.android.apps.chrome.Main} }
+11-16 21:26:11.056  2648  4126 E ActivityManagerWrapper:  mainTaskId=11887   userId=0   windowMode=1   baseIntent=Intent { act=android.intent.action.MAIN flag=270532608 cmp=ComponentInfo{com.discord/com.discord.main.MainDefault} }
+11-16 21:26:11.060  1927  4339 I ATMSImpl: cacheTasksForDefaultDisplay size=7
+11-16 21:26:11.061  2648  4126 D RecentsModel: getRunningTask ignoreActivityType : 2 ,ignoreWindowMode:5
+11-16 21:26:11.061  2648  4126 W RecentsModel: getRunningTask   taskInfo=TaskInfo{userId=0 taskId=11922 displayId=0 isRunning=true baseIntent=Intent { act=android.intent.action.MAIN cat=[android.intent.category.LAUNCHER] flg=0x10200000 cmp=com.termux/.app.TermuxActivity } baseActivity=ComponentInfo{com.termux/com.termux.app.TermuxActivity} topActivity=ComponentInfo{com.termux/com.termux.app.TermuxActivity} origActivity=null realActivity=ComponentInfo{com.termux/com.termux.app.TermuxActivity} numActivities=1 lastActiveTime=144528749 supportsSplitScreenMultiWindow=true supportsMultiWindow=true resizeMode=2 isResizeable=true minWidth=-1 minHeight=-1 defaultMinSize=200 token=WCT{android.window.IWindowContainerToken$Stub$Proxy@c65d817} topActivityType=1 pictureInPictureParams=null shouldDockBigOverlays=false launchIntoPipHostTaskId=-1 lastParentTaskIdBeforePip=-1 displayCutoutSafeInsets=Rect(0, 68 - 0, 0) topActivityInfo=ActivityInfo{7fe3404 com.termux.app.TermuxActivity} launchCookies=[] positionInParent=Point(0, 0) parentTaskId=-1 isFocused=true isVisible=true isVisibleRequested=true isSleeping=false locusId=null displayAreaFeatureId=1 isTopActivityTransparent=false appCompatTaskInfo=AppCompatTaskInfo { topActivityInSizeCompat=false topActivityEligibleForLetterboxEducation= falseisLetterboxEducationEnabled= false isLetterboxDoubleTapEnabled= false topActivityEligibleForUserAspectRatioButton= false topActivityBoundsLetterboxed= false isFromLetterboxDoubleTap= false topActivityLetterboxVerticalPosition= -1 topActivityLetterboxHorizontalPosition= -1 topActivityLetterboxWidth=720 topActivityLetterboxHeight=1600 isUserFullscreenOverrideEnabled=false isSystemFullscreenOverrideEnabled=false cameraCompatTaskInfo=CameraCompatTaskInfo { cameraCompatControlState=hidden freeformCameraCompatMode=inactive}} isImmersive=false mTopActivityRequestOrientation=-1 mBehindAppLockPkg=null mOriginatingUid=0 isEmbedded=false shouldBeVisible=true mIsCastMode=false mTopActivityMediaSize=null mTopActivityRecordName=ActivityRecord{a27a7b1 u0 com.termux/.app.TermuxActivity t11922} mTopActivityOrientation=-1}
+11-16 21:26:11.061  2648  2648 D WindowAnimImplementorDispatcher: c504e02 animTo by com.miui.home.recents.anim.windowanim.LocalWindowAnimImplementor@a2d8ded
+11-16 21:26:11.061  2648  2648 D WallpaperElement: animTo   zoomOut=1.14 useWallpaperAnim=true
+11-16 21:26:11.061  2648  2648 E TaskViewsElement: animTo,mode=11
+11-16 21:26:11.061  2648  2912 D LocalWindowAnimImplementor: animTo, params=RectFParams(targetApps=com.miui.home.recents.util.RemoteAnimationTargetSet@340433b, startRect=RectF(160.15997, 424.9679, 551.84, 1295.368), targetRect=RectF(0.0, 0.0, 720.0, 1600.0), startRadius=28.0, endRadius=66.0, startAlpha=1.0, endAlpha=1.0, animType=OPEN_FROM_RECENTS, ignoreIcon=true, showTask=true, isQuickSwitchMode=false, targetView=com.miui.home.recents.views.TaskView{c5268c4 VFE...CL. ........ 160,389-551,1273}, animListener=com.miui.home.recents.anim.WindowAnimParamsProvider$getRecentLaunchAnimParams$listener$1@17aca58, clipAnimationHelper=com.miui.home.recents.util.ClipAnimationHelper@2ff27b1, clearLastListener=false, currentDisplayRotation=0, homeRotation=0, needFinishOnAnimEnd=true, currentTaskIndex=0, isSplitModeBack=false, isUseTranslucentAnim=false, runningTaskId=0, touchRange=2, hasAnimTarget=true), isRunningAndNotRequestEndOrCancel()=false
+11-16 21:26:11.062  2648  2648 I AnimStateManager: go to state com.miui.home.recents.anim.StateManager$AppState@cc1b5eb
+11-16 21:26:11.062  2648  2648 E Launcher.application: setClickAppWaitForCallback = false
+11-16 21:26:11.062  2648  2912 I RectFSpringAnim: setStartRect = RectF(160.15997, 424.9679, 551.84, 1295.368)
+11-16 21:26:11.062  2648  2912 I RectFSpringAnim: java.lang.Exception
+11-16 21:26:11.062  2648  2912 I RectFSpringAnim: 	at com.miui.home.recents.util.RectFSpringAnim.setStartRect(RectFSpringAnim.java:384)
+11-16 21:26:11.062  2648  2912 I RectFSpringAnim: 	at com.miui.home.recents.util.RectFSpringAnim.resetAnimValue(RectFSpringAnim.java:283)
+11-16 21:26:11.062  2648  2912 I RectFSpringAnim: 	at com.miui.home.recents.util.RectFSpringAnim.reset(RectFSpringAnim.java:301)
+11-16 21:26:11.062  2648  2912 I RectFSpringAnim: 	at com.miui.home.recents.anim.windowanim.LocalWindowAnimImplementor.animResetReady(LocalWindowAnimImplementor.kt:290)
+11-16 21:26:11.062  2648  2912 I RectFSpringAnim: 	at com.miui.home.recents.anim.windowanim.LocalWindowAnimImplementor.animTo$lambda-2(LocalWindowAnimImplementor.kt:147)
+11-16 21:26:11.062  2648  2912 I RectFSpringAnim: 	at com.miui.home.recents.anim.windowanim.LocalWindowAnimImplementor.$r8$lambda$Ewy9u0e__x-TZvI2w2yZMTdFjGs(LocalWindowAnimImplementor.kt:0)
+11-16 21:26:11.062  2648  2912 I RectFSpringAnim: 	at com.miui.home.recents.anim.windowanim.LocalWindowAnimImplementor$$ExternalSyntheticLambda1.run(R8$$SyntheticClass:4)
+11-16 21:26:11.062  2648  2912 I RectFSpringAnim: 	at android.os.Handler.handleCallback(Handler.java:959)
+11-16 21:26:11.062  2648  2912 I RectFSpringAnim: 	at android.os.Handler.dispatchMessage(Handler.java:100)
+11-16 21:26:11.062  2648  2912 I RectFSpringAnim: 	at android.os.Looper.loopOnce(Looper.java:249)
+11-16 21:26:11.062  2648  2912 I RectFSpringAnim: 	at android.os.Looper.loop(Looper.java:337)
+11-16 21:26:11.062  2648  2912 I RectFSpringAnim: 	at android.os.HandlerThread.run(HandlerThread.java:85)
+11-16 21:26:11.062  2648  2912 I RectFSpringAnim: resetAnimValue KEY_SURFACE_EXT_ALPHA mTargetRect = RectF(0.0, 0.0, 720.0, 1600.0) endAlpha=1.0
+11-16 21:26:11.062  2648  2912 D RectFSpringAnim: clearRectFSpringAnimListener
+11-16 21:26:11.062  2648  2912 I RectFSpringAnim: changeAnimStart start=false
+11-16 21:26:11.062  2648  2912 D LocalWindowAnimImplementor: animResetReady, reset mAnim=RectFSpringAnim{mStartRect=RectF(160.15997, 424.9679, 551.84, 1295.368), mTargetRect=RectF(0.0, 0.0, 720.0, 1600.0), mStartAlpha=1.0, mEndAlpha=1.0}
+11-16 21:26:11.062  2648  2912 I RectFSpringAnim: setAnimParamByType = OPEN_FROM_RECENTS
+11-16 21:26:11.062  2648  2648 D RecentsImpl: mActivityStateObserver com.termux.app.TermuxActivity
+11-16 21:26:11.062  2648  2648 W RecentsImpl: onResumed className=com.termux.app.TermuxActivity   forceUpdate=false   mIsInAnotherPro=false   isKeyguardLocked=false   mIsStatusBarExpansion=false
+11-16 21:26:11.062  2648  2912 E MultiSpringDynamicAnimationd820313: ERROR Not Found Bundle Radius
+11-16 21:26:11.062  2648  2912 E MultiSpringDynamicAnimationd820313: ERROR Not Found Bundle SurfaceExtAlpha
+11-16 21:26:11.062  2648  2912 D RectFSpringAnim: addAnimatorListener
+11-16 21:26:11.062  2648  2912 D WindowElement: c504e02 bindIconLayerLeashIfNeeded false  true  Surface(name=TL_Surface(name=Task=1#47)/@0x5996c2d_transition-leash#40732)/@0x66574 target = com.miui.home.recents.views.TaskView{c5268c4 VFE...CL. ........ 160,389-551,1273}
+11-16 21:26:11.062  2648  2912 I RectFSpringAnim: startInGestureThread
+11-16 21:26:11.062  2648  2912 E MultiSpringDynamicAnimationd820313: ERROR Not Found Bundle SurfaceExtAlpha
+11-16 21:26:11.062  2648  2912 E MultiSpringDynamicAnimationd820313: ERROR Not Found Bundle SurfaceExtAlpha
+11-16 21:26:11.062  2648  4126 E ActivityManagerWrapper: get all recent tasks force including 11922
+11-16 21:26:11.062  2648  2912 I RectFSpringAnim: changeAnimStart start=true
+11-16 21:26:11.062  2648  2912 D FloatingIconLayer2: c0ec749 showSurfaceControl error. IconSurfaceControl:null mIsDrawIcon:true mFloatingIconSurface:null
+11-16 21:26:11.063  2648  2648 I ScenarioRecognitionUtil: setScenarioState, type: 265, isStart: true
+11-16 21:26:11.068  2648  4126 E ActivityManagerWrapper: getRecentTasksForceIncludingTaskIdIfValid: getRecentTasks: size=6
+11-16 21:26:11.068  2648  4126 E ActivityManagerWrapper:  mainTaskId=11922   userId=0   windowMode=1   baseIntent=Intent { act=android.intent.action.MAIN flag=270532608 cmp=ComponentInfo{com.termux/com.termux.app.TermuxActivity} }
+11-16 21:26:11.068  2648  4126 E ActivityManagerWrapper:  mainTaskId=11895   userId=0   windowMode=1   baseIntent=Intent { act=android.intent.action.MAIN flag=270532608 cmp=ComponentInfo{com.openai.chatgpt/com.openai.chatgpt.MainActivity} }
+11-16 21:26:11.068  2648  4126 E ActivityManagerWrapper:  mainTaskId=11894   userId=0   windowMode=1   baseIntent=Intent { act=android.intent.action.MAIN flag=270532608 cmp=ComponentInfo{bin.mt.plus/bin.mt.plus.MainLightIcon} }
+11-16 21:26:11.068  2648  4126 E ActivityManagerWrapper:  mainTaskId=11920   userId=0   windowMode=1   baseIntent=Intent { act=android.intent.action.MAIN flag=270532608 cmp=ComponentInfo{com.g5j.uabeamobile/crc64db1c392adadf9a19.MainActivity} }
+11-16 21:26:11.068  2648  4126 E ActivityManagerWrapper:  mainTaskId=11896   userId=0   windowMode=1   baseIntent=Intent { act=android.intent.action.MAIN flag=270532608 cmp=ComponentInfo{com.android.chrome/com.google.android.apps.chrome.Main} }
+11-16 21:26:11.068  2648  4126 E ActivityManagerWrapper:  mainTaskId=11887   userId=0   windowMode=1   baseIntent=Intent { act=android.intent.action.MAIN flag=270532608 cmp=ComponentInfo{com.discord/com.discord.main.MainDefault} }
+11-16 21:26:11.071  2648  4126 D RecentsTaskLoader: reloadTasksData [TaskKey{id=11922, stackId=0, baseIntent=Intent { act=android.intent.action.MAIN cat=[android.intent.category.LAUNCHER] flg=0x10200000 cmp=com.termux/.app.TermuxActivity }, userId=0, lastActiveTime=144528637, windowingMode=1, isThumbnailBlur=false, isAccessLocked=false, isScreening=false, topActivity=ComponentInfo{com.termux/com.termux.app.TermuxActivity}, mHashCode=356091854}, title=Termux, titleDescription=Termux, bounds=null, isLaunchTarget=false, isStackTask=true, isSystemApp=false, isDockable=true, baseActivity=ComponentInfo{com.termux/com.termux.app.TermuxActivity}, isLocked=true, mNeedHide=false, hasMultipleTasks=false, cti1Key=, cti2Key=] 
+11-16 21:26:11.072  2648  4126 W IconCustomizer: Density abnormal: context density=251 systemDensity=274
+11-16 21:26:11.072  2648  4126 W IconCustomizer: Density abnormal: context density=251 systemDensity=274
+11-16 21:26:11.072  2648  4126 D RecentsTaskLoader: reloadTasksData [TaskKey{id=11895, stackId=0, baseIntent=Intent { act=android.intent.action.MAIN cat=[android.intent.category.LAUNCHER] flg=0x10200000 cmp=com.openai.chatgpt/.MainActivity }, userId=0, lastActiveTime=144434507, windowingMode=1, isThumbnailBlur=false, isAccessLocked=false, isScreening=false, topActivity=ComponentInfo{com.openai.chatgpt/com.openai.chatgpt.MainActivity}, mHashCode=355287497}, title=ChatGPT, titleDescription=ChatGPT, bounds=null, isLaunchTarget=false, isStackTask=true, isSystemApp=false, isDockable=true, baseActivity=ComponentInfo{com.openai.chatgpt/com.openai.chatgpt.MainActivity}, isLocked=false, mNeedHide=false, hasMultipleTasks=false, cti1Key=, cti2Key=] 
+11-16 21:26:11.072  2648  4126 D RecentsTaskLoader: reloadTasksData [TaskKey{id=11894, stackId=0, baseIntent=Intent { act=android.intent.action.MAIN cat=[android.intent.category.LAUNCHER] flg=0x10200000 cmp=bin.mt.plus/.MainLightIcon }, userId=0, lastActiveTime=144330041, windowingMode=1, isThumbnailBlur=false, isAccessLocked=false, isScreening=false, topActivity=ComponentInfo{bin.mt.plus/bin.mt.plus.Main}, mHashCode=355257706}, title=MT Manager, titleDescription=MT Manager, bounds=null, isLaunchTarget=true, isStackTask=true, isSystemApp=false, isDockable=true, baseActivity=ComponentInfo{bin.mt.plus/bin.mt.plus.Main}, isLocked=false, mNeedHide=false, hasMultipleTasks=false, cti1Key=, cti2Key=] 
+11-16 21:26:11.072  2648  4126 D RecentsTaskLoader: reloadTasksData [TaskKey{id=11920, stackId=0, baseIntent=Intent { act=android.intent.action.MAIN cat=[android.intent.category.LAUNCHER] flg=0x10200000 cmp=com.g5j.uabeamobile/crc64db1c392adadf9a19.MainActivity }, userId=0, lastActiveTime=144099330, windowingMode=1, isThumbnailBlur=false, isAccessLocked=false, isScreening=false, topActivity=ComponentInfo{com.g5j.uabeamobile/crc64db1c392adadf9a19.MainActivity}, mHashCode=356032272}, title=UABE Avalonia, titleDescription=UABE Avalonia, bounds=null, isLaunchTarget=true, isStackTask=true, isSystemApp=false, isDockable=true, baseActivity=ComponentInfo{com.g5j.uabeamobile/crc64db1c392adadf9a19.MainActivity}, isLocked=false, mNeedHide=false, hasMultipleTasks=false, cti1Key=, cti2Key=] 
+11-16 21:26:11.072  2648  4126 D RecentsTaskLoader: reloadTasksData [TaskKey{id=11896, stackId=0, baseIntent=Intent { act=android.intent.action.MAIN cat=[android.intent.category.LAUNCHER] flg=0x10200000 cmp=com.android.chrome/com.google.android.apps.chrome.Main }, userId=0, lastActiveTime=143791482, windowingMode=1, isThumbnailBlur=false, isAccessLocked=false, isScreening=false, topActivity=ComponentInfo{com.android.chrome/org.chromium.chrome.browser.app.download.home.DownloadActivity}, mHashCode=355317288}, title=Chrome, titleDescription=Chrome, bounds=null, isLaunchTarget=true, isStackTask=true, isSystemApp=true, isDockable=true, baseActivity=ComponentInfo{com.android.chrome/org.chromium.chrome.browser.ChromeTabbedActivity}, isLocked=false, mNeedHide=false, hasMultipleTasks=false, cti1Key=, cti2Key=] 
+11-16 21:26:11.072  2648  4126 D RecentsTaskLoader: reloadTasksData [TaskKey{id=11887, stackId=0, baseIntent=Intent { act=android.intent.action.MAIN cat=[android.intent.category.LAUNCHER] flg=0x10200000 cmp=com.discord/.main.MainDefault }, userId=0, lastActiveTime=143765265, windowingMode=1, isThumbnailBlur=false, isAccessLocked=false, isScreening=false, topActivity=ComponentInfo{com.discord/com.discord.main.MainActivity}, mHashCode=355049169}, title=Discord, titleDescription=Discord, bounds=null, isLaunchTarget=false, isStackTask=true, isSystemApp=false, isDockable=true, baseActivity=ComponentInfo{com.discord/com.discord.main.MainActivity}, isLocked=true, mNeedHide=false, hasMultipleTasks=false, cti1Key=, cti2Key=] 
+11-16 21:26:11.072  2648  4126 D RecentsTaskLoader: reloadTasksData [TaskKey{id=11922, stackId=0, baseIntent=Intent { act=android.intent.action.MAIN cat=[android.intent.category.LAUNCHER] flg=0x10200000 cmp=com.termux/.app.TermuxActivity }, userId=0, lastActiveTime=144528637, windowingMode=1, isThumbnailBlur=false, isAccessLocked=false, isScreening=false, topActivity=ComponentInfo{com.termux/com.termux.app.TermuxActivity}, mHashCode=356091854}, title=Termux, titleDescription=Termux, bounds=null, isLaunchTarget=false, isStackTask=true, isSystemApp=false, isDockable=true, baseActivity=ComponentInfo{com.termux/com.termux.app.TermuxActivity}, isLocked=true, mNeedHide=false, hasMultipleTasks=false, cti1Key=, cti2Key=] 
+11-16 21:26:11.072  2648  4126 D RecentsTaskLoader: reloadTasksData [TaskKey{id=11895, stackId=0, baseIntent=Intent { act=android.intent.action.MAIN cat=[android.intent.category.LAUNCHER] flg=0x10200000 cmp=com.openai.chatgpt/.MainActivity }, userId=0, lastActiveTime=144434507, windowingMode=1, isThumbnailBlur=false, isAccessLocked=false, isScreening=false, topActivity=ComponentInfo{com.openai.chatgpt/com.openai.chatgpt.MainActivity}, mHashCode=355287497}, title=ChatGPT, titleDescription=ChatGPT, bounds=null, isLaunchTarget=false, isStackTask=true, isSystemApp=false, isDockable=true, baseActivity=ComponentInfo{com.openai.chatgpt/com.openai.chatgpt.MainActivity}, isLocked=false, mNeedHide=false, hasMultipleTasks=false, cti1Key=, cti2Key=] 
+11-16 21:26:11.072  2648  4126 D RecentsTaskLoader: reloadTasksData [TaskKey{id=11894, stackId=0, baseIntent=Intent { act=android.intent.action.MAIN cat=[android.intent.category.LAUNCHER] flg=0x10200000 cmp=bin.mt.plus/.MainLightIcon }, userId=0, lastActiveTime=144330041, windowingMode=1, isThumbnailBlur=false, isAccessLocked=false, isScreening=false, topActivity=ComponentInfo{bin.mt.plus/bin.mt.plus.Main}, mHashCode=355257706}, title=MT Manager, titleDescription=MT Manager, bounds=null, isLaunchTarget=true, isStackTask=true, isSystemApp=false, isDockable=true, baseActivity=ComponentInfo{bin.mt.plus/bin.mt.plus.Main}, isLocked=false, mNeedHide=false, hasMultipleTasks=false, cti1Key=, cti2Key=] 
+11-16 21:26:11.072  2648  4126 D RecentsTaskLoader: reloadTasksData [TaskKey{id=11920, stackId=0, baseIntent=Intent { act=android.intent.action.MAIN cat=[android.intent.category.LAUNCHER] flg=0x10200000 cmp=com.g5j.uabeamobile/crc64db1c392adadf9a19.MainActivity }, userId=0, lastActiveTime=144099330, windowingMode=1, isThumbnailBlur=false, isAccessLocked=false, isScreening=false, topActivity=ComponentInfo{com.g5j.uabeamobile/crc64db1c392adadf9a19.MainActivity}, mHashCode=356032272}, title=UABE Avalonia, titleDescription=UABE Avalonia, bounds=null, isLaunchTarget=true, isStackTask=true, isSystemApp=false, isDockable=true, baseActivity=ComponentInfo{com.g5j.uabeamobile/crc64db1c392adadf9a19.MainActivity}, isLocked=false, mNeedHide=false, hasMultipleTasks=false, cti1Key=, cti2Key=] 
+11-16 21:26:11.073  2648  4126 D RecentsTaskLoader: reloadTasksData [TaskKey{id=11896, stackId=0, baseIntent=Intent { act=android.intent.action.MAIN cat=[android.intent.category.LAUNCHER] flg=0x10200000 cmp=com.android.chrome/com.google.android.apps.chrome.Main }, userId=0, lastActiveTime=143791482, windowingMode=1, isThumbnailBlur=false, isAccessLocked=false, isScreening=false, topActivity=ComponentInfo{com.android.chrome/org.chromium.chrome.browser.app.download.home.DownloadActivity}, mHashCode=355317288}, title=Chrome, titleDescription=Chrome, bounds=null, isLaunchTarget=true, isStackTask=true, isSystemApp=true, isDockable=true, baseActivity=ComponentInfo{com.android.chrome/org.chromium.chrome.browser.ChromeTabbedActivity}, isLocked=false, mNeedHide=false, hasMultipleTasks=false, cti1Key=, cti2Key=] 
+11-16 21:26:11.073  2648  4126 D RecentsTaskLoader: reloadTasksData [TaskKey{id=11887, stackId=0, baseIntent=Intent { act=android.intent.action.MAIN cat=[android.intent.category.LAUNCHER] flg=0x10200000 cmp=com.discord/.main.MainDefault }, userId=0, lastActiveTime=143765265, windowingMode=1, isThumbnailBlur=false, isAccessLocked=false, isScreening=false, topActivity=ComponentInfo{com.discord/com.discord.main.MainActivity}, mHashCode=355049169}, title=Discord, titleDescription=Discord, bounds=null, isLaunchTarget=false, isStackTask=true, isSystemApp=false, isDockable=true, baseActivity=ComponentInfo{com.discord/com.discord.main.MainActivity}, isLocked=true, mNeedHide=false, hasMultipleTasks=false, cti1Key=, cti2Key=] 
+11-16 21:26:11.081  1211  1388 I BufferQueueDebug: [com.termux/com.termux.app.TermuxActivity#40734](this:0xb40000784a71a1d0,id:-1,api:0,p:-1,c:-1) BufferQueue core=(1211:/system/bin/surfaceflinger)
+11-16 21:26:11.083  1927  5088 D MiuiRefreshRatePolicy: reset
+11-16 21:26:11.085  1927  5088 W WindowManager: Changing focus from null to Window{bd57062 u0 com.termux/com.termux.app.TermuxActivity} displayId=0 Callers=com.android.server.wm.RootWindowContainer.updateFocusedWindowLocked:602 com.android.server.wm.WindowManagerService.updateFocusedWindowLocked:7207 com.android.server.wm.WindowManagerService.relayoutWindowInner:3090 com.android.server.wm.WindowManagerService.relayoutWindow:2733 
+11-16 21:26:11.086  1927  5088 I whetstone.activity: Power Event callback listener is empty for resId=32
+11-16 21:26:11.086  1927  5088 D BatteryStatsManagerStub: notifyEvent for resId=32 used 1ms
+11-16 21:26:11.087  1927  5088 D WindowManager: wms.Input focus has changed to Window{bd57062 u0 com.termux/com.termux.app.TermuxActivity} display=0 updateInputWindows = true
+11-16 21:26:11.087  1927  5088 I MultiSenceManagerInternalStub: getInstance
+11-16 21:26:11.087  1927  5088 I WindowManager: Relayout Window{bd57062 u0 com.termux/com.termux.app.TermuxActivity}: oldVis=4 newVis=0 focusMayChange = true requestedWidth = 720 requestedHeight = 1600 outFrames = ClientWindowFrames{frame=[0,0][720,1600] display=[0,0][720,1600] parentFrame=[0,0][0,0]} outSurfaceControl = Surface(name=com.termux/com.termux.app.TermuxActivity#40734)/@0x751b80a
+11-16 21:26:11.090   942   942 D BufferQueueConsumer: [](id:3ae00000002,api:0,p:-1,c:942) connect: controlledByApp=false
+11-16 21:26:11.091   942   942 D BLASTBufferQueue: [VRI[TermuxActivity]#2](f:0,a:0) constructor()
+11-16 21:26:11.091   942   942 D BLASTBufferQueue: [VRI[TermuxActivity]#2](f:0,a:0) update width=720 height=1600 format=-1 mTransformHint=0
+11-16 21:26:11.092  1927  1959 I ActivityTaskManager: visible for Task{394a73e #2 type=home I=com.miui.home/.launcher.Launcher} visible = true isAnimating = false TRANSITION = false PARENTS = false CHILDREN = false
+11-16 21:26:11.093  1927  1959 D SurfaceComposerClient: Transaction::apply InputWindowCommands.focusRequests timestamp=88850069258218, windowName=bd57062 com.termux/com.termux.app.TermuxActivity
+11-16 21:26:11.101  1211  1211 I BufferQueueProducer: [FramebufferSurface](this:0xb40000770a4c0370,id:-1,api:1,p:1211,c:1211) queueBuffer: fps=0.41 dur=4897.30 max=4664.69 min=232.61
+11-16 21:26:11.103  1211  1211 I MI-SF   : surfaceflinger setAffinity mode=1
+11-16 21:26:11.104  1211  1211 E MI-SF   : surfaceflinger setAffinity success
+11-16 21:26:11.104  1211  1211 I MI-SF   : surfaceflinger setreAffinity reTid=1392
+11-16 21:26:11.104  1211  1211 E MI-SF   : surfaceflinger setAffinity success
+11-16 21:26:11.108  1927  1950 D AudioSystem: +setParameters(): gamebooster=false 
+11-16 21:26:11.108  1927  1950 D AudioSystem: start get log level!
+11-16 21:26:11.109  1123 16284 D AudioALSAHardware: +setParameters(): gamebooster=false
+11-16 21:26:11.109  1123 16284 D AudioALSAHardware: -setParameters(): gamebooster=false
+11-16 21:26:11.109  1211  1211 D SurfaceFlinger: Focus addInputWindowCommands timestamp=88850069258218, windowName=bd57062 com.termux/com.termux.app.TermuxActivity
+11-16 21:26:11.109  1123 16284 E AHAL_Module: setVendorParameters: default: unrecognized parameter "gamebooster=false"
+11-16 21:26:11.110  1190 12771 E ConversionHelperAidl: Function: parseAndSetVendorParameters Line: 97 Failed 
+11-16 21:26:11.111  1123 16284 D AHAL_ModuleBluetooth: setVendorParameters: parameter count 1, async: 0
+11-16 21:26:11.111  1123 16284 D AHAL_ModuleBluetooth: setVendorParameters: gamebooster=false
+11-16 21:26:11.119  1518  1723 D Utils   : convertMessageToMetaData, Mime = audio/ogg
+11-16 21:26:11.119  1211  1801 D SurfaceFlinger: updateWinowInfo=1, setFocusedWindow timestamp=88850069258218, windowName=bd57062 com.termux/com.termux.app.TermuxActivity
+11-16 21:26:11.122   942   942 D VRI[TermuxActivity]: vri.reportNextDraw android.view.ViewRootImpl.performTraversals:4962 android.view.ViewRootImpl.doTraversal:3561 android.view.ViewRootImpl$TraversalRunnable.run:11731 android.view.Choreographer$CallbackRecord.run:1784 android.view.Choreographer$CallbackRecord.run:1793 
+11-16 21:26:11.123   942   942 D VRI[TermuxActivity]: Setup new sync=wmsSync-VRI[TermuxActivity]#6
+11-16 21:26:11.124  1518  1723 D Utils   : convertMessageToMetaData, Mime = audio/vorbis
+11-16 21:26:11.124  1518  2484 D Utils   : convertMessageToMetaData, Mime = audio/vorbis
+11-16 21:26:11.133   942  2788 D MediaCodec: CreateByType: pid -1(942)
+11-16 21:26:11.133   942  2788 D MediaCodec: CreateByType: mime audio/vorbis, encoder 0 pid -1
+11-16 21:26:11.134   942  2788 D MediaCodecList: processName: com.termux , mime: audio/vorbis
+11-16 21:26:11.149   942  2788 D MediaCodecList: codecHandlesFormat: no format, so no extra checks
+11-16 21:26:11.167   942  2788 D CCodecBufferChannel: mBufferCountDebug=0 mIsUserLoad=1
+11-16 21:26:11.167  1927  8481 E BpfUtils: Failed to create socket: 111, message: Connection refused
+11-16 21:26:11.167  1927  8481 E BpfClientLib: [UnixIpcManager] Connect failed: 111, message: Connection refused, clientFd: -1, Wait 5 senconds
+11-16 21:26:11.170   942  2788 D MBrainDateManager: MBrainDataManager Constructor caller
+11-16 21:26:11.171   942  2788 D MBrainManager: mMBrainSupport 0, return NULL
+11-16 21:26:11.171   942  2788 D MBrainDateManager: mMBrainManager = nullptr
+11-16 21:26:11.171   942  2788 D CCodecBufferChannel: new MBrainDataManager() fail
+11-16 21:26:11.171   942  2788 D MBrainDateManager: MBrainDataManager Constructor clear
+11-16 21:26:11.171   942  2788 D MediaCodec: [0x6e082aa490] init: CCodec 0x6f1814c690, CCodecBufferChannel 0x6e68131bb0
+11-16 21:26:11.171   942  2788 I MediaCodec: init video box disabled for codec not supported
+11-16 21:26:11.173   942   970 D BLASTBufferQueue: [VRI[TermuxActivity]#2](f:0,a:1) acquireNextBufferLocked size=720x1600 mFrameNumber=1 applyTransaction=true mTimestamp=88850153456680(auto) mPendingTransactions.size=0 graphicBufferId=4045859192846 transform=0
+11-16 21:26:11.174   942   942 D VRI[TermuxActivity]: vri.reportDrawFinished
+11-16 21:26:11.175  1927  5088 D WindowManager: wms.finishDrawingLocked: mDrawState=COMMIT_DRAW_PENDING Window{bd57062 u0 com.termux/com.termux.app.TermuxActivity} in Surface(name=com.termux/com.termux.app.TermuxActivity#40734)/@0xee07075
+11-16 21:26:11.176  1927  1959 D MiuiRefreshRatePolicy: reset
+11-16 21:26:11.177  1927  1959 I WindowManager: onFirstWindowDrawn, try to remove startingWindow. this = ActivityRecord{a27a7b1 u0 com.termux/.app.TermuxActivity t11922} associatedTask = null isMainWindow = true mStartingWindow = Window{211d976 u0 SnapshotStartingWindow for taskId=11922} mStartingData = SnapshotStartingData{30e9caa waitForSyncTransactionCommit=false removeAfterTransaction= 0}
+11-16 21:26:11.178  1927  1959 D PreStartingManager: Not init when use PreStartingManager!
+11-16 21:26:11.179  1927  1959 I SmartPower: Miui monitor launch : com.termux/.app.TermuxActivity  transitionTime:67  launchTime:233  launchFrom:com.miui.home  launchType:3
+11-16 21:26:11.180  4347  7696 I MiuiPerfServiceClient: begin bootRecord
+11-16 21:26:11.184  1927  1959 D MiuiRefreshRatePolicy: reset
+11-16 21:26:11.192  1927  1959 I ActivityTaskManager: visible for Task{394a73e #2 type=home I=com.miui.home/.launcher.Launcher} visible = true isAnimating = false TRANSITION = false PARENTS = false CHILDREN = false
+11-16 21:26:11.192  1927  1959 I WindowManager: wms.showSurfaceRobustly mWin:Window{bd57062 u0 com.termux/com.termux.app.TermuxActivity}
+11-16 21:26:11.202  1155  1186 I mtkpower@impl: [setMode] type:5, enabled:0
+11-16 21:26:11.202  1155  1219 I libPowerHal: [perfLockRel] hdl:119968, idx:2
+11-16 21:26:11.203  1927  5088 I PowerHalWrapper: amsBoostStop AMS_BOOST_PACK_SWITCH:true, AMS_BOOST_ACT_SWITCH:false, AMS_BOOST_PROCESS_CREATE:false, AMS_BOOST_PROCESS_CREATE_FOR_GAME:false, AMS_BOOST_HOT_LAUNCH:false 
+11-16 21:26:11.204  1155  1219 I libPowerHal: [PD] LAUNCH update ONESHOT(unset) cmd:10000700 param:16129 pr:3
+11-16 21:26:11.204  1155  1219 I libPowerHal: [perfLockRel] Done for hdl : 119968
+11-16 21:26:11.204  1155  1186 I libPowerHal: [mtkPowerHint] hint:22, hold:500, ext:0, ext_hold:0
+11-16 21:26:11.205  1155  1219 I libPowerHal: [perfLockAcq] idx:1 hdl:119973 hint:22 pid:1155 tid:1155 duration:500 lock_user:vendor.mediatek => ret_hdl:119973
+11-16 21:26:11.205  1155  1219 I libPowerHal: [perfLockAcq] Done for hdl : 119973
+11-16 21:26:11.205  1155  1219 I libPowerHal: [perfLockRel] hdl:119970, idx:7
+11-16 21:26:11.206  1155  1219 I libPowerHal: [perfLockRel] Done for hdl : 119970
+11-16 21:26:11.220   942   942 I HandWritingStubImpl: refreshLastKeyboardType: 1
+11-16 21:26:11.221   942   942 I HandWritingStubImpl: getCurrentKeyboardType: 1
+11-16 21:26:11.224  1927  2126 I ImeTracker: com.termux:9f5212cc: onRequestShow at ORIGIN_SERVER reason ATTACH_NEW_INPUT fromUser false
+11-16 21:26:11.225  1927  2126 I InputMethodManagerService: IMMS.showCurrentInputLocked(), flags = 1
+11-16 21:26:11.225  1927  2126 D SmartPower: com.ziipin.softkeyboard.ly/10286(6014): show input method
+11-16 21:26:11.225  6547  8230 D MirrorManager:  sendAcceptInput 1 0
+11-16 21:26:11.225  1927  2126 I SmartPower: com.ziipin.softkeyboard.ly/10286(6014): idle->visible(84398ms) R(show input method) adj=200.
+11-16 21:26:11.225  1927  2126 I DefaultImeVisibilityApplier: IMMS.showCurrentInputLocked request ims to show inputMethod.
+11-16 21:26:11.226  1927  2126 I ImeTracker: com.termux:be70152a: onRequestShow at ORIGIN_SERVER reason SHOW_RESTORE_IME_VISIBILITY fromUser false
+11-16 21:26:11.226  1927  2126 I InputMethodManagerService: IMMS.showCurrentInputLocked(), flags = 1
+11-16 21:26:11.226  1211  2003 D MI-SF   : updateScene: module = 270 (Unknown), value = 1, pkg = com.termux
+11-16 21:26:11.226  1927  2126 D SmartPower: com.ziipin.softkeyboard.ly/10286(6014): show input method
+11-16 21:26:11.227  1927  2126 I DefaultImeVisibilityApplier: IMMS.showCurrentInputLocked request ims to show inputMethod.
+11-16 21:26:11.227  6547  8230 D MirrorManager:  sendAcceptInput 1 0
+11-16 21:26:11.227  6014  6014 V InputMethod: IMS.showSoftInput()
+11-16 21:26:11.230  1211  1761 I BufferQueueDebug: [Surface(name=421e472 InputMethod#133)/@0x3b0161f - animation-leash of insets_animation#40735](this:0xb40000784a797210,id:-1,api:0,p:-1,c:-1) BufferQueue core=(1211:/system/bin/surfaceflinger)
+11-16 21:26:11.234  1927  1959 D MiuiRefreshRatePolicy: reset
+11-16 21:26:11.242  1927  1959 I ActivityTaskManager: visible for Task{394a73e #2 type=home I=com.miui.home/.launcher.Launcher} visible = true isAnimating = false TRANSITION = false PARENTS = false CHILDREN = false
+11-16 21:26:11.247  1927  1958 D MiuiRefreshRatePolicy: reset
+11-16 21:26:11.249  6014  6014 D ScrollerOptimizationManager: registerConfigChangedListener
+11-16 21:26:11.254  1927  2923 D MiuiRefreshRatePolicy: reset
+11-16 21:26:11.259  1927  1959 I ActivityTaskManager: visible for Task{394a73e #2 type=home I=com.miui.home/.launcher.Launcher} visible = true isAnimating = false TRANSITION = false PARENTS = false CHILDREN = false
+11-16 21:26:11.259  1211  1211 I BufferQueueProducer: [com.miui.home/com.miui.home.launcher.Launcher#40708](this:0xb40000784a7a87e0,id:-1,api:0,p:-1,c:1211) queueBuffer: fps=46.23 dur=1016.73 max=169.07 min=15.63
+11-16 21:26:11.260  1211  1211 I SurfaceFlinger: onHandleDestroyed: name=Surface(name=421e472 InputMethod#133)/@0x3b0161f - animation-leash of insets_animation#40720, layerId=40720, parentId=0
+11-16 21:26:11.264  1927  2923 D MiuiRefreshRatePolicy: reset
+11-16 21:26:11.266  1133  1133 I hwcomposer: [HWCDisplay] (0 updateFps():3644), (type:1, mode:2) fps:53.800934,dur:1003.70,max:119.51,min:14.30  
+11-16 21:26:11.268  2449  6381 W HWUI    : Surface doesn't have any previously queued frames, nothing to readback from
+11-16 21:26:11.269  2449  6381 W HWUI    : Surface doesn't have any previously queued frames, nothing to readback from
+11-16 21:26:11.276  1927  1959 I ActivityTaskManager: visible for Task{394a73e #2 type=home I=com.miui.home/.launcher.Launcher} visible = true isAnimating = false TRANSITION = false PARENTS = false CHILDREN = false
+11-16 21:26:11.276  1211  1211 I BufferQueueDebug: [Surface(name=421e472 InputMethod#133)/@0x3b0161f - animation-leash of insets_animation#40720](this:0xb40000784a70fb20,id:-1,api:0,p:-1,c:1211) onDestructor()
+11-16 21:26:11.279   942  2791 D MediaCodec: [0x6e082aa490] setState: 1
+11-16 21:26:11.279   942  2791 I MediaCodec: [mId: 1] [audio-debug-dec] setState: INITIALIZING
+11-16 21:26:11.279  2643  2643 D Utilities:  oldHints : 0 backDisposition : 0 imeShown : false hints 0
+11-16 21:26:11.279   942  2791 D CCodec  : allocate(c2.android.vorbis.decoder)
+11-16 21:26:11.296  1927  2191 D InetDiagMessage: Destroyed 0 sockets, proto=IPPROTO_TCP, family=AF_INET, states=14
+11-16 21:26:11.298  1927  2191 D InetDiagMessage: Destroyed 0 sockets, proto=IPPROTO_TCP, family=AF_INET6, states=14
+11-16 21:26:11.298  1927  2191 D InetDiagMessage: Destroyed live tcp sockets for uids={10074} in 3ms
+11-16 21:26:11.298  1927  2923 D FileUtils: Rounded bytes from 5936353280 to 8000000000
+11-16 21:26:11.300  1927  2191 D InetDiagMessage: Destroyed 0 sockets, proto=IPPROTO_TCP, family=AF_INET, states=14
+11-16 21:26:11.302  1927  2191 D InetDiagMessage: Destroyed 0 sockets, proto=IPPROTO_TCP, family=AF_INET6, states=14
+11-16 21:26:11.302  1927  2191 D InetDiagMessage: Destroyed live tcp sockets for uids={20074} in 3ms
+11-16 21:26:11.306   942  2791 I CCodec  : setting up 'default' as default (vendor) store
+11-16 21:26:11.349  1155  1219 I mtkpower@impl: [powerd_req] TIMER_MSG_PERF_LOCK_TIMEOUT hdl:119969
+11-16 21:26:11.349  1155  1219 I libPowerHal: [perfLockRel] hdl:119969, idx:4
+11-16 21:26:11.349  1155  1219 I libPowerHal: [unsetGPUFreq] current min:0, max:0; scn_gpu_min:0, scn_gpu_max:-1; scn_gpu_min(HL):-1, scn_gpu_max(HL):-1
+11-16 21:26:11.350  1155  1219 I libPowerHal: [setGPUFreq] Soft min/max = (0, 0); Hard min/max = (31, 0)
+11-16 21:26:11.350  1155  1219 I libPowerHal: [setGPUFreq] final min/max = (0, 0)
+11-16 21:26:11.350  1155  1219 I libPowerHal: system_server: set gpu opp level: 0
+11-16 21:26:11.350  1155  1219 I libPowerHal: system_server: set gpu opp level max: 0
+11-16 21:26:11.351   942   942 I ImeTracker: com.termux:c2f6615: onRequestShow at ORIGIN_CLIENT reason SHOW_SOFT_INPUT fromUser false
+11-16 21:26:11.351  1155  1219 I libPowerHal: [PD] system_server update cmd:400000 param:1800000 pr:3
+11-16 21:26:11.351  1155  1219 I libPowerHal: [PD] system_server update cmd:400100 param:2000000 pr:3
+11-16 21:26:11.351  1155  1219 I libPowerHal: [PD] system_server update cmd:400200 param:-1 pr:6
+11-16 21:26:11.351   942   942 D InputMethodManager: showSoftInput() view=com.termux.view.TerminalView{bf66932 VFED.V.L. .F...... 0,0-710,1321 #7f080191 app:id/terminal_view aid=1073741825} flags=0 reason=SHOW_SOFT_INPUT
+11-16 21:26:11.352  1155  1219 I libPowerHal: [recordCPUFreqInfo] set cluster[0] min(system_server): 1800000 max(-1): -1 cluster[1] min(system_server): 2000000 max(-1): -1
+11-16 21:26:11.352  1155  1219 I libPowerHal: [perfLockRel] Done for hdl : 119969
+11-16 21:26:11.352  1927  2126 I InputMethodManagerService: IMMS.showSoftInput(), client = com.android.internal.inputmethod.IInputMethodClient$Stub$Proxy@f7e966b
+11-16 21:26:11.352  1927  2126 I InputMethodManagerService: IMMS.showCurrentInputLocked(), flags = 0
+11-16 21:26:11.352  1927  2126 D SmartPower: com.ziipin.softkeyboard.ly/10286(6014): show input method
+11-16 21:26:11.353  1927  2126 I DefaultImeVisibilityApplier: IMMS.showCurrentInputLocked request ims to show inputMethod.
+11-16 21:26:11.352  6547  8230 D MirrorManager:  sendAcceptInput 1 0
+11-16 21:26:11.378  2648  2648 D Launcher_UnlockAnimationStateMachine: mResetIdleStateRunnable
+11-16 21:26:11.380  1624  8867 I BpBinder: onLastStrongRef automatically unlinking death recipients: android.hardware.media.bufferpool2.IAccessor
+11-16 21:26:11.381  1624  8867 D AidlBufferPool: bufferpool2 0xb400007155c3a0c8 : 0(0 size) total buffers - 0(0 size) used buffers - 0/0 (recycle/alloc) - 0/0 (fetch/transfer)
+11-16 21:26:11.383   942  1010 D AidlBufferPool: bufferpool2 0x6f1814e068 : 0(0 size) total buffers - 0(0 size) used buffers - 1/7 (recycle/alloc) - 6/24 (fetch/transfer)
+11-16 21:26:11.383   942  1010 D AidlBufferPool: Destruction - bufferpool2 0x6f1814e068 cached: 0/0M, 0/0% in use; allocs: 7, 14% recycled; transfers: 24, 75% unfetched
+11-16 21:26:11.385   942  2791 W com.termux: AIBinder_linkToDeath is being called with a non-null cookie and no onUnlink callback set. This might not be intended. AIBinder_DeathRecipient_setOnUnlinked should be called first.
+11-16 21:26:11.385   942  2791 I CCodec  : Created component [c2.android.vorbis.decoder]
+11-16 21:26:11.385   942  2791 D CCodecBufferChannel: [0x6e68131bb0] setComponent: mName c2.android.vorbis.decoder#527, mPipelineWatcher 0x6e681320a0
+11-16 21:26:11.385   942  2791 D CCodecBufferChannel: PipelineWatcher debug info [c2.android.vorbis.decoder#527] enable=0
+11-16 21:26:11.387   942  2791 D CCodecConfig: read media type: audio/vorbis
+11-16 21:26:11.389   942  2791 D ReflectedParamUpdater: extent() != 1 for single value type: algo.buffers.max-count.values
+11-16 21:26:11.390   942  2791 D ReflectedParamUpdater: extent() != 1 for single value type: output.subscribed-indices.values
+11-16 21:26:11.390   942  2791 D ReflectedParamUpdater: extent() != 1 for single value type: input.buffers.allocator-ids.values
+11-16 21:26:11.390   942  2791 D ReflectedParamUpdater: extent() != 1 for single value type: output.buffers.allocator-ids.values
+11-16 21:26:11.390   942  2791 D ReflectedParamUpdater: extent() != 1 for single value type: algo.buffers.allocator-ids.values
+11-16 21:26:11.390   942  2791 D ReflectedParamUpdater: extent() != 1 for single value type: output.buffers.pool-ids.values
+11-16 21:26:11.390   942  2791 D ReflectedParamUpdater: extent() != 1 for single value type: algo.buffers.pool-ids.values
+11-16 21:26:11.394  6014  6014 D EventBus: No subscribers registered for event class s4.h
+11-16 21:26:11.394  6014  6014 D EventBus: No subscribers registered for event class org.greenrobot.eventbus.h
+11-16 21:26:11.394  1927  4339 I InputMethodManagerService: IMMS.applyImeVisibility(), setVisible = true, mCurclient = ClientState{793a29c mUid=10754 mPid=942 mSelfReportedDisplayId=0}
+11-16 21:26:11.394  2643  2643 D Utilities:  oldHints : 0 backDisposition : 0 imeShown : true hints 3
+11-16 21:26:11.395  1927  4339 I WindowManager: WMS.showImePostLayout(), imeTarget = Window{bd57062 u0 com.termux/com.termux.app.TermuxActivity}
+11-16 21:26:11.396  1927  1959 D MiuiRefreshRatePolicy: reset
+11-16 21:26:11.396  6014  6014 V InputMethod: IMS.showSoftInput()
+11-16 21:26:11.400  1927  4339 I InputMethodManagerService: IMMS.applyImeVisibility(), setVisible = true, mCurclient = ClientState{793a29c mUid=10754 mPid=942 mSelfReportedDisplayId=0}
+11-16 21:26:11.400   942  2791 I CCodecConfig: query failed after returning 8 values (BAD_INDEX)
+11-16 21:26:11.401   942  2791 D CCodecConfig: c2 config diff is Dict {
+11-16 21:26:11.401   942  2791 D CCodecConfig:   c2::u32 coded.bitrate.value = 64000
+11-16 21:26:11.401   942  2791 D CCodecConfig:   c2::u32 input.buffers.max-size.value = 32768
+11-16 21:26:11.401   942  2791 D CCodecConfig:   c2::u32 input.delay.value = 0
+11-16 21:26:11.401   942  2791 D CCodecConfig:   string input.media-type.value = "audio/vorbis"
+11-16 21:26:11.401   942  2791 D CCodecConfig:   c2::u32 output.large-frame.max-size = 0
+11-16 21:26:11.401   942  2791 D CCodecConfig:   c2::u32 output.large-frame.threshold-size = 0
+11-16 21:26:11.401   942  2791 D CCodecConfig:   string output.media-type.value = "audio/raw"
+11-16 21:26:11.401   942  2791 D CCodecConfig:   c2::u32 raw.channel-count.value = 1
+11-16 21:26:11.401   942  2791 D CCodecConfig:   c2::u32 raw.sample-rate.value = 48000
+11-16 21:26:11.401   942  2791 D CCodecConfig: }
+11-16 21:26:11.401  1211  1388 I BufferQueueDebug: [InputMethod#40736](this:0xb40000784a70fb20,id:-1,api:0,p:-1,c:-1) BufferQueue core=(1211:/system/bin/surfaceflinger)
+11-16 21:26:11.401   942  2791 D MediaCodec: [0x6e082aa490] setState: 2
+11-16 21:26:11.401   942  2791 I MediaCodec: [mId: 1] [audio-debug-dec] setState: INITIALIZED
+11-16 21:26:11.404  1927  5088 D MiuiRefreshRatePolicy: reset
+11-16 21:26:11.405  1593  9366 D ResourceTracker: addResource(pid 942, uid 10754 clientId 480366484256, resources non-secure-codec/sw-audio-codec:[]:1 )
+11-16 21:26:11.405  2643  2746 D MiuiFreeformModeController: avoidForInsetsBottomChangedIfNeed newMovableBottom: 1519
+11-16 21:26:11.407   942  2788 D MediaCodec: [0x6e082aa490] [c2.android.vorbis.decoder] configure
+11-16 21:26:11.407   942  2788 I MediaCodec: [mId: 1] [audio-debug-dec] configure: ClientName: com.termux ComponentName: c2.android.vorbis.decoder
+11-16 21:26:11.407   942  2788 I MediaCodec: [mId: 1] [audio-debug-dec] configure: ClientFormat: AMessage(what = 0x00000000) = {
+11-16 21:26:11.407   942  2788 I MediaCodec:   string mime = "audio/vorbis"
+11-16 21:26:11.407   942  2788 I MediaCodec:   int64_t durationUs = 116848
+11-16 21:26:11.407   942  2788 I MediaCodec:   int32_t track-id = 1
+11-16 21:26:11.407   942  2788 I MediaCodec:   Buffer csd-0 = {
+11-16 21:26:11.407   942  2788 I MediaCodec:     00000000:  01 76 6f 72 62 69 73 00  00 00 00 01 44 ac 00 00  .vorbis.....D...
+11-16 21:26:11.407   942  2788 I MediaCodec:     00000010:  00 00 00 00 00 77 01 00  00 00 00 00 b8 01        .....w........
+11-16 21:26:11.407   942  2788 I MediaCodec:   }
+11-16 21:26:11.407   942  2788 I MediaCodec:   Buffer *csd-1 = 0x6ed819c590
+11-16 21:26:11.407   942  2788 I MediaCodec:   int32_t bitrate = 96000
+11-16 21:26:11.407   942  2788 I MediaCodec:   int32_t channel-count = 1
+11-16 21:26:11.407   942  2788 I MediaCodec:   int32_t sample-rate = 44100
+11-16 21:26:11.407   942  2788 I MediaCodec:   int32_t channel-mask = 1
+11-16 21:26:11.407   942  2788 I MediaCodec: }
+11-16 21:26:11.407   942  2788 I MediaCodec: configure : init video box disabled
+11-16 21:26:11.408  1927  5088 I WindowManager: Relayout Window{421e472 u0 InputMethod}: oldVis=8 newVis=0 focusMayChange = true requestedWidth = 1451 requestedHeight = 720 outFrames = ClientWindowFrames{frame=[0,68][720,1600] display=[0,68][720,1600] parentFrame=[0,0][0,0]} outSurfaceControl = Surface(name=InputMethod#40736)/@0xaee2e47
+11-16 21:26:11.409  1927  4339 I WindowManager: WMS.showImePostLayout(), imeTarget = Window{bd57062 u0 com.termux/com.termux.app.TermuxActivity}
+11-16 21:26:11.409  1927  4339 D ImeInsetsSourceProvider: showImePostLayout cancelled, isScheduledAndReadyToShowIme: false, mImeRequester: Window{bd57062 u0 com.termux/com.termux.app.TermuxActivity}, serverVisible: true, frozen: false, mWindowContainer is: non-null, windowState: Window{421e472 u0 InputMethod}, isDrawn: false, mGivenInsetsPending: true, dcTarget: Window{211d976 u0 SnapshotStartingWindow for taskId=11922}, controlTarget: Window{bd57062 u0 com.termux/com.termux.app.TermuxActivity}
+11-16 21:26:11.409  1927  4339 D ImeInsetsSourceProvider: controlTarget == DisplayContent.controlTarget: true, hasPendingControls: true, leash is: non-null, isImeLayeringTarget: false, isAboveImeLayeringTarget: false, isImeFallbackTarget: false, isImeInputTarget: true, sameAsImeControlTarget: true
+11-16 21:26:11.410  1927  4339 I ImeTracker: com.termux:9f5212cc: onCancelled at PHASE_WM_SHOW_IME_RUNNER
+11-16 21:26:11.410   942  2791 D MediaCodec: [0x6e082aa490] setState: 3
+11-16 21:26:11.410   942  2791 I MediaCodec: [mId: 1] [audio-debug-dec] setState: CONFIGURING
+11-16 21:26:11.410   942  2791 D CCodec  : [c2.android.vorbis.decoder] buffers are bound to CCodec for this session
+11-16 21:26:11.411   942  2791 D CCodecConfig: no c2 equivalents for durationUs
+11-16 21:26:11.411   942  2791 D CCodecConfig: no c2 equivalents for track-id
+11-16 21:26:11.411   942  2791 D CCodecConfig: no c2 equivalents for csd-1
+11-16 21:26:11.411   942  2791 D CCodecConfig: no c2 equivalents for flags
+11-16 21:26:11.412   942  2791 D CCodecConfig: c2 config diff is   c2::u32 coded.bitrate.value = 96000
+11-16 21:26:11.412   942  2791 D CCodecConfig:   c2::u32 raw.sample-rate.value = 44100
+11-16 21:26:11.412  2643  2643 D NavBarView: degrees :-90.0
+11-16 21:26:11.412  6014  6014 D BufferQueueConsumer: [](id:177e00000291,api:0,p:-1,c:6014) connect: controlledByApp=false
+11-16 21:26:11.412  1927  2476 D MiuiRefreshRatePolicy: reset
+11-16 21:26:11.413  2643  2643 D Utilities:  oldHints : 3 backDisposition : 0 imeShown : true hints 3
+11-16 21:26:11.413  2643  2746 D OneHandedController: stopOneHanded state is 0
+11-16 21:26:11.414  6014  6014 D BLASTBufferQueue: [VRI[InputMethod]#657](f:0,a:0) constructor()
+11-16 21:26:11.414  2643  2746 D OneHandedController: stopOneHanded state is 0
+11-16 21:26:11.414  6014  6014 D BLASTBufferQueue: [VRI[InputMethod]#657](f:0,a:0) update width=720 height=1532 format=-2 mTransformHint=0
+11-16 21:26:11.414   942  2791 D CCodec  : encoding statistics level = 0
+11-16 21:26:11.414   942  2791 D CCodec  : setup formats input: AMessage(what = 0x00000000) = {
+11-16 21:26:11.414   942  2791 D CCodec  :   int32_t bitrate = 96000
+11-16 21:26:11.414   942  2791 D CCodec  :   int32_t channel-count = 1
+11-16 21:26:11.414   942  2791 D CCodec  :   int32_t max-input-size = 32768
+11-16 21:26:11.414   942  2791 D CCodec  :   string mime = "audio/vorbis"
+11-16 21:26:11.414   942  2791 D CCodec  :   int32_t sample-rate = 44100
+11-16 21:26:11.414   942  2791 D CCodec  : }
+11-16 21:26:11.414   942  2791 D CCodec  : setup formats output: AMessage(what = 0x00000000) = {
+11-16 21:26:11.414   942  2791 D CCodec  :   int32_t buffer-batch-max-output-size = 0
+11-16 21:26:11.414   942  2791 D CCodec  :   int32_t buffer-batch-threshold-output-size = 0
+11-16 21:26:11.414   942  2791 D CCodec  :   int32_t channel-count = 1
+11-16 21:26:11.414   942  2791 D CCodec  :   string mime = "audio/raw"
+11-16 21:26:11.414   942  2791 D CCodec  :   int32_t sample-rate = 44100
+11-16 21:26:11.414   942  2791 D CCodec  :   int32_t channel-mask = 1
+11-16 21:26:11.414   942  2791 D CCodec  :   int32_t android._config-pcm-encoding = 2
+11-16 21:26:11.414   942  2791 D CCodec  : }
+11-16 21:26:11.414   942  2791 I CCodecConfig: query failed after returning 8 values (BAD_INDEX)
+11-16 21:26:11.415   942  2791 D MediaCodec: [0x6e082aa490] setState: 4
+11-16 21:26:11.415   942  2791 I MediaCodec: [mId: 1] [audio-debug-dec] setState: CONFIGURED
+11-16 21:26:11.415   942  2791 D MediaCodec: [0x6e082aa490] setState: 5
+11-16 21:26:11.415   942  2791 I MediaCodec: [mId: 1] [audio-debug-dec] setState: STARTING
+11-16 21:26:11.417  1927  1959 I ActivityTaskManager: visible for Task{394a73e #2 type=home I=com.miui.home/.launcher.Launcher} visible = true isAnimating = false TRANSITION = false PARENTS = false CHILDREN = false
+11-16 21:26:11.418   942  2791 D CCodecBufferChannel: [c2.android.vorbis.decoder#527] Created input block pool with allocatorID 16 => poolID 18 - OK (0)
+11-16 21:26:11.418   942  2791 I CCodecBufferChannel: [mId: 1] [audio-debug-dec] start: inputFormat: AMessage(what = 0x00000000) = {
+11-16 21:26:11.418   942  2791 I CCodecBufferChannel:   int32_t bitrate = 96000
+11-16 21:26:11.418   942  2791 I CCodecBufferChannel:   int32_t channel-count = 1
+11-16 21:26:11.418   942  2791 I CCodecBufferChannel:   int32_t max-input-size = 32768
+11-16 21:26:11.418   942  2791 I CCodecBufferChannel:   string mime = "audio/vorbis"
+11-16 21:26:11.418   942  2791 I CCodecBufferChannel:   int32_t sample-rate = 44100
+11-16 21:26:11.418   942  2791 I CCodecBufferChannel: }
+11-16 21:26:11.418  1624  1772 D AidlBufferPool: bufferpool2 0xb400007155c3aa08 : 0(0 size) total buffers - 0(0 size) used buffers - 7/10 (recycle/alloc) - 3/9 (fetch/transfer)
+11-16 21:26:11.418  1624  1772 D AidlBufferPool: Destruction - bufferpool2 0xb400007155c3aa08 cached: 0/0M, 0/0% in use; allocs: 10, 70% recycled; transfers: 9, 67% unfetched
+11-16 21:26:11.420   942  2791 I CCodecBufferChannel: [c2.android.vorbis.decoder#527] Created output block pool with allocatorID 16 => poolID 1576 - OK
+11-16 21:26:11.421  1927  2476 D MiuiRefreshRatePolicy: reset
+11-16 21:26:11.421   942  2791 D CCodecBufferChannel: [c2.android.vorbis.decoder#527] Configured output block pool ids 1576 => OK
+11-16 21:26:11.421   942  2791 D CCodecBufferChannel: [0x6e68131bb0] [c2.android.vorbis.decoder#527] start: output->outputDelay 0, output->numSlots 4
+11-16 21:26:11.421   942  2791 I CCodecBufferChannel: [mId: 1] [audio-debug-dec] start: outputFormat: AMessage(what = 0x00000000) = {
+11-16 21:26:11.421   942  2791 I CCodecBufferChannel:   int32_t buffer-batch-max-output-size = 0
+11-16 21:26:11.421   942  2791 I CCodecBufferChannel:   int32_t buffer-batch-threshold-output-size = 0
+11-16 21:26:11.421   942  2791 I CCodecBufferChannel:   int32_t channel-count = 1
+11-16 21:26:11.421   942  2791 I CCodecBufferChannel:   string mime = "audio/raw"
+11-16 21:26:11.421   942  2791 I CCodecBufferChannel:   int32_t sample-rate = 44100
+11-16 21:26:11.421   942  2791 I CCodecBufferChannel:   int32_t channel-mask = 1
+11-16 21:26:11.421   942  2791 I CCodecBufferChannel:   int32_t android._config-pcm-encoding = 2
+11-16 21:26:11.421   942  2791 I CCodecBufferChannel: }
+11-16 21:26:11.421  1624  8867 E Codec2-ComponentInterface: We have a failed config
+11-16 21:26:11.422  6014  6014 D VRI[InputMethod]: vri.reportNextDraw android.view.ViewRootImpl.performTraversals:4962 android.view.ViewRootImpl.doTraversal:3561 android.view.ViewRootImpl$TraversalRunnable.run:11731 android.view.Choreographer$CallbackRecord.run:1784 android.view.Choreographer$CallbackRecord.run:1793 
+11-16 21:26:11.422   942  2791 D CCodecBuffers: [c2.android.vorbis.decoder#527:1D-Output.Impl[N]] converted 0 buffers to array mode of 4
+11-16 21:26:11.422  6014  6014 D VRI[InputMethod]: Setup new sync=wmsSync-VRI[InputMethod]#15
+11-16 21:26:11.423  1927  4339 D MiuiRefreshRatePolicy: reset
+11-16 21:26:11.424  1135  7529 D C2MtkComponentStore: setDmaBufUsage: usage 5, flags 0, heapName mtk_mm for decoder.
+11-16 21:26:11.424  2643  2746 D MiuiFreeformModeController: avoidForInsetsBottomChangedIfNeed newMovableBottom: 1519
+11-16 21:26:11.428  1624  2792 D SimpleC2Component: Using output block pool with poolID 1576 => got 1576 - 0
+11-16 21:26:11.429  1927  1959 I ActivityTaskManager: visible for Task{394a73e #2 type=home I=com.miui.home/.launcher.Launcher} visible = true isAnimating = false TRANSITION = false PARENTS = false CHILDREN = false
+11-16 21:26:11.431  2643  2643 D Utilities:  oldHints : 3 backDisposition : 0 imeShown : true hints 3
+11-16 21:26:11.431  2648  2648 D TouchInteractionService: onSystemUiFlagsChanged, mSystemUiStateFlags=10060030
+11-16 21:26:11.431  2643  2746 D OneHandedController: stopOneHanded state is 0
+11-16 21:26:11.433   942  2791 D MediaCodec: [0x6e082aa490] setState: 6
+11-16 21:26:11.433   942  2791 I MediaCodec: [mId: 1] [audio-debug-dec] setState: STARTED
+11-16 21:26:11.433   942  2791 D CCodecBufferChannel: The csd Sample queue
+11-16 21:26:11.434  1927  2476 D MiuiRefreshRatePolicy: reset
+11-16 21:26:11.435  1518  1723 D Utils   : convertMessageToMetaData, Mime = audio/vorbis
+11-16 21:26:11.437  1624  1772 W mediaswcodec: AIBinder_linkToDeath is being called with a non-null cookie and no onUnlink callback set. This might not be intended. AIBinder_DeathRecipient_setOnUnlinked should be called first.
+11-16 21:26:11.438   942  2791 W com.termux: AIBinder_linkToDeath is being called with a non-null cookie and no onUnlink callback set. This might not be intended. AIBinder_DeathRecipient_setOnUnlinked should be called first.
+11-16 21:26:11.438  1518  2484 D Utils   : convertMessageToMetaData, Mime = audio/vorbis
+11-16 21:26:11.439   942  2791 D CCodecBufferChannel: The csd Sample queue
+11-16 21:26:11.440  1927  4339 D MiuiRefreshRatePolicy: reset
+11-16 21:26:11.443  1211  1211 I BufferQueueProducer: [NavigationBar0#106](this:0xb40000784a6c6c50,id:-1,api:0,p:-1,c:1211) queueBuffer: fps=23.22 dur=1550.46 max=950.51 min=16.28
+11-16 21:26:11.443  1927  1959 I ActivityTaskManager: visible for Task{394a73e #2 type=home I=com.miui.home/.launcher.Launcher} visible = true isAnimating = false TRANSITION = false PARENTS = false CHILDREN = false
+11-16 21:26:11.443  2643  2643 D Utilities:  oldHints : 3 backDisposition : 0 imeShown : true hints 3
+11-16 21:26:11.444  2643  2746 D OneHandedController: stopOneHanded state is 0
+11-16 21:26:11.445   942  2791 D CCodecBuffers: [c2.android.vorbis.decoder#527:1D-Input.Impl[N]] converted 4 buffers to array mode of 4
+11-16 21:26:11.446  1927  2778 D MiuiRefreshRatePolicy: reset
+11-16 21:26:11.447   942  2788 I MediaCodec: [mId: 1] [audio-debug-dec] queueInputBuffer: index: 2 pts: 0 timediff: 0
+11-16 21:26:11.450   942  2788 I MediaCodec: [mId: 1] [audio-debug-dec] queueInputBuffer: index: 3 pts: 0 timediff: 3
+11-16 21:26:11.450  1135  7529 D C2MtkComponentStore: setDmaBufUsage: usage 5, flags 0, heapName mtk_mm for decoder.
+11-16 21:26:11.451  2643  2643 D Utilities:  oldHints : 3 backDisposition : 0 imeShown : true hints 3
+11-16 21:26:11.451  2643  2746 D OneHandedController: stopOneHanded state is 0
+11-16 21:26:11.452   942  2788 I MediaCodec: [mId: 1] [audio-debug-dec] queueInputBuffer: index: 0 pts: 2902 timediff: 1
+11-16 21:26:11.453  1624  2792 W mediaswcodec: AIBinder_linkToDeath is being called with a non-null cookie and no onUnlink callback set. This might not be intended. AIBinder_DeathRecipient_setOnUnlinked should be called first.
+11-16 21:26:11.456   942  2791 I MediaCodec: isHDR: standard =0,transfer = 0
+11-16 21:26:11.459  1927  1959 I ActivityTaskManager: visible for Task{394a73e #2 type=home I=com.miui.home/.launcher.Launcher} visible = true isAnimating = false TRANSITION = false PARENTS = false CHILDREN = false
+11-16 21:26:11.472   942  2791 D CCodecBufferChannel: [c2.android.vorbis.decoder#527] input EOS
+11-16 21:26:11.473   942  2788 I MediaCodec: [mId: 1] [audio-debug-dec] stop
+11-16 21:26:11.473   942  2788 D MediaCodec: [0x6e082aa490] [c2.android.vorbis.decoder] stop
+11-16 21:26:11.474   942  2791 I MediaCodec: [mId: 1] [audio-debug-dec] Stats over last 58ms:
+11-16 21:26:11.474   942  2791 I MediaCodec: [mId: 1] [audio-debug-dec] ClientName: com.termux ComponentName: c2.android.vorbis.decoder
+11-16 21:26:11.474   942  2791 I MediaCodec: [mId: 1] [audio-debug-dec] Qinput: 11, DQinput: 11 success out of 11 tries
+11-16 21:26:11.474   942  2791 I MediaCodec: [mId: 1] [audio-debug-dec] Render: 0, Drop: 10, DQoutput: 10 success out of 15 tries
+11-16 21:26:11.474   942  2791 D MediaCodec: [0x6e082aa490] setState: 9
+11-16 21:26:11.474   942  2791 I MediaCodec: [mId: 1] [audio-debug-dec] setState: STOPPING
+11-16 21:26:11.474   942  2791 D CCodecBufferChannel: [c2.android.vorbis.decoder#527] MediaCodec discarded an unknown buffer
+11-16 21:26:11.474   942  2791 D CCodecBufferChannel: [c2.android.vorbis.decoder#527] MediaCodec discarded an unknown buffer
+11-16 21:26:11.474   942  2791 D MediaCodec: [0x6e082aa490] [c2.android.vorbis.decoder] kWhatStopCompleted
+11-16 21:26:11.475   942  2791 D MediaCodec: [0x6e082aa490] setState: 2
+11-16 21:26:11.475   942  2791 I MediaCodec: [mId: 1] [audio-debug-dec] setState: INITIALIZED
+11-16 21:26:11.476   942  2788 D MediaCodec: [0x6e082aa490] [c2.android.vorbis.decoder] release
+11-16 21:26:11.476   942  2791 D MediaCodec: [0x6e082aa490] setState: 10
+11-16 21:26:11.476   942  2791 I MediaCodec: [mId: 1] [audio-debug-dec] setState: RELEASING
+11-16 21:26:11.479  1624  1772 I BpBinder: onLastStrongRef automatically unlinking death recipients: android.hardware.media.bufferpool2.IClientManager
+11-16 21:26:11.479   942  2791 D MediaCodec: [0x6e082aa490] [c2.android.vorbis.decoder] kWhatReleaseCompleted
+11-16 21:26:11.479   942  2791 D MediaCodec: [0x6e082aa490] setState: 0
+11-16 21:26:11.480   942  2791 I MediaCodec: [mId: 1] [audio-debug-dec] setState: UNINITIALIZED
+11-16 21:26:11.480  1624  1772 D AidlBufferPool: Destruction - bufferpool2 0xb400007155c31f48 cached: 0/0M, 0/0% in use; allocs: 0, 0% recycled; transfers: 0, 0% unfetched
+11-16 21:26:11.482  1593  9366 D ResourceTracker: removeResource(pid 942, clientId 480366484256)
+11-16 21:26:11.483   942  2791 I MediaCodec: MediaStub sendHdrInfo/sendFrameRateFloatCal/updateFrcAieAisState
+11-16 21:26:11.484   942  2791 D MediaImpl: FRC not support: valueSupport : 
+11-16 21:26:11.484   942  2791 D MediaImpl: AIE not support: valueSupport : 
+11-16 21:26:11.484   942  2791 D MediaImpl: AIS not support: valueSupport : 
+11-16 21:26:11.498  6014  6404 D BLASTBufferQueue: [VRI[InputMethod]#657](f:0,a:1) acquireNextBufferLocked size=720x1532 mFrameNumber=1 applyTransaction=true mTimestamp=88850477967757(auto) mPendingTransactions.size=0 graphicBufferId=25829933321445 transform=0
+11-16 21:26:11.499  6014  6014 D VRI[InputMethod]: vri.reportDrawFinished
+11-16 21:26:11.500  1927  2778 I WindowManager: finishDrawing of orientation change: Window{421e472 u0 InputMethod} 94ms
+11-16 21:26:11.500  1927  2778 D WindowManager: wms.finishDrawingLocked: mDrawState=COMMIT_DRAW_PENDING Window{421e472 u0 InputMethod} in Surface(name=InputMethod#40736)/@0x43a1586
+11-16 21:26:11.500  6014  6014 V InputMethod: IMS.showSoftInput()
+11-16 21:26:11.500  1927  2778 I InputMethodManagerService: IMMS.applyImeVisibility(), setVisible = true, mCurclient = ClientState{793a29c mUid=10754 mPid=942 mSelfReportedDisplayId=0}
+11-16 21:26:11.501  1927  1959 D MiuiRefreshRatePolicy: reset
+11-16 21:26:11.502  1927  2778 I WindowManager: WMS.showImePostLayout(), imeTarget = Window{bd57062 u0 com.termux/com.termux.app.TermuxActivity}
+11-16 21:26:11.502   942   942 D InsetsController: show(ime(), fromIme=true)
+11-16 21:26:11.503  1927  1959 D MiuiRefreshRatePolicy: reset
+11-16 21:26:11.505  2643  2643 D Utilities:  oldHints : 3 backDisposition : 0 imeShown : true hints 3
+11-16 21:26:11.505  2643  2746 D OneHandedController: stopOneHanded state is 0
+11-16 21:26:11.506   942   942 D InsetsController: show(ime(), fromIme=true)
+11-16 21:26:11.506   942   942 I ImeTracker: com.termux:c2f6615: onCancelled at PHASE_CLIENT_APPLY_ANIMATION
+11-16 21:26:11.507  1211  2003 I BufferQueueDebug: [Surface(name=176fb13 NavigationBar0#99)/@0xb80c705 - animation-leash of insets_animation#40737](this:0xb40000784a705470,id:-1,api:0,p:-1,c:-1) BufferQueue core=(1211:/system/bin/surfaceflinger)
+11-16 21:26:11.507  2643  2746 D MiuiFreeformModeController: avoidForInsetsBottomChangedIfNeed newMovableBottom: 1519
+11-16 21:26:11.509  1927  1959 I WindowManager: input method visible height changed 567
+11-16 21:26:11.510  1927  1959 D MiuiRefreshRatePolicy: reset
+11-16 21:26:11.513  2643  2746 D MiuiFreeformModeController: onImeVisibilityChanged imeVisible: true imeHeight: 567 adjustedForRotation:false
+11-16 21:26:11.516  2643  2746 D MiuiFreeformModeAvoidAlgorithm: begin autoOrderingAvoidMiniTask caller=com.android.wm.shell.multitasking.miuifreeform.MiuiFreeformModeController.onImeVisibilityChanged:450 com.android.wm.shell.multitasking.miuifreeform.MiuiFreeformModeController.-$$Nest$monImeVisibilityChanged:1 com.android.wm.shell.multitasking.miuifreeform.MiuiFreeformModeController$MiuiFreeformModeControlImpl.lambda$onImeVisibilityChanged$3:3 com.android.wm.shell.multitasking.miuifreeform.MiuiFreeformModeController$MiuiFreeformModeControlImpl.$r8$lambda$I8pLo3AF2ou1cqheYS2gEEPZPso:1 com.android.wm.shell.multitasking.miuifreeform.MiuiFreeformModeController$MiuiFreeformModeControlImpl$$ExternalSyntheticLambda0.run:9 android.os.Handler.handleCallback:959 
+11-16 21:26:11.516  2643  2746 D MiuiFreeformModeAvoidAlgorithm: getCurrMiniPos: SameSideMiniPosList: []
+11-16 21:26:11.516  2643  2746 D MiuiFreeformModeAvoidAlgorithm: getCurrMiniPos: SameSideMiniPosList: []
+11-16 21:26:11.516  2643  2746 D MiuiFreeformModeAvoidAlgorithm: end autoOrderingAvoidMiniTask res:AvoidResult{distance=0, combination={}, activeTaskPos=Rect(0, 0 - 0, 0)}
+11-16 21:26:11.517  2643  2746 D WindowManagerShell: onKeepClearAreasChanged: restricted={}, unrestricted={Rect(0, 952 - 720, 1600)}
+11-16 21:26:11.517  1927  1959 D MiuiRefreshRatePolicy: reset
+11-16 21:26:11.519  1927  1959 I ActivityTaskManager: visible for Task{394a73e #2 type=home I=com.miui.home/.launcher.Launcher} visible = true isAnimating = false TRANSITION = false PARENTS = false CHILDREN = false
+11-16 21:26:11.519  1927  1959 I WindowManager: wms.showSurfaceRobustly mWin:Window{421e472 u0 InputMethod}
+11-16 21:26:11.523  1927  2778 D WindowManager: Starting window removed Window{211d976 u0 SnapshotStartingWindow for taskId=11922}
+11-16 21:26:11.523   355   355 E SELinux : avc:  denied  { find } for interface=vendor.xiaomi.hw.touchfeature::ITouchFeature sid=u:r:system_server:s0 pid=1927 scontext=u:r:system_server:s0 tcontext=u:object_r:default_android_hwservice:s0 tclass=hwservice_manager permissive=0
+11-16 21:26:11.524  1927  2098 E ITouchFeature: java.util.NoSuchElementException
+11-16 21:26:11.524   355   355 E SELinux : avc:  denied  { find } for interface=vendor.xiaomi.hardware.touchfeature::ITouchFeature sid=u:r:system_server:s0 pid=1927 scontext=u:r:system_server:s0 tcontext=u:object_r:default_android_hwservice:s0 tclass=hwservice_manager permissive=0
+11-16 21:26:11.525  1927  2098 E ITouchFeature: java.util.NoSuchElementException
+11-16 21:26:11.525  1927  2098 E ITouchFeature: current device and process not support, v1/v2 HIDL service and v1 AIDL service not found
+11-16 21:26:11.527  1211  2003 I BufferQueueDebug: [Surface(name=211d976 SnapshotStartingWindow for taskId=11922#40724)/@0x91fbb77 - animation-leash of window_animation#40738](this:0xb40000784a72ef30,id:-1,api:0,p:-1,c:-1) BufferQueue core=(1211:/system/bin/surfaceflinger)
+11-16 21:26:11.531  1927  2778 D MiuiRefreshRatePolicy: reset
+11-16 21:26:11.535  1927  2476 D MiuiRefreshRatePolicy: reset
+11-16 21:26:11.538  1927  1959 I ActivityTaskManager: visible for Task{394a73e #2 type=home I=com.miui.home/.launcher.Launcher} visible = true isAnimating = false TRANSITION = false PARENTS = false CHILDREN = false
+11-16 21:26:11.540  1927  2476 D MiuiRefreshRatePolicy: reset
+11-16 21:26:11.544  1927  1959 I ActivityTaskManager: visible for Task{394a73e #2 type=home I=com.miui.home/.launcher.Launcher} visible = true isAnimating = false TRANSITION = false PARENTS = false CHILDREN = false
+11-16 21:26:11.601   942   942 D InsetsController: cancelAnimation of types: 8, animType: 0, host: com.termux/com.termux.app.TermuxActivity invokeCallback=false reason=android.view.InsetsController.notifyFinished:1792 android.view.InsetsAnimationThreadControlRunner$1.lambda$notifyFinished$0:84 android.view.InsetsAnimationThreadControlRunner$1.$r8$lambda$cDFF0h4Ncq-8EXdGszv69jrUu7c:0 android.view.InsetsAnimationThreadControlRunner$1$$ExternalSyntheticLambda1.run:0 android.os.Handler.handleCallback:959 android.os.Handler.dispatchMessage:100 android.os.Looper.loopOnce:249 android.os.Looper.loop:337 android.app.ActivityThread.main:9493 java.lang.reflect.Method.invoke:-2 
+11-16 21:26:11.602   942   942 I ImeTracker: com.termux:be70152a: onShown
+11-16 21:26:11.603  1211  2003 I SurfaceFlinger: onHandleDestroyed: name=Surface(name=176fb13 NavigationBar0#99)/@0xb80c705 - animation-leash of insets_animation#40729, layerId=40729, parentId=0
+11-16 21:26:11.604  1927  2778 D MiuiRefreshRatePolicy: reset
+11-16 21:26:11.607  1927  2778 D MiuiRefreshRatePolicy: reset
+11-16 21:26:11.609  1927  1959 I ActivityTaskManager: visible for Task{394a73e #2 type=home I=com.miui.home/.launcher.Launcher} visible = true isAnimating = false TRANSITION = false PARENTS = false CHILDREN = false
+11-16 21:26:11.610  1211  1211 I BufferQueueDebug: [Surface(name=176fb13 NavigationBar0#99)/@0xb80c705 - animation-leash of insets_animation#40729](this:0xb40000784a7c0cd0,id:-1,api:0,p:-1,c:1211) onDestructor()
+11-16 21:26:11.627  6014  6014 D VRI[InputMethod]: vri.reportNextDraw android.view.ViewRootImpl.handleResized:2771 android.view.ViewRootImpl.-$$Nest$mhandleResized:0 android.view.ViewRootImpl$W.resized:12882 android.app.servertransaction.WindowStateResizeItem.execute:64 android.app.servertransaction.WindowStateTransactionItem.execute:59 
+11-16 21:26:11.642  6014  6014 D VRI[InputMethod]: Setup new sync=wmsSync-VRI[InputMethod]#17
+11-16 21:26:11.643  6014  6014 D VRI[InputMethod]: vri.reportDrawFinished
+11-16 21:26:11.645 22005 22028 I Finsky  : [1054] Stats for Executor: GrpcBackgroundExecutor ykp@32fcdeb[Running, pool size = 4, active threads = 0, queued tasks = 0, completed tasks = 15]
+11-16 21:26:11.645  1927  1959 D MiuiRefreshRatePolicy: reset
+11-16 21:26:11.659  1927  1959 I ActivityTaskManager: visible for Task{394a73e #2 type=home I=com.miui.home/.launcher.Launcher} visible = true isAnimating = false TRANSITION = false PARENTS = false CHILDREN = false
+11-16 21:26:11.693  1927  1959 I WindowManager: StartingWindow exit animation finished, win = Window{211d976 u0 SnapshotStartingWindow for taskId=11922 EXITING} remove = true
+11-16 21:26:11.695  1927  1959 D WindowManager: setParent old=ActivityRecord{a27a7b1 u0 com.termux/.app.TermuxActivity t11922},new=null,this window=Window{211d976 u0 SnapshotStartingWindow for taskId=11922},callers=com.android.server.wm.WindowContainer.removeChild:897 com.android.server.wm.ActivityRecord.removeChild:5542 com.android.server.wm.ActivityRecord.removeChild:510 com.android.server.wm.WindowContainer.removeImmediately:967 com.android.server.wm.WindowState.removeImmediately:2540 com.android.server.wm.WindowState.destroySurface:3648 
+11-16 21:26:11.696  1927  1959 D WindowManager: postWindowRemoveCleanupLocked: Removing startingWindow Window{211d976 u0 SnapshotStartingWindow for taskId=11922} from ActivityRecord{a27a7b1 u0 com.termux/.app.TermuxActivity t11922} activity = ActivityRecord{a27a7b1 u0 com.termux/.app.TermuxActivity t11922}
+11-16 21:26:11.697  1927  1959 D MiuiRefreshRatePolicy: reset
+11-16 21:26:11.705  1155  1219 I mtkpower@impl: [powerd_req] TIMER_MSG_PERF_LOCK_TIMEOUT hdl:119973
+11-16 21:26:11.706  1155  1219 I libPowerHal: [perfLockRel] hdl:119973, idx:1
+11-16 21:26:11.706  1155  1219 I libPowerHal: [PD] MTKPOWER_HINT_PACK_SWITCH update cmd:1408300 param:0, pr:6
+11-16 21:26:11.707  1155  1219 I libPowerHal: hard user limit set cpu freq: -1 -1 3000000 -1
+11-16 21:26:11.707  1155  1219 I libPowerHal: [PD] MTKPOWER_HINT_PACK_SWITCH update cmd:408000 param:-1 pr:6
+11-16 21:26:11.707  1155  1219 I libPowerHal: hard user limit set cpu freq: -1 -1 -1 -1
+11-16 21:26:11.707  1155  1219 I libPowerHal: [PD] MTKPOWER_HINT_PACK_SWITCH update cmd:408100 param:-1 pr:6
+11-16 21:26:11.707  1155  1219 I libPowerHal: [recordCPUFreqInfo] set cluster[0] min(system_server): 1800000 max(-1): -1 cluster[1] min(system_server): 2000000 max(-1): -1
+11-16 21:26:11.708  1155  1219 I libPowerHal: [perfLockRel] Done for hdl : 119973
+11-16 21:26:11.709  1927  1959 I ActivityTaskManager: visible for Task{394a73e #2 type=home I=com.miui.home/.launcher.Launcher} visible = true isAnimating = false TRANSITION = false PARENTS = false CHILDREN = false
+11-16 21:26:11.712  1927  1959 D MiuiRefreshRatePolicy: reset
+11-16 21:26:11.726  1927  1959 I ActivityTaskManager: visible for Task{394a73e #2 type=home I=com.miui.home/.launcher.Launcher} visible = true isAnimating = false TRANSITION = false PARENTS = false CHILDREN = false
+11-16 21:26:11.726  1211  1211 I SurfaceFlinger: onHandleDestroyed: name=Surface(name=211d976 SnapshotStartingWindow for taskId=11922#40724)/@0x91fbb77 - animation-leash of window_animation#40738, layerId=40738, parentId=0
+11-16 21:26:11.743  1211  1211 I BufferQueueDebug: [Surface(name=211d976 SnapshotStartingWindow for taskId=11922#40724)/@0x91fbb77 - animation-leash of window_animation#40738](this:0xb40000784a72ef30,id:-1,api:0,p:-1,c:1211) onDestructor()
+11-16 21:26:11.809  2648  2912 I RectFSpringAnim: TransitionTest MultiSpringDynamicAnimation on end. this=com.miui.home.recents.util.RectFSpringAnim@6621be9
+11-16 21:26:11.809  2648  2912 I RectFSpringAnim: changeAnimStart start=false
+11-16 21:26:11.809  2648  2912 I WindowElement: c504e02 reset mDisableStateManagerListener false.
+11-16 21:26:11.809  2648  2912 I WindowElement: c504e02 com.miui.home.recents.anim.WindowElement@c504e02 TransitionTest onAnimationEnd AnimType = OPEN_FROM_RECENTS allowShellListener = true, isDuringMerge=false, mUserAnimListener=com.miui.home.recents.anim.WindowAnimParamsProvider$getRecentLaunchAnimParams$listener$1@17aca58
+11-16 21:26:11.812  2648  2648 D WindowElement: c504e02 com.miui.home.recents.anim.WindowElement@c504e02 mOnShellAnimListener end OPEN_FROM_RECENTS com.miui.home.recents.anim.WindowElement@c504e02 needFinish = true
+11-16 21:26:11.812  2648  2648 D WindowElement: c504e02 com.miui.home.recents.anim.WindowElement@c504e02 finishTransition toHome = false isHalf = com.miui.home.recents.anim.windowanim.WindowAnimContextImpl@fd4950.isHalf runningTaskId = 0
+11-16 21:26:11.812  2648  2648 E WindowTransitionCompat: com.android.systemui.shared.recents.system.WindowTransitionCompat@b7d106e finishTransition toHome = false
+11-16 21:26:11.812  2648  2648 D TransitionCallback: call executeFinishCallback, toHome = false
+11-16 21:26:11.812  2648  2648 D TransitionCallback: java.lang.Exception
+11-16 21:26:11.812  2648  2648 D TransitionCallback: 	at com.android.systemui.shared.recents.utilities.WindowTransitionCallbackHelper.executeFinishCallback(WindowTransitionCallbackHelper.java:207)
+11-16 21:26:11.812  2648  2648 D TransitionCallback: 	at com.android.systemui.shared.recents.utilities.WindowTransitionCallbackHelper.executeFinishCallback(WindowTransitionCallbackHelper.java:147)
+11-16 21:26:11.812  2648  2648 D TransitionCallback: 	at com.android.systemui.shared.recents.system.WindowTransitionCompat.finishTransition(WindowTransitionCompat.java:752)
+11-16 21:26:11.812  2648  2648 D TransitionCallback: 	at com.miui.home.recents.anim.WindowElement.finishTransitionCompat(WindowElement.kt:363)
+11-16 21:26:11.812  2648  2648 D TransitionCallback: 	at com.miui.home.recents.anim.WindowElement.finishTransition(WindowElement.kt:341)
+11-16 21:26:11.812  2648  2648 D TransitionCallback: 	at com.miui.home.recents.anim.WindowElement.finishTransition$default(WindowElement.kt:332)
+11-16 21:26:11.812  2648  2648 D TransitionCallback: 	at com.miui.home.recents.anim.WindowElement.finishTransitionSyncIfNeed(WindowElement.kt:356)
+11-16 21:26:11.812  2648  2648 D TransitionCallback: 	at com.miui.home.recents.anim.WindowElement.finishTransitionSyncIfNeed$default(WindowElement.kt:345)
+11-16 21:26:11.812  2648  2648 D TransitionCallback: 	at com.miui.home.recents.anim.WindowElement.onShellAnimationEnd(WindowElement.kt:327)
+11-16 21:26:11.812  2648  2648 D TransitionCallback: 	at com.miui.home.recents.anim.WindowElement.onWindowAnimEnd$lambda-21(WindowElement.kt:1314)
+11-16 21:26:11.812  2648  2648 D TransitionCallback: 	at com.miui.home.recents.anim.WindowElement.$r8$lambda$3NOLJUbUJ3QcyrZy4aYmyndp4ZY(WindowElement.kt:0)
+11-16 21:26:11.812  2648  2648 D TransitionCallback: 	at com.miui.home.recents.anim.WindowElement$$ExternalSyntheticLambda6.run(R8$$SyntheticClass:4)
+11-16 21:26:11.812  2648  2648 D TransitionCallback: 	at android.os.Handler.handleCallback(Handler.java:959)
+11-16 21:26:11.812  2648  2648 D TransitionCallback: 	at android.os.Handler.dispatchMessage(Handler.java:100)
+11-16 21:26:11.812  2648  2648 D TransitionCallback: 	at android.os.Looper.loopOnce(Looper.java:249)
+11-16 21:26:11.812  2648  2648 D TransitionCallback: 	at android.os.Looper.loop(Looper.java:337)
+11-16 21:26:11.812  2648  2648 D TransitionCallback: 	at android.app.ActivityThread.main(ActivityThread.java:9493)
+11-16 21:26:11.812  2648  2648 D TransitionCallback: 	at java.lang.reflect.Method.invoke(Native Method)
+11-16 21:26:11.812  2648  2648 D TransitionCallback: 	at com.android.internal.os.RuntimeInit$MethodAndArgsCaller.run(RuntimeInit.java:636)
+11-16 21:26:11.812  2648  2648 D TransitionCallback: 	at com.android.internal.os.ZygoteInit.main(ZygoteInit.java:1005)
+11-16 21:26:11.812  2648  2648 I TransitionCallback: addCallbackListenerSync callBack:com.android.systemui.shared.recents.system.WindowTransitionCompat$1@7a5ff9c
+11-16 21:26:11.812  2648  2648 I TransitionCallback: mNeedShowLauncher = false
+11-16 21:26:11.812  2648  2648 I TransitionCallback: addCallbackListenerSync callBack:null
+11-16 21:26:11.812  2648  2648 I TransitionCallback: com.android.systemui.shared.recents.utilities.WindowTransitionCallbackHelper@d99e16b call finishMainCallback, wct = null, sct = android.view.SurfaceControl$Transaction@4378da5, callback = android.window.IRemoteTransitionFinishedCallback$Stub$Proxy@f5c4c8, mCounterRotatorList.size = 0, mInfoExposeList.size = 1
+11-16 21:26:11.813  2648  2648 I TransitionCallback: call onTransitionFinished end
+11-16 21:26:11.814  2648  2648 I TransitionCallback: onTransitionFinished finally call notifyFinishTransitionEnd
+11-16 21:26:11.813  2643  2746 I RemoteTransitionHandlerStubImpl: putCallback return, transition or wctCB is null.
+11-16 21:26:11.814  2648  2648 I TransitionCallback: execute finishMainCallbackSync return, no need post delay
+11-16 21:26:11.814  2648  2648 I ScenarioRecognitionUtil: setScenarioState, type: 265, isStart: false
+11-16 21:26:11.814  2643  2746 D SoScUtils: monitorTransitionFinished transition:android.os.BinderProxy@6343f25 transaction: android.view.SurfaceControl$Transaction@70b377 mRequestCloseTransition:null mRequestOpenTransition:null mRequestOpenTransitionWithSameTask size:0 mPairsOpenTransition:null mPairsOpenTransitionNull:null mRequestOpenTriggerTask:-1 mRequestCloseTriggerTask:-1 mOrientationTransition: null mMainStartingTask:-1 mSideStartingTask:-1
+11-16 21:26:11.815  2648  2648 D LauncherStateManager: exitOverviewStateIfNeed, mState=OverviewState, mLastStateExcludeOverride=NormalState, animated=false
+11-16 21:26:11.815  2648  2648 D LauncherStateManager: goToState, from=OverviewState, to=NormalState, anim=false
+11-16 21:26:11.815  2648  2648 D LauncherStateManager: not taskView click newHome,config reset
+11-16 21:26:11.815  2648  2648 E OverviewState: onExitState
+11-16 21:26:11.815  2648  2928 I TransitionCallback: checkCallbackSync, size = 1
+11-16 21:26:11.816  2648  2928 I WindowElement: c504e02 onFinishCompleted mDisableStateManagerListener = false
+11-16 21:26:11.816  2648  2928 D HomeLayerElement: releaseHomeLeash com.android.systemui.shared.recents.system.SurfaceControlCompat@5afed35
+11-16 21:26:11.816  2648  2928 D HomeLayerElement: java.lang.Exception
+11-16 21:26:11.816  2648  2928 D HomeLayerElement: 	at com.miui.home.recents.anim.HomeLayerElement.releaseHomeLeash(HomeLayerElement.kt:100)
+11-16 21:26:11.816  2648  2928 D HomeLayerElement: 	at com.miui.home.recents.anim.WindowElement.onFinishCompleted(WindowElement.kt:1209)
+11-16 21:26:11.816  2648  2928 D HomeLayerElement: 	at com.miui.home.recents.anim.WindowElement$init$1.onFinishCompleted(WindowElement.kt:1175)
+11-16 21:26:11.816  2648  2928 D HomeLayerElement: 	at com.android.systemui.shared.recents.system.WindowTransitionCompat$1.onFinish(WindowTransitionCompat.java:64)
+11-16 21:26:11.816  2648  2928 D HomeLayerElement: 	at com.android.systemui.shared.recents.utilities.WindowTransitionCallbackHelper.checkCallbackSync(WindowTransitionCallbackHelper.java:741)
+11-16 21:26:11.816  2648  2928 D HomeLayerElement: 	at com.android.systemui.shared.recents.utilities.WindowTransitionCallbackHelper.notifyFinishTransitionEnd(WindowTransitionCallbackHelper.java:666)
+11-16 21:26:11.816  2648  2928 D HomeLayerElement: 	at com.android.systemui.shared.recents.utilities.WindowTransitionCallbackHelper.$r8$lambda$J4jwt7ON9NMgFKUrmnb4-bNY7XQ(WindowTransitionCallbackHelper.java:0)
+11-16 21:26:11.816  2648  2928 D HomeLayerElement: 	at com.android.systemui.shared.recents.utilities.WindowTransitionCallbackHelper$$ExternalSyntheticLambda1.run(R8$$SyntheticClass:2)
+11-16 21:26:11.816  2648  2928 D HomeLayerElement: 	at android.os.Handler.handleCallback(Handler.java:959)
+11-16 21:26:11.816  2648  2928 D HomeLayerElement: 	at android.os.Handler.dispatchMessage(Handler.java:100)
+11-16 21:26:11.816  2648  2928 D HomeLayerElement: 	at android.os.Looper.loopOnce(Looper.java:249)
+11-16 21:26:11.816  2648  2928 D HomeLayerElement: 	at android.os.Looper.loop(Looper.java:337)
+11-16 21:26:11.816  2648  2928 D HomeLayerElement: 	at android.os.HandlerThread.run(HandlerThread.java:85)
+11-16 21:26:11.817  2648  2648 D LauncherStateManager: onStateTransitionStart, mState=[OverviewState -> NormalState], mLastStateExcludeOverride=NormalState
+11-16 21:26:11.817  2648  2648 D Launcher: notifyBackGestureStatus
+11-16 21:26:11.818  2648  2734 D RecentsContainer: notifyRecentTaskState: false
+11-16 21:26:11.818  2648  2993 D TaskStackChangeListeners: onTaskDescriptionChanged =  taskId = 2
+11-16 21:26:11.818  2648  2648 E RotationHelper: setCurrentStateRequest: request=0
+11-16 21:26:11.818  2648  2648 E RotationHelper: notifyChange activityFlags=1, mMultiWindowRotationRequest=3, mCurrentTransitionRequest=0, mCurrentStateRequest=0
+11-16 21:26:11.818  2648  2648 E NormalState: onStateEnabled
+11-16 21:26:11.818  2648  2648 D RecentsView: setCurrentTaskId runningTaskId :-1
+11-16 21:26:11.818  1211  1761 I SurfaceFlinger: onHandleDestroyed: name=SnapshotStartingWindow for taskId=11922#40725, layerId=40725, parentId=0
+11-16 21:26:11.819  2648  2648 E StateManager: setWorkspaceProperty  state=NormalState
+11-16 21:26:11.819  2648  2648 D StateManager: setHotseatsProperty: hotseats.Visiblity = 0 ,hotseats.Alpha = 1.0 ,hotseats.TranslationY = 0.0 ,hotseats.TranslationX = 0.0 ,isInNormalEditing = false
+11-16 21:26:11.819  2648  2648 E StateManager: setShortcutMenuLayerProperty  state=NormalState   alpha=1.0   duration=0   scale=1.0   isInState=false
+11-16 21:26:11.819  2648  2648 D AnimStateManager: send event 2014 currentState = AppState windowElement = com.miui.home.recents.anim.WindowElement@c504e02
+11-16 21:26:11.819  2648  2648 I AnimStateManager: AppState handle event 2014
+11-16 21:26:11.819  2648  2648 I AnimStateManager: CommonState handle event 2014
+11-16 21:26:11.819  2648  2993 D TaskStackChangeListeners: onTaskDescriptionChanged =  taskId = 1
+11-16 21:26:11.819  2648  2648 D ShortcutMenuLayerElement: animTo, params=ShortcutMenuLayerParams(alpha=1.0, scaleX=1.0, scaleY=1.0, dampingRation=1.0, response=0.25, isSurfaceChange=false)
+11-16 21:26:11.819  2648  2648 D ShortcutMenuLayerElement: java.lang.Exception
+11-16 21:26:11.819  2648  2648 D ShortcutMenuLayerElement: 	at com.miui.home.recents.anim.ShortcutMenuLayerElement.animTo(ShortcutMenuLayerElement.kt:247)
+11-16 21:26:11.819  2648  2648 D ShortcutMenuLayerElement: 	at com.miui.home.recents.anim.StateManager$CommonState.handleEvent(StateManager.kt:1246)
+11-16 21:26:11.819  2648  2648 D ShortcutMenuLayerElement: 	at com.miui.home.recents.anim.StateManager.handleEventActually(StateManager.kt:112)
+11-16 21:26:11.819  2648  2648 D ShortcutMenuLayerElement: 	at com.miui.home.recents.anim.StateManager.sendEventActually(StateManager.kt:96)
+11-16 21:26:11.819  2648  2648 D ShortcutMenuLayerElement: 	at com.miui.home.recents.anim.StateManager.sendEvent(StateManager.kt:122)
+11-16 21:26:11.819  2648  2648 D ShortcutMenuLayerElement: 	at com.miui.home.launcher.WorkspaceStateTransitionAnimation.setShortcutMenuLayerProperty(WorkspaceStateTransitionAnimation.java:173)
+11-16 21:26:11.819  2648  2648 D ShortcutMenuLayerElement: 	at com.miui.home.launcher.WorkspaceStateTransitionAnimation.setWorkspaceProperty(WorkspaceStateTransitionAnimation.java:100)
+11-16 21:26:11.819  2648  2648 D ShortcutMenuLayerElement: 	at com.miui.home.launcher.WorkspaceStateTransitionAnimation.setState(WorkspaceStateTransitionAnimation.java:68)
+11-16 21:26:11.819  2648  2648 D ShortcutMenuLayerElement: 	at com.miui.home.launcher.Workspace.setState(Workspace.java:4361)
+11-16 21:26:11.819  2648  2648 D ShortcutMenuLayerElement: 	at com.miui.home.launcher.LauncherStateManager.goToState(LauncherStateManager.java:278)
+11-16 21:26:11.819  2648  2648 D ShortcutMenuLayerElement: 	at com.miui.home.launcher.LauncherStateManager.exitOverviewStateIfNeed(LauncherStateManager.java:143)
+11-16 21:26:11.819  2648  2648 D ShortcutMenuLayerElement: 	at com.miui.home.recents.anim.WindowAnimParamsProvider$getRecentLaunchAnimParams$listener$1.onAnimationEnd(WindowAnimParamsProvider.kt:597)
+11-16 21:26:11.819  2648  2648 D ShortcutMenuLayerElement: 	at com.miui.home.recents.anim.WindowElement.onWindowAnimEnd$lambda-21(WindowElement.kt:1315)
+11-16 21:26:11.819  2648  2648 D ShortcutMenuLayerElement: 	at com.miui.home.recents.anim.WindowElement.$r8$lambda$3NOLJUbUJ3QcyrZy4aYmyndp4ZY(WindowElement.kt:0)
+11-16 21:26:11.819  2648  2648 D ShortcutMenuLayerElement: 	at com.miui.home.recents.anim.WindowElement$$ExternalSyntheticLambda6.run(R8$$SyntheticClass:4)
+11-16 21:26:11.819  2648  2648 D ShortcutMenuLayerElement: 	at android.os.Handler.handleCallback(Handler.java:959)
+11-16 21:26:11.819  2648  2648 D ShortcutMenuLayerElement: 	at android.os.Handler.dispatchMessage(Handler.java:100)
+11-16 21:26:11.819  2648  2648 D ShortcutMenuLayerElement: 	at android.os.Looper.loopOnce(Looper.java:249)
+11-16 21:26:11.819  2648  2648 D ShortcutMenuLayerElement: 	at android.os.Looper.loop(Looper.java:337)
+11-16 21:26:11.819  2648  2648 D ShortcutMenuLayerElement: 	at android.app.ActivityThread.main(ActivityThread.java:9493)
+11-16 21:26:11.819  2648  2648 D ShortcutMenuLayerElement: 	at java.lang.reflect.Method.invoke(Native Method)
+11-16 21:26:11.819  2648  2648 D ShortcutMenuLayerElement: 	at com.android.internal.os.RuntimeInit$MethodAndArgsCaller.run(RuntimeInit.java:636)
+11-16 21:26:11.819  2648  2648 D ShortcutMenuLayerElement: 	at com.android.internal.os.ZygoteInit.main(ZygoteInit.java:1005)
+11-16 21:26:11.819  2648  2648 D ShortcutMenuLayerElement: animTo, start alpha = 0.0 scale = 0.85
+11-16 21:26:11.819  2648  2648 E RecentsViewStateController: setState: state=NormalState
+11-16 21:26:11.820  2648  2648 D OnGlobalListenerError: RecentsContainer setVisibility :8
+11-16 21:26:11.820  2648  2648 D OnGlobalListenerError: java.lang.Exception
+11-16 21:26:11.820  2648  2648 D OnGlobalListenerError: 	at com.miui.home.recents.views.RecentsContainer.setVisibility(RecentsContainer.java:313)
+11-16 21:26:11.820  2648  2648 D OnGlobalListenerError: 	at com.miui.home.recents.RecentsViewStateController.setState(RecentsViewStateController.java:59)
+11-16 21:26:11.820  2648  2648 D OnGlobalListenerError: 	at com.miui.home.launcher.LauncherStateManager.goToState(LauncherStateManager.java:278)
+11-16 21:26:11.820  2648  2648 D OnGlobalListenerError: 	at com.miui.home.launcher.LauncherStateManager.exitOverviewStateIfNeed(LauncherStateManager.java:143)
+11-16 21:26:11.820  2648  2648 D OnGlobalListenerError: 	at com.miui.home.recents.anim.WindowAnimParamsProvider$getRecentLaunchAnimParams$listener$1.onAnimationEnd(WindowAnimParamsProvider.kt:597)
+11-16 21:26:11.820  2648  2648 D OnGlobalListenerError: 	at com.miui.home.recents.anim.WindowElement.onWindowAnimEnd$lambda-21(WindowElement.kt:1315)
+11-16 21:26:11.820  2648  2648 D OnGlobalListenerError: 	at com.miui.home.recents.anim.WindowElement.$r8$lambda$3NOLJUbUJ3QcyrZy4aYmyndp4ZY(WindowElement.kt:0)
+11-16 21:26:11.820  2648  2648 D OnGlobalListenerError: 	at com.miui.home.recents.anim.WindowElement$$ExternalSyntheticLambda6.run(R8$$SyntheticClass:4)
+11-16 21:26:11.820  2648  2648 D OnGlobalListenerError: 	at android.os.Handler.handleCallback(Handler.java:959)
+11-16 21:26:11.820  2648  2648 D OnGlobalListenerError: 	at android.os.Handler.dispatchMessage(Handler.java:100)
+11-16 21:26:11.820  2648  2648 D OnGlobalListenerError: 	at android.os.Looper.loopOnce(Looper.java:249)
+11-16 21:26:11.820  2648  2648 D OnGlobalListenerError: 	at android.os.Looper.loop(Looper.java:337)
+11-16 21:26:11.820  2648  2648 D OnGlobalListenerError: 	at android.app.ActivityThread.main(ActivityThread.java:9493)
+11-16 21:26:11.820  2648  2648 D OnGlobalListenerError: 	at java.lang.reflect.Method.invoke(Native Method)
+11-16 21:26:11.820  2648  2648 D OnGlobalListenerError: 	at com.android.internal.os.RuntimeInit$MethodAndArgsCaller.run(RuntimeInit.java:636)
+11-16 21:26:11.820  2648  2648 D OnGlobalListenerError: 	at com.android.internal.os.ZygoteInit.main(ZygoteInit.java:1005)
+11-16 21:26:11.820  2648  2648 D OnGlobalListenerError: RecentsContainer before requestLayout isParentLayoutRequested = true
+11-16 21:26:11.820  2648  2648 D OnGlobalListenerError: RecentsContainer after requestLayout
+11-16 21:26:11.820  2648  2648 E RecentsViewStateController: set RecentsContainer GONE when setState without animation
+11-16 21:26:11.820  2648  2648 D AnimStateManager: send event 7013 currentState = AppState windowElement = com.miui.home.recents.anim.WindowElement@c504e02
+11-16 21:26:11.820  2648  2648 I AnimStateManager: AppState handle event 7013
+11-16 21:26:11.820  2648  2648 I AnimStateManager: CommonState handle event 7013
+11-16 21:26:11.820  1927  2778 I Transition: finishTransition: updateLastSurfacePosition tf=Task{9025817 #11922 type=standard A=10754:com.termux}
+11-16 21:26:11.820  2648  2648 D LauncherStateManager: onStateTransitionEnd, mLastStableState=NormalState, mCurrentStableState=NormalState
+11-16 21:26:11.820  2648  2648 E RotationHelper: setCurrentStateRequest: request=0
+11-16 21:26:11.821  2648  2648 D WallpaperElement: setTo   zoomOut=1.0 useWallpaperAnim = true
+11-16 21:26:11.821  2648  2648 D LauncherSoscController: Shell transition animation end, run: null
+11-16 21:26:11.821  1927  1948 D WindowManager: Finish Transition (#1743): created at 11-16 21:26:10.945 collect-started=0.069ms request-sent=21.391ms started=31.585ms ready=31.552ms sent=66.003ms finished=872.717ms
+11-16 21:26:11.821  2449  2449 I MiuiWallpaper-ImageWallpaper: onVisibilityChanged, visible = false
+11-16 21:26:11.821  1211  2003 W VsyncModulator: setTransactionSchedule: Unexpected EarlyEnd
+11-16 21:26:11.822  2643  2746 I RemoteTransitionHandlerStubImpl: invokeAndRemoveWctCB transition is null, curWctCB: null
+11-16 21:26:11.822  2449  2449 I MiuiWallpaper-MiuiKeyguardPictorialWallpaper: onVisibilityChanged, visible = false
+11-16 21:26:11.822  1927  1958 I PowerHalWrapper: amsBoostNotify pid:2648,activity:com.miui.home.launcher.Launcher, package:com.miui.home, mProcessCreatePackcom.MA.LAC 
+11-16 21:26:11.823  1927  1958 I PowerHalWrapper: state: 0 
+11-16 21:26:11.823  2648  2734 E Launcher: mFsGestureStatusRefreshRunnable:run usingFsGesture=false   show=true   focus=false   pause=true
+11-16 21:26:11.824  1927  1958 I mtkpower_client: [PowerHal_Wrap_notifyAppState] com.miui.home/com.miui.home.launcher.Launcher pid=2648 activityId:155098610 state:0
+11-16 21:26:11.824  1152  1152 I vendor.mediatek.hardware.mtkpower_applist-service.mediatek: packName: com.miui.home actName: com.miui.home.launcher.Launcher pid: 2648 activityId: 155098610 uid: 10166 state: 0
+11-16 21:26:11.825  1152  1152 I MTK_APPList: [notifyAPPstate] com.miui.home/com.miui.home.launcher.Launcher, pid=2648, activityId=155098610, uid=10166, state:PAUSED, fps:-1, win:0
+11-16 21:26:11.825  1152  1152 I MTK_APPList: [notifyAPPstate] multi_resumed_app_count: 1
+11-16 21:26:11.825  1152  1152 I MTK_APPList: [notifyAPPstate] multi_resumed_app_info[0] com.termux/com.termux.app.TermuxActivity, pid:942, activityId:170370993, fps:-1, isMultiWindow:0
+11-16 21:26:11.825  1152  1152 I MTK_APPList: [getForegroundAPPCount] 1
+11-16 21:26:11.825  1152  1152 I MTK_APPList: [notifyNetdUID] 10754
+11-16 21:26:11.825  2648  2648 D ZeroMaskAdapter: onBindHolder:com.zhiliaoapp.musically, showDot:false
+11-16 21:26:11.825  1927  1958 I PowerHalWrapper: amsBoostNotify AMS_BOOST_PROCESS_CREATE_BOOST:false 
+11-16 21:26:11.825  2648  2648 D ZeroMaskAdapter: onBindHolder:info.flowersoft.theotown.theotown, showDot:false
+11-16 21:26:11.826  2648  2648 D ZeroMaskAdapter: onBindHolder:com.MA.LAC, showDot:false
+11-16 21:26:11.826  1152  1152 I MTK_APPList: [notifyPID] 942
+11-16 21:26:11.826  2648  2648 D ZeroMaskAdapter: onBindHolder:com.google.android.apps.maps, showDot:false
+11-16 21:26:11.826  1211  1211 I BufferQueueDebug: [SnapshotStartingWindow for taskId=11922 - task-snapshot-surface#40726](this:0xb40000784a6df140,id:-1,api:0,p:-1,c:1211) onDestructor()
+11-16 21:26:11.826  1211  1211 I BufferQueueDebug: [SnapshotStartingWindow for taskId=11922#40725](this:0xb40000784a747420,id:-1,api:0,p:-1,c:1211) onDestructor()
+11-16 21:26:11.826  1211  1211 I SurfaceFlinger: onHandleDestroyed: name=211d976 SnapshotStartingWindow for taskId=11922#40724, layerId=40724, parentId=0
+11-16 21:26:11.827  1927  2476 W UserManagerService: Requested status bar icon for non-badged user 0
+11-16 21:26:11.827  1155  1219 I libPowerHal: [perfSetSysInfo] pid type:24, 942
+11-16 21:26:11.828  1927  1959 I ActivityTaskManager: visible for Task{9025817 #11922 type=standard A=10754:com.termux} visible = true isAnimating = false TRANSITION = false PARENTS = false CHILDREN = false
+11-16 21:26:11.828  1133  1133 D libcomposer_ext: DeviceImplAidl::DeviceClientContextAidl::NotifyHwcComposition()
+11-16 21:26:11.828  2648  2648 D ZeroMaskAdapter: onBindHolder:com.openai.chatgpt, showDot:false
+11-16 21:26:11.829  1133  1133 D libcomposer_ext: DeviceImplAidl::DeviceClientContextAidl::NotifyHwcComposition()
+11-16 21:26:11.829  1211  1761 D libcomposer_ext: ClientCallbackAidl::asyncPerform(12)
+11-16 21:26:11.829  1211  1761 D libcomposer_ext: ClientImplAidl::ParseNotifyHwcComposition()
+11-16 21:26:11.829  1211  1761 I SurfaceFlinger: NotifyHwcComposition(), id 0, mode 0
+11-16 21:26:11.829  1621  1747 D libcomposer_ext: ClientCallbackAidl::asyncPerform(12)
+11-16 21:26:11.829  1621  1747 D libcomposer_ext: ClientImplAidl::ParseNotifyHwcComposition()
+11-16 21:26:11.830  2648  2648 D ZeroMaskAdapter: onBindHolder:mark.via.gp, showDot:false
+11-16 21:26:11.830  1133  1133 I hwcomposer: [DBQ] (q2:0xb400007360c22ed0) Buffer queue is destroyed, m_id(11882)  
+11-16 21:26:11.830  1133  1133 I hwcomposer: [DBQ] (q2:0xb400007360c22ed0) ~DisplayBufferQueue(), m_id(11882), release buf  
+11-16 21:26:11.830  1133  1133 I hwcomposer: [DBQ] (q2:0xb400007360c22ed0) Free Slot(0), handle=0xb4000073c0c0acf0, 4608000 -> 0  
+11-16 21:26:11.831  2648  2648 D ZeroMaskAdapter: onBindHolder:com.g5j.uabeamobile, showDot:false
+11-16 21:26:11.831  1211  1211 I MI-SF   : surfaceflinger setAffinity mode=0
+11-16 21:26:11.832  1211  1211 E MI-SF   : surfaceflinger setAffinity success
+11-16 21:26:11.832  1927  1959 D MiuiRefreshRatePolicy: reset
+11-16 21:26:11.833  2648  2648 D ZeroMaskAdapter: onBindHolder:com.fancyforce.happywheels, showDot:false
+11-16 21:26:11.835  1927  2177 I MiuiNetworkPolicy: updateUidState uid = 10213, uidState = 5
+11-16 21:26:11.836  2643  2746 I MultiTaskingTaskRepository: needSkip: is home task
+11-16 21:26:11.836  2648  2993 D EventBus: No subscribers registered for event class com.miui.home.recents.messages.RecentTasksChangedEvent
+11-16 21:26:11.836  2648  2993 D EventBus: No subscribers registered for event class org.greenrobot.eventbus.NoSubscriberEvent
+11-16 21:26:11.837  2648  4126 W MiBridge: Permission not granted !!
+11-16 21:26:11.837  1927  2476 W UserManagerService: Requested status bar icon for non-badged user 0
+11-16 21:26:11.837  2648  4126 D Launcher.Boost: setDynamicVIPTaskIfNeeded::tid = 104 duration = 500
+11-16 21:26:11.837  1927  2177 I MiuiNetworkPolicy: updateUidState uid = 10193, uidState = 4
+11-16 21:26:11.837  1927  2177 I MiuiNetworkPolicy: updateUidState uid = 10175, uidState = 4
+11-16 21:26:11.838  1927  2923 I ATMSImpl: cacheTasksForDefaultDisplay size=7
+11-16 21:26:11.838  1927  2177 I MiuiNetworkPolicy: updateUidState uid = 10166, uidState = 5
+11-16 21:26:11.839  1927  5088 I ATMSImpl: cacheTasksForDefaultDisplay size=7
+11-16 21:26:11.839  2648  2648 I AnimStateManager: onAnimationEnd animSymbols(com.miui.home.recents.util.RectFSpringAnim@6621be9 com.miui.home.recents.util.RectFSpringAnim@6621be9)
+11-16 21:26:11.839  2648  2648 I AnimStateManager: go to state com.miui.home.recents.anim.StateManager$IdleState@7c109d9
+11-16 21:26:11.840  2648  2648 I ImeTracker: com.miui.home:1998353b: onRequestHide at ORIGIN_CLIENT reason HIDE_SOFT_INPUT fromUser false
+11-16 21:26:11.840  2648  2648 I ImeTracker: com.miui.home:1998353b: onFailed at PHASE_CLIENT_VIEW_SERVED
+11-16 21:26:11.841  2648  4126 D RecentsModel: getRunningTask ignoreActivityType : 2 ,ignoreWindowMode:5
+11-16 21:26:11.842  2648  4126 W RecentsModel: getRunningTask   taskInfo=TaskInfo{userId=0 taskId=11922 displayId=0 isRunning=true baseIntent=Intent { act=android.intent.action.MAIN cat=[android.intent.category.LAUNCHER] flg=0x10200000 cmp=com.termux/.app.TermuxActivity } baseActivity=ComponentInfo{com.termux/com.termux.app.TermuxActivity} topActivity=ComponentInfo{com.termux/com.termux.app.TermuxActivity} origActivity=null realActivity=ComponentInfo{com.termux/com.termux.app.TermuxActivity} numActivities=1 lastActiveTime=144529528 supportsSplitScreenMultiWindow=true supportsMultiWindow=true resizeMode=2 isResizeable=true minWidth=-1 minHeight=-1 defaultMinSize=200 token=WCT{android.window.IWindowContainerToken$Stub$Proxy@53056f5} topActivityType=1 pictureInPictureParams=null shouldDockBigOverlays=false launchIntoPipHostTaskId=-1 lastParentTaskIdBeforePip=-1 displayCutoutSafeInsets=Rect(0, 68 - 0, 0) topActivityInfo=ActivityInfo{691dc8a com.termux.app.TermuxActivity} launchCookies=[] positionInParent=Point(0, 0) parentTaskId=-1 isFocused=true isVisible=true isVisibleRequested=true isSleeping=false locusId=null displayAreaFeatureId=1 isTopActivityTransparent=false appCompatTaskInfo=AppCompatTaskInfo { topActivityInSizeCompat=false topActivityEligibleForLetterboxEducation= falseisLetterboxEducationEnabled= false isLetterboxDoubleTapEnabled= false topActivityEligibleForUserAspectRatioButton= false topActivityBoundsLetterboxed= false isFromLetterboxDoubleTap= false topActivityLetterboxVerticalPosition= -1 topActivityLetterboxHorizontalPosition= -1 topActivityLetterboxWidth=720 topActivityLetterboxHeight=1600 isUserFullscreenOverrideEnabled=false isSystemFullscreenOverrideEnabled=false cameraCompatTaskInfo=CameraCompatTaskInfo { cameraCompatControlState=hidden freeformCameraCompatMode=inactive}} isImmersive=false mTopActivityRequestOrientation=-1 mBehindAppLockPkg=null mOriginatingUid=0 isEmbedded=false shouldBeVisible=true mIsCastMode=false mTopActivityMediaSize=null mTopActivityRecordName=ActivityRecord{a27a7b1 u0 com.termux/.app.TermuxActivity t11922} mTopActivityOrientation=-1}
+11-16 21:26:11.842  1927  1959 I ActivityTaskManager: visible for Task{9025817 #11922 type=standard A=10754:com.termux} visible = true isAnimating = false TRANSITION = false PARENTS = false CHILDREN = false
+11-16 21:26:11.842  2648  2648 D VRI[Launcher]: visibilityChanged oldVisibility=true newVisibility=false
+11-16 21:26:11.842  2648  2648 D OnLongClickAgent: reset:   removeMessages MSG_LONG_CLICK
+11-16 21:26:11.842  2648  2648 D OnLongClickAgent: reset:   removeMessages MSG_LONG_CLICK
+11-16 21:26:11.842  2648  2648 D OnLongClickAgent: reset:   removeMessages MSG_LONG_CLICK
+11-16 21:26:11.843  2648  2648 D OnLongClickAgent: reset:   removeMessages MSG_LONG_CLICK
+11-16 21:26:11.843  2648  2648 D OnLongClickAgent: reset:   removeMessages MSG_LONG_CLICK
+11-16 21:26:11.843  2648  2648 D OnLongClickAgent: reset:   removeMessages MSG_LONG_CLICK
+11-16 21:26:11.843  2648  2648 D OnLongClickAgent: reset:   removeMessages MSG_LONG_CLICK
+11-16 21:26:11.843  2648  4126 E ActivityManagerWrapper: get all recent tasks force including 11922
+11-16 21:26:11.845  1211  1211 I BufferQueueDebug: [211d976 SnapshotStartingWindow for taskId=11922#40724](this:0xb40000784a6f7630,id:-1,api:0,p:-1,c:1211) onDestructor()
+11-16 21:26:11.845  1211  1211 I SurfaceFlinger: onHandleDestroyed: name=226d166 ActivityRecordInputSink com.miui.home/.launcher.Launcher#40715, layerId=40715, parentId=0
+11-16 21:26:11.845  1211  1211 I SurfaceFlinger: onHandleDestroyed: name=TempStatusBarLeash for - Surface(name=WindowToken{1829d7a type=2000 android.os.BinderProxy@109179c}#102)/@0x6f4692b#40733, layerId=40733, parentId=0
+11-16 21:26:11.846  2648  2648 D Launcher.Lifecycle: onStop:UserHandle{0},ba78619,false
+11-16 21:26:11.846  2648  2648 D UninstallDialogWrapper: mUninstallDialogShowing != isShowfalse, mUninstallDialogShowingfalse,isShowfalse
+11-16 21:26:11.846  2648  2648 D SoscSplitStateController: updateDividerFixedState: isFixed = false
+11-16 21:26:11.846  2648  2648 D Launcher_UnlockAnimationStateMachine: onStop = IDLE
+11-16 21:26:11.847  2648  2648 D LauncherClient.Service: service already disconnected:com.mi.globalminusscreen
+11-16 21:26:11.847  2648  2648 E Launcher.application: setClickAppWaitForCallback = false
+11-16 21:26:11.848  2643  2746 D SoScSplitScreenController: updateDividerFixedState isFixed:false
+11-16 21:26:11.851  2648  2813 D BLASTBufferQueue: [VRI[Launcher]#647](f:0,a:2) destructor()
+11-16 21:26:11.851  2648  4126 E ActivityManagerWrapper: getRecentTasksForceIncludingTaskIdIfValid: getRecentTasks: size=6
+11-16 21:26:11.851  2648  4126 E ActivityManagerWrapper:  mainTaskId=11922   userId=0   windowMode=1   baseIntent=Intent { act=android.intent.action.MAIN flag=270532608 cmp=ComponentInfo{com.termux/com.termux.app.TermuxActivity} }
+11-16 21:26:11.851  2648  4126 E ActivityManagerWrapper:  mainTaskId=11895   userId=0   windowMode=1   baseIntent=Intent { act=android.intent.action.MAIN flag=270532608 cmp=ComponentInfo{com.openai.chatgpt/com.openai.chatgpt.MainActivity} }
+11-16 21:26:11.851  2648  4126 E ActivityManagerWrapper:  mainTaskId=11894   userId=0   windowMode=1   baseIntent=Intent { act=android.intent.action.MAIN flag=270532608 cmp=ComponentInfo{bin.mt.plus/bin.mt.plus.MainLightIcon} }
+11-16 21:26:11.851  2648  4126 E ActivityManagerWrapper:  mainTaskId=11920   userId=0   windowMode=1   baseIntent=Intent { act=android.intent.action.MAIN flag=270532608 cmp=ComponentInfo{com.g5j.uabeamobile/crc64db1c392adadf9a19.MainActivity} }
+11-16 21:26:11.851  2648  4126 E ActivityManagerWrapper:  mainTaskId=11896   userId=0   windowMode=1   baseIntent=Intent { act=android.intent.action.MAIN flag=270532608 cmp=ComponentInfo{com.android.chrome/com.google.android.apps.chrome.Main} }
+11-16 21:26:11.851  2648  4126 E ActivityManagerWrapper:  mainTaskId=11887   userId=0   windowMode=1   baseIntent=Intent { act=android.intent.action.MAIN flag=270532608 cmp=ComponentInfo{com.discord/com.discord.main.MainDefault} }
+11-16 21:26:11.851  1211  1388 I BpBinder: onLastStrongRef automatically unlinking death recipients: 
+11-16 21:26:11.851  2648  2813 D BufferQueueConsumer: [VRI[Launcher]#647(BLAST Consumer)647](id:a580000028d,api:0,p:-1,c:2648) disconnect
+11-16 21:26:11.855  1927  2923 D MiuiRefreshRatePolicy: reset
+11-16 21:26:11.855  2648  4126 D RecentsTaskLoader: reloadTasksData [TaskKey{id=11922, stackId=0, baseIntent=Intent { act=android.intent.action.MAIN cat=[android.intent.category.LAUNCHER] flg=0x10200000 cmp=com.termux/.app.TermuxActivity }, userId=0, lastActiveTime=144528637, windowingMode=1, isThumbnailBlur=false, isAccessLocked=false, isScreening=false, topActivity=ComponentInfo{com.termux/com.termux.app.TermuxActivity}, mHashCode=356091854}, title=Termux, titleDescription=Termux, bounds=null, isLaunchTarget=false, isStackTask=true, isSystemApp=false, isDockable=true, baseActivity=ComponentInfo{com.termux/com.termux.app.TermuxActivity}, isLocked=true, mNeedHide=false, hasMultipleTasks=false, cti1Key=, cti2Key=] 
+11-16 21:26:11.856  2648  4126 W IconCustomizer: Density abnormal: context density=251 systemDensity=274
+11-16 21:26:11.856  2648  4126 W IconCustomizer: Density abnormal: context density=251 systemDensity=274
+11-16 21:26:11.857  2648  4126 D RecentsTaskLoader: reloadTasksData [TaskKey{id=11895, stackId=0, baseIntent=Intent { act=android.intent.action.MAIN cat=[android.intent.category.LAUNCHER] flg=0x10200000 cmp=com.openai.chatgpt/.MainActivity }, userId=0, lastActiveTime=144434507, windowingMode=1, isThumbnailBlur=false, isAccessLocked=false, isScreening=false, topActivity=ComponentInfo{com.openai.chatgpt/com.openai.chatgpt.MainActivity}, mHashCode=355287497}, title=ChatGPT, titleDescription=ChatGPT, bounds=null, isLaunchTarget=false, isStackTask=true, isSystemApp=false, isDockable=true, baseActivity=ComponentInfo{com.openai.chatgpt/com.openai.chatgpt.MainActivity}, isLocked=false, mNeedHide=false, hasMultipleTasks=false, cti1Key=, cti2Key=] 
+11-16 21:26:11.857  2648  4126 D RecentsTaskLoader: reloadTasksData [TaskKey{id=11894, stackId=0, baseIntent=Intent { act=android.intent.action.MAIN cat=[android.intent.category.LAUNCHER] flg=0x10200000 cmp=bin.mt.plus/.MainLightIcon }, userId=0, lastActiveTime=144330041, windowingMode=1, isThumbnailBlur=false, isAccessLocked=false, isScreening=false, topActivity=ComponentInfo{bin.mt.plus/bin.mt.plus.Main}, mHashCode=355257706}, title=MT Manager, titleDescription=MT Manager, bounds=null, isLaunchTarget=true, isStackTask=true, isSystemApp=false, isDockable=true, baseActivity=ComponentInfo{bin.mt.plus/bin.mt.plus.Main}, isLocked=false, mNeedHide=false, hasMultipleTasks=false, cti1Key=, cti2Key=] 
+11-16 21:26:11.857  2648  4126 D RecentsTaskLoader: reloadTasksData [TaskKey{id=11920, stackId=0, baseIntent=Intent { act=android.intent.action.MAIN cat=[android.intent.category.LAUNCHER] flg=0x10200000 cmp=com.g5j.uabeamobile/crc64db1c392adadf9a19.MainActivity }, userId=0, lastActiveTime=144099330, windowingMode=1, isThumbnailBlur=false, isAccessLocked=false, isScreening=false, topActivity=ComponentInfo{com.g5j.uabeamobile/crc64db1c392adadf9a19.MainActivity}, mHashCode=356032272}, title=UABE Avalonia, titleDescription=UABE Avalonia, bounds=null, isLaunchTarget=true, isStackTask=true, isSystemApp=false, isDockable=true, baseActivity=ComponentInfo{com.g5j.uabeamobile/crc64db1c392adadf9a19.MainActivity}, isLocked=false, mNeedHide=false, hasMultipleTasks=false, cti1Key=, cti2Key=] 
+11-16 21:26:11.857  2648  4126 D RecentsTaskLoader: reloadTasksData [TaskKey{id=11896, stackId=0, baseIntent=Intent { act=android.intent.action.MAIN cat=[android.intent.category.LAUNCHER] flg=0x10200000 cmp=com.android.chrome/com.google.android.apps.chrome.Main }, userId=0, lastActiveTime=143791482, windowingMode=1, isThumbnailBlur=false, isAccessLocked=false, isScreening=false, topActivity=ComponentInfo{com.android.chrome/org.chromium.chrome.browser.app.download.home.DownloadActivity}, mHashCode=355317288}, title=Chrome, titleDescription=Chrome, bounds=null, isLaunchTarget=true, isStackTask=true, isSystemApp=true, isDockable=true, baseActivity=ComponentInfo{com.android.chrome/org.chromium.chrome.browser.ChromeTabbedActivity}, isLocked=false, mNeedHide=false, hasMultipleTasks=false, cti1Key=, cti2Key=] 
+11-16 21:26:11.857  2648  2648 D ActivityThread: Fail to check app heapsize due to java.lang.NoSuchMethodException: dalvik.system.VMRuntime.getBlockingGcCountForAlloc []
+11-16 21:26:11.857  2648  4126 D RecentsTaskLoader: reloadTasksData [TaskKey{id=11887, stackId=0, baseIntent=Intent { act=android.intent.action.MAIN cat=[android.intent.category.LAUNCHER] flg=0x10200000 cmp=com.discord/.main.MainDefault }, userId=0, lastActiveTime=143765265, windowingMode=1, isThumbnailBlur=false, isAccessLocked=false, isScreening=false, topActivity=ComponentInfo{com.discord/com.discord.main.MainActivity}, mHashCode=355049169}, title=Discord, titleDescription=Discord, bounds=null, isLaunchTarget=false, isStackTask=true, isSystemApp=false, isDockable=true, baseActivity=ComponentInfo{com.discord/com.discord.main.MainActivity}, isLocked=true, mNeedHide=false, hasMultipleTasks=false, cti1Key=, cti2Key=] 
+11-16 21:26:11.860  1927  1959 I ActivityTaskManager: visible for Task{9025817 #11922 type=standard A=10754:com.termux} visible = true isAnimating = false TRANSITION = false PARENTS = false CHILDREN = false
+11-16 21:26:11.860  1211  1211 I BufferQueueDebug: [226d166 ActivityRecordInputSink com.miui.home/.launcher.Launcher#40715](this:0xb40000784a724880,id:-1,api:0,p:-1,c:1211) onDestructor()
+11-16 21:26:11.861  1211  1211 I BufferQueueDebug: [TempStatusBarLeash for - Surface(name=WindowToken{1829d7a type=2000 android.os.BinderProxy@109179c}#102)/@0x6f4692b#40733](this:0xb40000784a7b2e90,id:-1,api:0,p:-1,c:1211) onDestructor()
+11-16 21:26:11.862  1927  1959 D MiuiRefreshRatePolicy: reset
+11-16 21:26:11.863  4815  4837 D ProcessObserverV15: onForegroundActivitiesChanged:pid = 2648,activity-uid=10166,foregroundActivities=false
+11-16 21:26:11.863  1927  1956 D Aurogon :  uid = 10166 switch to BG
+11-16 21:26:11.863  1927  2242 D Aurogon :  onForegroundActivitiesChanged packageName = com.miui.home
+11-16 21:26:11.875  1927  1959 I ActivityTaskManager: visible for Task{9025817 #11922 type=standard A=10754:com.termux} visible = true isAnimating = false TRANSITION = false PARENTS = false CHILDREN = false
+11-16 21:26:11.877  1211  1211 I SurfaceFlinger: onHandleDestroyed: name=com.miui.home/com.miui.home.launcher.Launcher#40708, layerId=40708, parentId=0
+11-16 21:26:11.892  1621  1747 D AALService: [CRTC_114] onALIChanged: 5 -> 6
+11-16 21:26:11.894  1211  1211 I BufferQueueDebug: [com.miui.home/com.miui.home.launcher.Launcher#40708](this:0xb40000784a7a87e0,id:-1,api:0,p:-1,c:1211) onDestructor()
+11-16 21:26:12.000  1152  1195 I libPerfCtl: xgfGetFPS pid:942 fps:-1
+11-16 21:26:12.000  1152  1195 I libPerfCtl: xgfGetFPS pid:1211 fps:-1
+11-16 21:26:12.000  1152  1195 I libPerfCtl: xgfGetFPS pid:2643 fps:-1
+11-16 21:26:12.000  1152  1195 I libPerfCtl: xgfGetFPS pid:2648 fps:-1
+11-16 21:26:12.000  1152  1195 I libPerfCtl: xgfGetFPS pid:6014 fps:-1
+11-16 21:26:12.030  1155  1219 I mtkpower@impl: [powerd_req] TIMER_MSG_PERF_LOCK_TIMEOUT hdl:119972
+11-16 21:26:12.030  1155  1219 I libPowerHal: [perfLockRel] hdl:119972, idx:3
+11-16 21:26:12.030  1155  1219 I libPowerHal: [unsetGPUFreq] current min:0, max:0; scn_gpu_min:0, scn_gpu_max:-1; scn_gpu_min(HL):-1, scn_gpu_max(HL):-1
+11-16 21:26:12.030  1155  1219 I libPowerHal: system_server: set gpu opp level: 31
+11-16 21:26:12.030  1155  1219 I libPowerHal: system_server: set gpu opp level max: 0
+11-16 21:26:12.031  1155  1219 I libPowerHal: [setGPUFreq] Soft min/max = (31, 0); Hard min/max = (31, 0)
+11-16 21:26:12.031  1155  1219 I libPowerHal: [setGPUFreq] final min/max = (31, 0)
+11-16 21:26:12.031  1155  1219 I libPowerHal: system_server: set gpu opp level: 31
+11-16 21:26:12.031  1155  1219 I libPowerHal: system_server: set gpu opp level max: 0
+11-16 21:26:12.031  1155  1219 I libPowerHal: [PD] system_server update cmd:400000 param:-1 pr:6
+11-16 21:26:12.031  1155  1219 I libPowerHal: [PD] system_server update cmd:400100 param:-1 pr:6
+11-16 21:26:12.032  1155  1219 I libPowerHal: [PD] system_server update cmd:1000000 param:-1 pr:6
+11-16 21:26:12.032  1155  1219 I libPowerHal: [recordCPUFreqInfo] set cluster[0] min(-1): -1 max(-1): -1 cluster[1] min(-1): -1 max(-1): -1
+11-16 21:26:12.033  1155  1219 I libPowerHal: [perfLockRel] Done for hdl : 119972
+11-16 21:26:12.049  1927  1970 D ThermalBrightnessController: updateSkinTemperature: actual temperature: 36.804, applied temperature: 36.804
+11-16 21:26:12.050  1927  2256 D PerfMTKStubImpl: perfLockReleaseHandler: 119972
+11-16 21:26:12.050  1927  2256 I mtkpower_client: perf_lock_rel, hdl:119972, tid:2256
+11-16 21:26:12.050  1927  2256 D SchedBoost: stopBoostInternal
+11-16 21:26:12.050  1155  1219 I libPowerHal: [perfLockRel] hdl:119972, idx:-1
+11-16 21:26:12.051  1927  2256 D SchedBoost: thread tid=2648, priority is set to -10
+11-16 21:26:12.051  1927  2256 D SchedBoost: thread tid=2813, priority is set to -4
+11-16 21:26:12.051  1927  2256 D SchedBoost: thread tid=2835, priority is set to 0
+11-16 21:26:12.052  1927  2256 D SchedBoost: thread tid=2912, priority is set to -20
+11-16 21:26:12.277  1133  1133 I hwcomposer: [HWCDisplay] (0 updateFps():3644), (type:1, mode:2) fps:60.330853,dur:1011.09,max:18.12,min:13.48  
+11-16 21:26:12.303  1927  2923 D FileUtils: Rounded bytes from 5936353280 to 8000000000
+11-16 21:26:12.405  1456  1646 D connsyslogger: SD_LOG_ROOT is /data/debuglogger/connsyslog/fw.
+11-16 21:26:12.405  1456  1646 D connsyslogger: systemReady:1
+11-16 21:26:12.438  1927  2116 I MIUIInput: [MotionEvent] notifyMotion - eventTime=88851419237000, deviceId=3, source=0x1002, policyFlags=0x0, action=0x0, flags=0x0, downTime=88851419237000
+11-16 21:26:12.440  1927  2115 I MIUIInput: [MotionEvent] publisher action=0x0, deviceId=3, 88851419, channel '421e472 InputMethod (server)'
+11-16 21:26:12.440  1155  1219 I libPowerHal: [perfLockAcq] idx:1 hdl:119974 hint:25 pid:1155 tid:1155 duration:120 lock_user:vendor.mediatek => ret_hdl:119974
+11-16 21:26:12.440  1155  1219 I libPowerHal: [setGPUFreq] MTKPOWER_HINT_APP_TOUCH user set gpu freq min:0, max:-1
+11-16 21:26:12.440  1155  1219 I libPowerHal: MTKPOWER_HINT_APP_TOUCH: set gpu opp level: 0
+11-16 21:26:12.441  1155  1219 I libPowerHal: MTKPOWER_HINT_APP_TOUCH: set gpu opp level max: 0
+11-16 21:26:12.441  1155  1219 I libPowerHal: [setGPUFreq] Soft min/max = (0, 0); Hard min/max = (31, 0)
+11-16 21:26:12.441  1927  2115 I MIUIInput: [MotionEvent] publisher action=0x0, deviceId=3, 88851419, channel '[Gesture Monitor] miui-gesture (server)'
+11-16 21:26:12.441  1155  1219 I libPowerHal: [setGPUFreq] final min/max = (0, 0)
+11-16 21:26:12.441  1155  1219 I libPowerHal: MTKPOWER_HINT_APP_TOUCH: set gpu opp level: 0
+11-16 21:26:12.441  1155  1219 I libPowerHal: MTKPOWER_HINT_APP_TOUCH: set gpu opp level max: 0
+11-16 21:26:12.444  6014  6014 I MIUIInput: [MotionEvent] ViewRootImpl windowName 'InputMethod', { action=ACTION_DOWN, id[0]=0, pointerCount=1, eventTime=88851419, downTime=88851669, phoneEventTime=21:26:12.438 } moveCount:0
+11-16 21:26:12.446  1155  1219 I libPowerHal: [PE] MTKPOWER_HINT_APP_TOUCH update cmd:1408100, param:47, pr:3
+11-16 21:26:12.446  1155  1219 I libPowerHal: [PE] MTKPOWER_HINT_APP_TOUCH update cmd:1408300, param:100, pr:3
+11-16 21:26:12.447  1155  1219 I libPowerHal: [PE] MTKPOWER_HINT_APP_TOUCH update cmd:410000, param:1, pr:3
+11-16 21:26:12.447  1155  1219 I libPowerHal: hard user limit set cpu freq: 3000000 -1 -1 -1
+11-16 21:26:12.447  1155  1219 I libPowerHal: [PE] MTKPOWER_HINT_APP_TOUCH update cmd:408000 param:3000000 pr:3
+11-16 21:26:12.447  1155  1219 I libPowerHal: hard user limit set cpu freq: 3000000 -1 3000000 -1
+11-16 21:26:12.447  1155  1219 I libPowerHal: [PE] MTKPOWER_HINT_APP_TOUCH update cmd:408100 param:3000000 pr:3
+11-16 21:26:12.447  1155  1219 I libPowerHal: value: 1
+11-16 21:26:12.447  1155  1219 I libPowerHal: [PE] MTKPOWER_HINT_APP_TOUCH update cmd:410000 param:1 pr:3
+11-16 21:26:12.447  1155  1219 I libPowerHal: [setDvfsrcDevFreqOpp] opp:0, freq:3600000000
+11-16 21:26:12.448  1155  1219 I libPowerHal: [PE] MTKPOWER_HINT_APP_TOUCH update cmd:1000000 param:0 pr:3
+11-16 21:26:12.448  1155  1219 I libPowerHal: [recordCPUFreqInfo] set cluster[0] min(-1): -1 max(-1): -1 cluster[1] min(-1): -1 max(-1): -1
+11-16 21:26:12.448  1155  1219 I libPowerHal: [perfLockAcq] Done for hdl : 119974
+11-16 21:26:12.448  1155  1219 I libPowerHal: [perfLockRel] hdl:119967, idx:-1
+11-16 21:26:12.458  1211  1211 I BufferQueueProducer: [NavigationBar0#106](this:0xb40000784a6c6c50,id:-1,api:0,p:-1,c:1211) queueBuffer: fps=28.56 dur=1015.27 max=549.34 min=16.24
+11-16 21:26:12.524  1211  1211 I BufferQueueProducer: [InputMethod#40736](this:0xb40000784a70fb20,id:-1,api:0,p:-1,c:1211) queueBuffer: fps=50.21 dur=1015.74 max=133.57 min=15.36
+11-16 21:26:12.538  1927  2116 I MIUIInput: [MotionEvent] notifyMotion - eventTime=88851518790000, deviceId=3, source=0x1002, policyFlags=0x0, action=0x1, flags=0x0, downTime=88851419237000
+11-16 21:26:12.539  1155  1186 I libPowerHal: [mtkPowerHint] hint:25, hold:80, ext:0, ext_hold:0
+11-16 21:26:12.540  1927  2115 I MIUIInput: [MotionEvent] publisher action=0x1, deviceId=3, 88851518, channel '421e472 InputMethod (server)'
+11-16 21:26:12.540  1927  2115 I MIUIInput: [MotionEvent] publisher action=0x1, deviceId=3, 88851518, channel '[Gesture Monitor] miui-gesture (server)'
+11-16 21:26:12.540  1155  1219 I libPowerHal: [perfLockAcq] idx:2 hdl:119975 hint:25 pid:1155 tid:1155 duration:80 lock_user:vendor.mediatek => ret_hdl:119975
+11-16 21:26:12.540  1155  1219 I libPowerHal: [setGPUFreq] MTKPOWER_HINT_APP_TOUCH user set gpu freq min:0, max:-1
+11-16 21:26:12.540  1155  1219 I libPowerHal: MTKPOWER_HINT_APP_TOUCH: set gpu opp level max: 0
+11-16 21:26:12.540  1155  1219 I libPowerHal: [setGPUFreq] Soft min/max = (0, 0); Hard min/max = (31, 0)
+11-16 21:26:12.540  1155  1219 I libPowerHal: [setGPUFreq] final min/max = (0, 0)
+11-16 21:26:12.540  1155  1219 I libPowerHal: MTKPOWER_HINT_APP_TOUCH: set gpu opp level: 0
+11-16 21:26:12.540  6014  6014 I MIUIInput: [MotionEvent] ViewRootImpl windowName 'InputMethod', { action=ACTION_UP, id[0]=0, pointerCount=1, eventTime=88851518, downTime=88851669, phoneEventTime=21:26:12.537 } moveCount:0
+11-16 21:26:12.541  1155  1219 I libPowerHal: MTKPOWER_HINT_APP_TOUCH: set gpu opp level max: 0
+11-16 21:26:12.541  1155  1219 I libPowerHal: [perfLockAcq] Done for hdl : 119975
+11-16 21:26:12.541  1155  1219 I libPowerHal: [perfLockRel] hdl:119974, idx:1
+11-16 21:26:12.541  1155  1219 I libPowerHal: [unsetGPUFreq] current min:0, max:0; scn_gpu_min:0, scn_gpu_max:-1; scn_gpu_min(HL):-1, scn_gpu_max(HL):-1
+11-16 21:26:12.541  1155  1219 I libPowerHal: [setGPUFreq] Soft min/max = (0, 0); Hard min/max = (31, 0)
+11-16 21:26:12.541  1155  1219 I libPowerHal: [setGPUFreq] final min/max = (0, 0)
+11-16 21:26:12.541  1155  1219 I libPowerHal: MTKPOWER_HINT_APP_TOUCH: set gpu opp level: 0
+11-16 21:26:12.542  1155  1219 I libPowerHal: MTKPOWER_HINT_APP_TOUCH: set gpu opp level max: 0
+11-16 21:26:12.542  1155  1219 I libPowerHal: [perfLockRel] Done for hdl : 119974
+11-16 21:26:12.563  6014  6014 D ScrollerOptimizationManager: registerConfigChangedListener
+11-16 21:26:12.589  6014  6014 W SplineOverScroller: animation - 2 frame Missed in app.
+11-16 21:26:12.593  6014  6014 D ScrollerOptimizationManager: registerConfigChangedListener
+11-16 21:26:12.601  6014  6014 D ScrollerOptimizationManager: registerConfigChangedListener
+11-16 21:26:12.617  2648  2912 I TransitionCallback: clear leash = Surface(name=TL_Surface(name=Task=1#47)/@0x5996c2d_transition-leash#40732)/@0x66574, key = ComponentInfo{com.miui.home/com.miui.home.launcher.Launcher}#1
+11-16 21:26:12.617  2648  2912 I TransitionCallback: clear leash = Surface(name=TL_Surface(name=Task=11922#40609)/@0xad1a344_transition-leash#40731)/@0x79a1c86, key = ComponentInfo{com.termux/com.termux.app.TermuxActivity}#11922
+11-16 21:26:12.621  1155  1219 I mtkpower@impl: [powerd_req] TIMER_MSG_PERF_LOCK_TIMEOUT hdl:119975
+11-16 21:26:12.621  1155  1219 I libPowerHal: [perfLockRel] hdl:119975, idx:2
+11-16 21:26:12.621  1155  1219 I libPowerHal: [unsetGPUFreq] current min:0, max:0; scn_gpu_min:0, scn_gpu_max:-1; scn_gpu_min(HL):-1, scn_gpu_max(HL):-1
+11-16 21:26:12.621  1155  1219 I libPowerHal: MTKPOWER_HINT_APP_TOUCH: set gpu opp level: 31
+11-16 21:26:12.621  1155  1219 I libPowerHal: MTKPOWER_HINT_APP_TOUCH: set gpu opp level max: 0
+11-16 21:26:12.621  1155  1219 I libPowerHal: [setGPUFreq] Soft min/max = (31, 0); Hard min/max = (31, 0)
+11-16 21:26:12.621  1155  1219 I libPowerHal: [setGPUFreq] final min/max = (31, 0)
+11-16 21:26:12.621  1155  1219 I libPowerHal: MTKPOWER_HINT_APP_TOUCH: set gpu opp level: 31
+11-16 21:26:12.621  1155  1219 I libPowerHal: MTKPOWER_HINT_APP_TOUCH: set gpu opp level max: 0
+11-16 21:26:12.622  1155  1219 I libPowerHal: [PD] MTKPOWER_HINT_APP_TOUCH update cmd:1408100 param:0, pr:6
+11-16 21:26:12.625  1155  1219 I libPowerHal: [PD] MTKPOWER_HINT_APP_TOUCH update cmd:1408300 param:0, pr:6
+11-16 21:26:12.626  1211  1211 I SurfaceFlinger: onHandleDestroyed: name=TL_Surface(name=Task=1#47)/@0x5996c2d_transition-leash#40732, layerId=40732, parentId=0
+11-16 21:26:12.626  1155  1219 I libPowerHal: [PD] MTKPOWER_HINT_APP_TOUCH update cmd:410000 param:0, pr:6
+11-16 21:26:12.626  1211  1211 I SurfaceFlinger: onHandleDestroyed: name=TL_Surface(name=Task=11922#40609)/@0xad1a344_transition-leash#40731, layerId=40731, parentId=0
+11-16 21:26:12.626  1155  1219 I libPowerHal: hard user limit set cpu freq: -1 -1 3000000 -1
+11-16 21:26:12.626  1155  1219 I libPowerHal: [PD] MTKPOWER_HINT_APP_TOUCH update cmd:408000 param:-1 pr:6
+11-16 21:26:12.627  1155  1219 I libPowerHal: hard user limit set cpu freq: -1 -1 -1 -1
+11-16 21:26:12.627  1155  1219 I libPowerHal: [PD] MTKPOWER_HINT_APP_TOUCH update cmd:408100 param:-1 pr:6
+11-16 21:26:12.627  1155  1219 I libPowerHal: value: 0
+11-16 21:26:12.627  1155  1219 I libPowerHal: [PD] MTKPOWER_HINT_APP_TOUCH update cmd:410000 param:0 pr:6
+11-16 21:26:12.627  1155  1219 I libPowerHal: [PD] MTKPOWER_HINT_APP_TOUCH update cmd:1000000 param:-1 pr:6
+11-16 21:26:12.628  1155  1219 I libPowerHal: [recordCPUFreqInfo] set cluster[0] min(-1): -1 max(-1): -1 cluster[1] min(-1): -1 max(-1): -1
+11-16 21:26:12.628  1155  1219 I libPowerHal: [perfLockRel] Done for hdl : 119975
+11-16 21:26:12.630  6014  6014 D ScrollerOptimizationManager: registerConfigChangedListener
+11-16 21:26:12.631  6014  6014 D ScrollerOptimizationManager: registerConfigChangedListener
+11-16 21:26:12.632  6014  6014 D ScrollerOptimizationManager: registerConfigChangedListener
+11-16 21:26:12.633  6014  6014 D ScrollerOptimizationManager: registerConfigChangedListener
+11-16 21:26:12.642  6014  6014 D ScrollerOptimizationManager: registerConfigChangedListener
+11-16 21:26:12.643  1211  1211 I BufferQueueDebug: [TL_Surface(name=Task=11922#40609)/@0xad1a344_transition-leash#40731](this:0xb40000784a6d8220,id:-1,api:0,p:-1,c:1211) onDestructor()
+11-16 21:26:12.643  1211  1211 I BufferQueueDebug: [TL_Surface(name=Task=1#47)/@0x5996c2d_transition-leash#40732](this:0xb40000784a735e50,id:-1,api:0,p:-1,c:1211) onDestructor()
+11-16 21:26:12.646  6014  6014 E ThemeUtils: View class com.ziipin.baselibrary.widgets.RecyclerTabLayout$TabTextView is an AppCompat widget that can only be used with a Theme.AppCompat theme (or descendant).
+11-16 21:26:12.650  6014  6014 E ThemeUtils: View class com.ziipin.baselibrary.widgets.RecyclerTabLayout$TabTextView is an AppCompat widget that can only be used with a Theme.AppCompat theme (or descendant).
+11-16 21:26:12.652  6014  6014 E ThemeUtils: View class com.ziipin.baselibrary.widgets.RecyclerTabLayout$TabTextView is an AppCompat widget that can only be used with a Theme.AppCompat theme (or descendant).
+11-16 21:26:12.656  6014  6014 E ThemeUtils: View class com.ziipin.baselibrary.widgets.RecyclerTabLayout$TabTextView is an AppCompat widget that can only be used with a Theme.AppCompat theme (or descendant).
+11-16 21:26:12.659  6014  6014 E ThemeUtils: View class com.ziipin.baselibrary.widgets.RecyclerTabLayout$TabTextView is an AppCompat widget that can only be used with a Theme.AppCompat theme (or descendant).
+11-16 21:26:12.674  1211  1211 I BufferQueueProducer: [com.termux/com.termux.app.TermuxActivity#40734](this:0xb40000784a71a1d0,id:-1,api:0,p:-1,c:1211) queueBuffer: fps=6.00 dur=1499.00 max=1065.17 min=16.36
+11-16 21:26:12.946  1456  1647 D connsyslogger: data recycle:time out
+11-16 21:26:12.946  1456  1647 D connsyslogger: idx=0 Bootup Log: 2 log files! filecount=3 
+11-16 21:26:12.976  1927  2923 I SmartPower: com.google.android.apps.messaging/10165(29706): idle->background(36313ms) R(service create com.google.android.apps.messaging/.shared.datamodel.action.execution.ActionExecutorImpl$EmptyService) adj=0.
+11-16 21:26:12.983 29706  2706 I busw    : running action ProcessPendingMessagesAction
+11-16 21:26:12.983 29706 29706 I dvvk    : ActionExecutorImpl: ACTION_EXECUTE_QUEUED_ProcessPendingMessagesAction
+11-16 21:26:12.987 29706  2706 I dxlp    : isDefaultSmsApp: true [CONTEXT class_name="PhoneConfiguration" ]
+11-16 21:26:13.000  1605  1920 D ULogGuard: Monitoring: 18 threads, 0 requests, 0 time-bombs; 1 guards. ResetFlags = 0x7
+11-16 21:26:13.001  1152  1195 I libPerfCtl: xgfGetFPS pid:942 fps:-1
+11-16 21:26:13.001  1152  1195 I libPerfCtl: xgfGetFPS pid:1211 fps:-1
+11-16 21:26:13.001  1152  1195 I libPerfCtl: xgfGetFPS pid:2643 fps:-1
+11-16 21:26:13.001  1152  1195 I libPerfCtl: xgfGetFPS pid:2648 fps:-1
+11-16 21:26:13.001  1152  1195 I libPerfCtl: xgfGetFPS pid:6014 fps:-1
+11-16 21:26:13.014 29706  2706 I buah    : PendingMessagesProcessor process from ProcessPendingMessagesAction due to scheduled processing  with delay 0s with queues smsMessagesToSend:0 mmsMessagesToSend:0 rcsMessagesToSend:0 rcsFTMessagesToSend:0 messagesToDownload:0
+11-16 21:26:13.020 29706  2706 I busw    : finished running action ProcessPendingMessagesAction in 36 ms
+11-16 21:26:13.241  1456  1647 D connsyslogger: idx=0 Bootup Log: 2 log files! filecount=3 
+11-16 21:26:13.246  1456  1649 I connsyslogger: thrLogWriter: LogBuf=226.793945KB,idx=0
+11-16 21:26:13.258  2449  6381 W HWUI    : Surface doesn't have any previously queued frames, nothing to readback from
+11-16 21:26:13.268  2449  6381 W HWUI    : Surface doesn't have any previously queued frames, nothing to readback from
+11-16 21:26:13.278  1133  1133 I hwcomposer: [HWCDisplay] (0 updateFps():3644), (type:1, mode:2) fps:59.942875,dur:1000.95,max:18.38,min:14.56  
+11-16 21:26:13.305  1927  2923 D FileUtils: Rounded bytes from 5936353280 to 8000000000
+11-16 21:26:13.313  2643  2643 I NotifierManager: onNotify: com.miui.maml.NotifierManager$BroadcastNotifier@8bdc703
+11-16 21:26:13.320  1927  1927 D UiModeManager: updateConfigurationLocked: mDockState=0; mCarMode=false; mCar=false; mPowerSave=false; mOverrideNightModeOn=false; mOverrideNightModeOff=false; mComputedNightMode=true; mNightModeValue=2; uiMode=44
+11-16 21:26:13.320  6547  7534 D PowerCheckerService: onBatteryChanged, mBatteryLevel = 17, status = 2, level = 17, plug = 1, scale = 100
+11-16 21:26:13.321  1169  1169 E vendor.xiaomi.hardware.micharge-service: Failed to open node /sys/class/power_supply/battery/night_charging
+11-16 21:26:13.321  6547  6609 I ProcAudioPowerManager: onBatteryChanged, onBattery is false
+11-16 21:26:13.321  6547  6609 D PowerKeeper.FrozenApp: onBatteryChanged plug=true mBatteryPlugged=1
+11-16 21:26:13.321  1169  1169 I vendor.xiaomi.hardware.micharge-service: ReadFilePathValue path = /sys/class/power_supply/battery/night_charging value = 
+11-16 21:26:13.321  4676  6370 E IMiCharge: MiCharge method 19 val = 
+11-16 21:26:13.321  6547  7464 D PowerKeeper.Thermal: mBatteryTemperature: 35
+11-16 21:26:13.321  4676  6370 I ChargeProtectionUtils: getNightChargingState: 
+11-16 21:26:13.322  4676  4676 I PowerUtils: getSurfaceTemprature temp: 36
+11-16 21:26:13.322  4676  4676 I PowerSaveService: onReceive: android.intent.action.BATTERY_CHANGED
+11-16 21:26:13.323  4676  4676 I PowerNoticeUI: handleBatteryChanged oldPlugType 1 mPlugType 1 oldBatteryLevel 17 mBatteryLevel 17 temperature 350
+11-16 21:26:13.323  4676  4676 I ChargerBatteryIntelligenceReceiver: onBatteryChanged temperature：35,plugType:1
+11-16 21:26:13.474  1211  1211 I BufferQueueProducer: [NavigationBar0#106](this:0xb40000784a6c6c50,id:-1,api:0,p:-1,c:1211) queueBuffer: fps=60.01 dur=1016.53 max=17.57 min=15.44
+11-16 21:26:13.525  1211  1211 I BufferQueueProducer: [InputMethod#40736](this:0xb40000784a70fb20,id:-1,api:0,p:-1,c:1211) queueBuffer: fps=49.98 dur=1000.32 max=83.79 min=15.84
+11-16 21:26:13.584  1927  2177 I MiuiNetworkPolicy: updateUidState uid = 10853, uidState = 10
+11-16 21:26:13.585  6547  6609 D UidObserver: onUidIdle uid=10853 uidstate=100
+11-16 21:26:13.585 19989 20412 V ShizukuPlus:BinderSender: Uid 10853 already starts
+11-16 21:26:13.604  1927  2116 I MIUIInput: [MotionEvent] notifyMotion - eventTime=88852585336000, deviceId=3, source=0x1002, policyFlags=0x0, action=0x0, flags=0x0, downTime=88852585336000
+11-16 21:26:13.606  1927  2115 I MIUIInput: [MotionEvent] publisher action=0x0, deviceId=3, 88852585, channel '421e472 InputMethod (server)'
+11-16 21:26:13.607  6014  6014 I MIUIInput: [MotionEvent] ViewRootImpl windowName 'InputMethod', { action=ACTION_DOWN, id[0]=0, pointerCount=1, eventTime=88852585, downTime=88852835, phoneEventTime=21:26:13.604 } moveCount:0
+11-16 21:26:13.607  1155  1219 I libPowerHal: [perfLockAcq] idx:1 hdl:119976 hint:25 pid:1155 tid:1155 duration:120 lock_user:vendor.mediatek => ret_hdl:119976
+11-16 21:26:13.607  1155  1219 I libPowerHal: [setGPUFreq] MTKPOWER_HINT_APP_TOUCH user set gpu freq min:0, max:-1
+11-16 21:26:13.607  1155  1219 I libPowerHal: MTKPOWER_HINT_APP_TOUCH: set gpu opp level: 0
+11-16 21:26:13.608  1927  2115 I MIUIInput: [MotionEvent] publisher action=0x0, deviceId=3, 88852585, channel '[Gesture Monitor] miui-gesture (server)'
+11-16 21:26:13.608  1155  1219 I libPowerHal: MTKPOWER_HINT_APP_TOUCH: set gpu opp level max: 0
+11-16 21:26:13.608  1155  1219 I libPowerHal: [setGPUFreq] Soft min/max = (0, 0); Hard min/max = (31, 0)
+11-16 21:26:13.609  1155  1219 I libPowerHal: [setGPUFreq] final min/max = (0, 0)
+11-16 21:26:13.609  1155  1219 I libPowerHal: MTKPOWER_HINT_APP_TOUCH: set gpu opp level: 0
+11-16 21:26:13.609  1155  1219 I libPowerHal: MTKPOWER_HINT_APP_TOUCH: set gpu opp level max: 0
+11-16 21:26:13.613  1155  1219 I libPowerHal: [PE] MTKPOWER_HINT_APP_TOUCH update cmd:1408100, param:47, pr:3
+11-16 21:26:13.614  1155  1219 I libPowerHal: [PE] MTKPOWER_HINT_APP_TOUCH update cmd:1408300, param:100, pr:3
+11-16 21:26:13.614  1155  1219 I libPowerHal: [PE] MTKPOWER_HINT_APP_TOUCH update cmd:410000, param:1, pr:3
+11-16 21:26:13.615  1155  1219 I libPowerHal: hard user limit set cpu freq: 3000000 -1 -1 -1
+11-16 21:26:13.615  1155  1219 I libPowerHal: [PE] MTKPOWER_HINT_APP_TOUCH update cmd:408000 param:3000000 pr:3
+11-16 21:26:13.615  1155  1219 I libPowerHal: hard user limit set cpu freq: 3000000 -1 3000000 -1
+11-16 21:26:13.615  1155  1219 I libPowerHal: [PE] MTKPOWER_HINT_APP_TOUCH update cmd:408100 param:3000000 pr:3
+11-16 21:26:13.615  1155  1219 I libPowerHal: value: 1
+11-16 21:26:13.615  1155  1219 I libPowerHal: [PE] MTKPOWER_HINT_APP_TOUCH update cmd:410000 param:1 pr:3
+11-16 21:26:13.615  1155  1219 I libPowerHal: [setDvfsrcDevFreqOpp] opp:0, freq:3600000000
+11-16 21:26:13.615  1155  1219 I libPowerHal: [PE] MTKPOWER_HINT_APP_TOUCH update cmd:1000000 param:0 pr:3
+11-16 21:26:13.615  1155  1219 I libPowerHal: [recordCPUFreqInfo] set cluster[0] min(-1): -1 max(-1): -1 cluster[1] min(-1): -1 max(-1): -1
+11-16 21:26:13.615  1155  1219 I libPowerHal: [perfLockAcq] Done for hdl : 119976
+11-16 21:26:13.616  1155  1219 I libPowerHal: [perfLockRel] hdl:119975, idx:-1
+11-16 21:26:13.704  1927  2116 I MIUIInput: [MotionEvent] notifyMotion - eventTime=88852684852000, deviceId=3, source=0x1002, policyFlags=0x0, action=0x1, flags=0x0, downTime=88852585336000
+11-16 21:26:13.705  1155  1186 I libPowerHal: [mtkPowerHint] hint:25, hold:80, ext:0, ext_hold:0
+11-16 21:26:13.705  1927  2115 I MIUIInput: [MotionEvent] publisher action=0x1, deviceId=3, 88852684, channel '421e472 InputMethod (server)'
+11-16 21:26:13.706  1927  2115 I MIUIInput: [MotionEvent] publisher action=0x1, deviceId=3, 88852684, channel '[Gesture Monitor] miui-gesture (server)'
+11-16 21:26:13.706  1155  1219 I libPowerHal: [perfLockAcq] idx:2 hdl:119977 hint:25 pid:1155 tid:1155 duration:80 lock_user:vendor.mediatek => ret_hdl:119977
+11-16 21:26:13.706  1155  1219 I libPowerHal: [setGPUFreq] MTKPOWER_HINT_APP_TOUCH user set gpu freq min:0, max:-1
+11-16 21:26:13.706  1155  1219 I libPowerHal: MTKPOWER_HINT_APP_TOUCH: set gpu opp level max: 0
+11-16 21:26:13.706  1155  1219 I libPowerHal: [setGPUFreq] Soft min/max = (0, 0); Hard min/max = (31, 0)
+11-16 21:26:13.706  1155  1219 I libPowerHal: [setGPUFreq] final min/max = (0, 0)
+11-16 21:26:13.706  1155  1219 I libPowerHal: MTKPOWER_HINT_APP_TOUCH: set gpu opp level: 0
+11-16 21:26:13.706  6014  6014 I MIUIInput: [MotionEvent] ViewRootImpl windowName 'InputMethod', { action=ACTION_UP, id[0]=0, pointerCount=1, eventTime=88852684, downTime=88852835, phoneEventTime=21:26:13.703 } moveCount:0
+11-16 21:26:13.706  1155  1219 I libPowerHal: MTKPOWER_HINT_APP_TOUCH: set gpu opp level max: 0
+11-16 21:26:13.706  1155  1219 I libPowerHal: [perfLockAcq] Done for hdl : 119977
+11-16 21:26:13.707  1155  1219 I libPowerHal: [perfLockRel] hdl:119976, idx:1
+11-16 21:26:13.707  1155  1219 I libPowerHal: [unsetGPUFreq] current min:0, max:0; scn_gpu_min:0, scn_gpu_max:-1; scn_gpu_min(HL):-1, scn_gpu_max(HL):-1
+11-16 21:26:13.707  1155  1219 I libPowerHal: [setGPUFreq] Soft min/max = (0, 0); Hard min/max = (31, 0)
+11-16 21:26:13.707  1155  1219 I libPowerHal: [setGPUFreq] final min/max = (0, 0)
+11-16 21:26:13.707  1155  1219 I libPowerHal: MTKPOWER_HINT_APP_TOUCH: set gpu opp level: 0
+11-16 21:26:13.707  1155  1219 I libPowerHal: MTKPOWER_HINT_APP_TOUCH: set gpu opp level max: 0
+11-16 21:26:13.708  1155  1219 I libPowerHal: [perfLockRel] Done for hdl : 119976
+11-16 21:26:13.740  1211  1211 I BufferQueueProducer: [com.termux/com.termux.app.TermuxActivity#40734](this:0xb40000784a71a1d0,id:-1,api:0,p:-1,c:1211) queueBuffer: fps=15.01 dur=1065.66 max=815.72 min=16.52
+11-16 21:26:13.787  1155  1219 I mtkpower@impl: [powerd_req] TIMER_MSG_PERF_LOCK_TIMEOUT hdl:119977
+11-16 21:26:13.787  1155  1219 I libPowerHal: [perfLockRel] hdl:119977, idx:2
+11-16 21:26:13.787  1155  1219 I libPowerHal: [unsetGPUFreq] current min:0, max:0; scn_gpu_min:0, scn_gpu_max:-1; scn_gpu_min(HL):-1, scn_gpu_max(HL):-1
+11-16 21:26:13.787  1155  1219 I libPowerHal: MTKPOWER_HINT_APP_TOUCH: set gpu opp level: 31
+11-16 21:26:13.787  1155  1219 I libPowerHal: MTKPOWER_HINT_APP_TOUCH: set gpu opp level max: 0
+11-16 21:26:13.787  1155  1219 I libPowerHal: [setGPUFreq] Soft min/max = (31, 0); Hard min/max = (31, 0)
+11-16 21:26:13.787  1155  1219 I libPowerHal: [setGPUFreq] final min/max = (31, 0)
+11-16 21:26:13.787  1155  1219 I libPowerHal: MTKPOWER_HINT_APP_TOUCH: set gpu opp level: 31
+11-16 21:26:13.787  1155  1219 I libPowerHal: MTKPOWER_HINT_APP_TOUCH: set gpu opp level max: 0
+11-16 21:26:13.787  1155  1219 I libPowerHal: [PD] MTKPOWER_HINT_APP_TOUCH update cmd:1408100 param:0, pr:6
+11-16 21:26:13.791  1155  1219 I libPowerHal: [PD] MTKPOWER_HINT_APP_TOUCH update cmd:1408300 param:0, pr:6
+11-16 21:26:13.792  1155  1219 I libPowerHal: [PD] MTKPOWER_HINT_APP_TOUCH update cmd:410000 param:0, pr:6
+11-16 21:26:13.792  1155  1219 I libPowerHal: hard user limit set cpu freq: -1 -1 3000000 -1
+11-16 21:26:13.792  1155  1219 I libPowerHal: [PD] MTKPOWER_HINT_APP_TOUCH update cmd:408000 param:-1 pr:6
+11-16 21:26:13.792  1155  1219 I libPowerHal: hard user limit set cpu freq: -1 -1 -1 -1
+11-16 21:26:13.792  1155  1219 I libPowerHal: [PD] MTKPOWER_HINT_APP_TOUCH update cmd:408100 param:-1 pr:6
+11-16 21:26:13.793  1155  1219 I libPowerHal: value: 0
+11-16 21:26:13.793  1155  1219 I libPowerHal: [PD] MTKPOWER_HINT_APP_TOUCH update cmd:410000 param:0 pr:6
+11-16 21:26:13.793  1155  1219 I libPowerHal: [PD] MTKPOWER_HINT_APP_TOUCH update cmd:1000000 param:-1 pr:6
+11-16 21:26:13.793  1155  1219 I libPowerHal: [recordCPUFreqInfo] set cluster[0] min(-1): -1 max(-1): -1 cluster[1] min(-1): -1 max(-1): -1
+11-16 21:26:13.794  1155  1219 I libPowerHal: [perfLockRel] Done for hdl : 119977
+11-16 21:26:13.819  1927  1974 I SmartPower: com.android.chrome/10179(17673): idle->background(6607ms) R(broadcast start Intent { act=android.intent.action.BATTERY_CHANGED flg=0x60000010 (has extras) }) adj=901.
+11-16 21:26:13.820  1927  1974 I SmartPower: com.google.android.gms/99910159(24171): idle->background(7326ms) R(broadcast start Intent { act=android.intent.action.BATTERY_CHANGED flg=0x60000010 (has extras) }) adj=800.
+11-16 21:26:13.822  1927  1974 I SmartPower: com.facebook.katana/10265(31470): idle->background(7639ms) R(broadcast start Intent { act=android.intent.action.BATTERY_CHANGED flg=0x60000010 (has extras) }) adj=915.
+11-16 21:26:13.946  1155  1199 I ExtendedUtils: [timer_thread_start] epoll wait thread while start
+11-16 21:26:13.946  1155  1199 I ExtendedPerfBoost: [restore_callback_expires] thermalbreak callback
+11-16 21:26:13.946  1155  1199 I ExtendedPerfBoost: [triggerList_update] del one node to freelist
+11-16 21:26:13.946  1155  1199 I ExtendedPerfBoost: [triggerList_update] now trigger boost:0  info
+11-16 21:26:13.946  1155  1199 I ExtendedPerfBoost: [trig_thermalbreak] curr target time is same last target time
+11-16 21:26:13.946  1155  1199 I ExtendedPerfBoost: [setThermalBreak] [setThermalBreak] : boost:0
+11-16 21:26:13.994  3555  3570 D BluetoothDevice: getAddress: mAddress=XX:XX:XX:XX:36:12
+11-16 21:26:13.994  3555  3570 D BluetoothDevice: getAddress: mAddress=XX:XX:XX:XX:7F:03
+11-16 21:26:13.994  3555  3570 D BluetoothDevice: getAddress: mAddress=XX:XX:XX:XX:E0:E7
+11-16 21:26:13.994  3555  3570 D BluetoothDevice: getAddress: mAddress=XX:XX:XX:XX:34:20
+11-16 21:26:13.994  3555  3570 D BluetoothDevice: getAddress: mAddress=XX:XX:XX:XX:30:8F
+11-16 21:26:13.995  3555  3570 D BluetoothDevice: getAddress: mAddress=XX:XX:XX:XX:68:C7
+11-16 21:26:13.997  3555  4239 D BluetoothDevice: getAddress: mAddress=XX:XX:XX:XX:36:12
+11-16 21:26:13.997  3555  4239 D BluetoothDevice: getAddress: mAddress=XX:XX:XX:XX:7F:03
+11-16 21:26:13.997  3555  4239 D BluetoothDevice: getAddress: mAddress=XX:XX:XX:XX:E0:E7
+11-16 21:26:13.997  3555  4239 D BluetoothDevice: getAddress: mAddress=XX:XX:XX:XX:34:20
+11-16 21:26:13.997  3555  4239 D BluetoothDevice: getAddress: mAddress=XX:XX:XX:XX:30:8F
+11-16 21:26:13.997  3555  4239 D BluetoothDevice: getAddress: mAddress=XX:XX:XX:XX:68:C7
+11-16 21:26:13.999  3555  4239 D BluetoothDevice: getAddress: mAddress=XX:XX:XX:XX:36:12
+11-16 21:26:13.999  3555  4239 D BluetoothDevice: getAddress: mAddress=XX:XX:XX:XX:7F:03
+11-16 21:26:13.999  3555  4239 D BluetoothDevice: getAddress: mAddress=XX:XX:XX:XX:E0:E7
+11-16 21:26:13.999  3555  4239 D BluetoothDevice: getAddress: mAddress=XX:XX:XX:XX:34:20
+11-16 21:26:14.000  3555  4239 D BluetoothDevice: getAddress: mAddress=XX:XX:XX:XX:30:8F
+11-16 21:26:14.000  3555  4239 D BluetoothDevice: getAddress: mAddress=XX:XX:XX:XX:68:C7
+11-16 21:26:14.001  1152  1195 I libPerfCtl: xgfGetFPS pid:942 fps:-1
+11-16 21:26:14.001  1152  1195 I libPerfCtl: xgfGetFPS pid:2643 fps:-1
+11-16 21:26:14.002  1152  1195 I libPerfCtl: xgfGetFPS pid:6014 fps:-1
+11-16 21:26:14.014  2643  2643 D ControlCenterHeaderExpandController: onExpansionChanged: progress =  0.0
+11-16 21:26:14.041  1211  1211 I BufferQueueProducer: [StatusBar#110](this:0xb40000784a6db9b0,id:-1,api:0,p:-1,c:1211) queueBuffer: fps=0.30 dur=3332.20 max=3332.20 min=3332.20
+11-16 21:26:14.293  1133  1133 I hwcomposer: [HWCDisplay] (0 updateFps():3644), (type:1, mode:2) fps:60.065601,dur:1015.56,max:18.53,min:14.44  
+11-16 21:26:14.308  1927  2778 D FileUtils: Rounded bytes from 5936353280 to 8000000000
+11-16 21:26:14.324  1697  1787 D [GF_HAL][gf_hal_device]: [gf_hal_netlink_recv] send message value=1
+11-16 21:26:14.324  1697  1783 V [GF_HAL][gf_hal]: [gf_hal_irq] enter
+11-16 21:26:14.325  1697  1783 V [GF_HAL][gf_hal_milan]: [hal_milan_irq] enter
+11-16 21:26:14.325  1697  1783 V [GF_HAL][gf_hal_milan]: [irq_pre_process] enter
+11-16 21:26:14.326  1697  1783 V [GF_HAL][gf_hal_common]: [gf_hal_invoke_command] enter
+11-16 21:26:14.326  1697  1783 V [GF_HAL][gf_hal_milan]: [hal_milan_invoke_command] enter
+11-16 21:26:14.335  1697  1783 E [GF_HAL][gf_hal_milan]: [hal_milan_invoke_command] err=GF_SUCCESS, errno=0. reset g_hal_over_current_count to 0!
+11-16 21:26:14.336  1697  1783 V [GF_HAL][gf_hal_milan]: [hal_milan_invoke_command] operation[0]=OPERATION_HOME_KEY, operation[0]=9
+11-16 21:26:14.336  1697  1783 V [GF_HAL][gf_hal_milan]: [hal_milan_invoke_command] exit
+11-16 21:26:14.336  1697  1783 V [GF_HAL][gf_hal_common]: [gf_hal_invoke_command] exit
+11-16 21:26:14.336  1697  1783 I [GF_HAL][gf_hal_milan]: [irq_pre_process] irq_type=[GF_IRQ_FINGER_DOWN_MASK], irq_type=0x0002
+11-16 21:26:14.336  1697  1783 D [GF_HAL][gf_hal_milan]: [irq_pre_process] g_is_down_detected=0
+11-16 21:26:14.336  1697  1783 D [GF_HAL][gf_hal_milan]: [irq_pre_process] GF_IRQ_FINGER_DOWN_MASK
+11-16 21:26:14.336  1697  1783 D [GF_HAL][gf_hal_milan]: [irq_pre_process] set g_is_down_detected=1
+11-16 21:26:14.336  1697  1783 V [GF_HAL][gf_hal_milan]: [irq_pre_process] exit
+11-16 21:26:14.336  1697  1783 V [GF_HAL][gf_hal_milan]: [irq_process] enter
+11-16 21:26:14.336  1697  1783 V [GF_HAL][gf_hal_milan]: [irq_key] enter
+11-16 21:26:14.336  1697  1783 V [GF_HAL][gf_hal_common]: [gf_hal_common_irq_key] enter
+11-16 21:26:14.336  1697  1783 V [GF_HAL][gf_hal_common]: [gf_hal_common_irq_key] exit
+11-16 21:26:14.336  1697  1783 V [GF_HAL][gf_hal_milan]: [irq_key] exit
+11-16 21:26:14.336  1697  1783 V [GF_HAL][gf_hal_milan]: [irq_process] exit
+11-16 21:26:14.336  1697  1783 V [GF_HAL][gf_hal_milan]: [irq_post_process] enter
+11-16 21:26:14.336  1697  1783 V [GF_HAL][gf_hal_milan]: [irq_post_process] exit
+11-16 21:26:14.337  1697  1783 V [GF_HAL][gf_hal_milan]: [hal_milan_irq] exit
+11-16 21:26:14.337  1697  1783 V [GF_HAL][gf_hal]: [gf_hal_irq] exit
+11-16 21:26:14.405  1456  1646 D connsyslogger: SD_LOG_ROOT is /data/debuglogger/connsyslog/fw.
+11-16 21:26:14.405  1456  1646 D connsyslogger: systemReady:1
+11-16 21:26:14.540  1211  1211 I BufferQueueProducer: [InputMethod#40736](this:0xb40000784a70fb20,id:-1,api:0,p:-1,c:1211) queueBuffer: fps=60.07 dur=1015.45 max=17.21 min=16.01
+11-16 21:26:14.737  1927  2116 I MIUIInput: [MotionEvent] notifyMotion - eventTime=88853717960000, deviceId=3, source=0x1002, policyFlags=0x0, action=0x0, flags=0x0, downTime=88853717960000
+11-16 21:26:14.740  1927  2115 I MIUIInput: [MotionEvent] publisher action=0x0, deviceId=3, 88853717, channel '421e472 InputMethod (server)'
+11-16 21:26:14.740  1155  1219 I libPowerHal: [perfLockAcq] idx:1 hdl:119978 hint:25 pid:1155 tid:1155 duration:120 lock_user:vendor.mediatek => ret_hdl:119978
+11-16 21:26:14.740  1155  1219 I libPowerHal: [setGPUFreq] MTKPOWER_HINT_APP_TOUCH user set gpu freq min:0, max:-1
+11-16 21:26:14.740  1155  1219 I libPowerHal: MTKPOWER_HINT_APP_TOUCH: set gpu opp level: 0
+11-16 21:26:14.741  1927  2115 I MIUIInput: [MotionEvent] publisher action=0x0, deviceId=3, 88853717, channel '[Gesture Monitor] miui-gesture (server)'
+11-16 21:26:14.741  1155  1219 I libPowerHal: MTKPOWER_HINT_APP_TOUCH: set gpu opp level max: 0
+11-16 21:26:14.741  1155  1219 I libPowerHal: [setGPUFreq] Soft min/max = (0, 0); Hard min/max = (31, 0)
+11-16 21:26:14.741  1155  1219 I libPowerHal: [setGPUFreq] final min/max = (0, 0)
+11-16 21:26:14.741  1155  1219 I libPowerHal: MTKPOWER_HINT_APP_TOUCH: set gpu opp level: 0
+11-16 21:26:14.741  1155  1219 I libPowerHal: MTKPOWER_HINT_APP_TOUCH: set gpu opp level max: 0
+11-16 21:26:14.742  6014  6014 I MIUIInput: [MotionEvent] ViewRootImpl windowName 'InputMethod', { action=ACTION_DOWN, id[0]=0, pointerCount=1, eventTime=88853717, downTime=88853967, phoneEventTime=21:26:14.736 } moveCount:0
+11-16 21:26:14.743  1155  1219 I libPowerHal: [PE] MTKPOWER_HINT_APP_TOUCH update cmd:1408100, param:47, pr:3
+11-16 21:26:14.744  1155  1219 I libPowerHal: [PE] MTKPOWER_HINT_APP_TOUCH update cmd:1408300, param:100, pr:3
+11-16 21:26:14.744  1155  1219 I libPowerHal: [PE] MTKPOWER_HINT_APP_TOUCH update cmd:410000, param:1, pr:3
+11-16 21:26:14.744  1155  1219 I libPowerHal: hard user limit set cpu freq: 3000000 -1 -1 -1
+11-16 21:26:14.744  1155  1219 I libPowerHal: [PE] MTKPOWER_HINT_APP_TOUCH update cmd:408000 param:3000000 pr:3
+11-16 21:26:14.744  1155  1219 I libPowerHal: hard user limit set cpu freq: 3000000 -1 3000000 -1
+11-16 21:26:14.744  1155  1219 I libPowerHal: [PE] MTKPOWER_HINT_APP_TOUCH update cmd:408100 param:3000000 pr:3
+11-16 21:26:14.744  1155  1219 I libPowerHal: value: 1
+11-16 21:26:14.744  1155  1219 I libPowerHal: [PE] MTKPOWER_HINT_APP_TOUCH update cmd:410000 param:1 pr:3
+11-16 21:26:14.745  1155  1219 I libPowerHal: [setDvfsrcDevFreqOpp] opp:0, freq:3600000000
+11-16 21:26:14.745  1155  1219 I libPowerHal: [PE] MTKPOWER_HINT_APP_TOUCH update cmd:1000000 param:0 pr:3
+11-16 21:26:14.745  1155  1219 I libPowerHal: [recordCPUFreqInfo] set cluster[0] min(-1): -1 max(-1): -1 cluster[1] min(-1): -1 max(-1): -1
+11-16 21:26:14.745  1155  1219 I libPowerHal: [perfLockAcq] Done for hdl : 119978
+11-16 21:26:14.745  1155  1219 I libPowerHal: [perfLockRel] hdl:119977, idx:-1
+11-16 21:26:14.753  1927  2116 I MIUIInput: [MotionEvent] notifyMotion - eventTime=88853734316000, deviceId=3, source=0x1002, policyFlags=0x0, action=0x1, flags=0x0, downTime=88853717960000
+11-16 21:26:14.754  1155  1186 I libPowerHal: [mtkPowerHint] hint:25, hold:80, ext:0, ext_hold:0
+11-16 21:26:14.754  1927  2115 I MIUIInput: [MotionEvent] publisher action=0x1, deviceId=3, 88853734, channel '421e472 InputMethod (server)'
+11-16 21:26:14.754  1927  2115 I MIUIInput: [MotionEvent] publisher action=0x1, deviceId=3, 88853734, channel '[Gesture Monitor] miui-gesture (server)'
+11-16 21:26:14.755  1155  1219 I libPowerHal: [perfLockAcq] idx:2 hdl:119979 hint:25 pid:1155 tid:1155 duration:80 lock_user:vendor.mediatek => ret_hdl:119979
+11-16 21:26:14.755  1155  1219 I libPowerHal: [setGPUFreq] MTKPOWER_HINT_APP_TOUCH user set gpu freq min:0, max:-1
+11-16 21:26:14.755  1155  1219 I libPowerHal: MTKPOWER_HINT_APP_TOUCH: set gpu opp level max: 0
+11-16 21:26:14.755  6014  6014 I MIUIInput: [MotionEvent] ViewRootImpl windowName 'InputMethod', { action=ACTION_UP, id[0]=0, pointerCount=1, eventTime=88853734, downTime=88853967, phoneEventTime=21:26:14.753 } moveCount:0
+11-16 21:26:14.755  1155  1219 I libPowerHal: [setGPUFreq] Soft min/max = (0, 0); Hard min/max = (31, 0)
+11-16 21:26:14.755  1155  1219 I libPowerHal: [setGPUFreq] final min/max = (0, 0)
+11-16 21:26:14.755  1155  1219 I libPowerHal: MTKPOWER_HINT_APP_TOUCH: set gpu opp level: 0
+11-16 21:26:14.755  1155  1219 I libPowerHal: MTKPOWER_HINT_APP_TOUCH: set gpu opp level max: 0
+11-16 21:26:14.756  1155  1219 I libPowerHal: [perfLockAcq] Done for hdl : 119979
+11-16 21:26:14.756  1155  1219 I libPowerHal: [perfLockRel] hdl:119978, idx:1
+11-16 21:26:14.756  1155  1219 I libPowerHal: [unsetGPUFreq] current min:0, max:0; scn_gpu_min:0, scn_gpu_max:-1; scn_gpu_min(HL):-1, scn_gpu_max(HL):-1
+11-16 21:26:14.756  1155  1219 I libPowerHal: [setGPUFreq] Soft min/max = (0, 0); Hard min/max = (31, 0)
+11-16 21:26:14.756  1155  1219 I libPowerHal: [setGPUFreq] final min/max = (0, 0)
+11-16 21:26:14.756  1155  1219 I libPowerHal: MTKPOWER_HINT_APP_TOUCH: set gpu opp level: 0
+11-16 21:26:14.756  1155  1219 I libPowerHal: MTKPOWER_HINT_APP_TOUCH: set gpu opp level max: 0
+11-16 21:26:14.757  1155  1219 I libPowerHal: [perfLockRel] Done for hdl : 119978
+11-16 21:26:14.837  1155  1219 I mtkpower@impl: [powerd_req] TIMER_MSG_PERF_LOCK_TIMEOUT hdl:119979
+11-16 21:26:14.837  1155  1219 I libPowerHal: [perfLockRel] hdl:119979, idx:2
+11-16 21:26:14.837  1155  1219 I libPowerHal: [unsetGPUFreq] current min:0, max:0; scn_gpu_min:0, scn_gpu_max:-1; scn_gpu_min(HL):-1, scn_gpu_max(HL):-1
+11-16 21:26:14.837  1155  1219 I libPowerHal: MTKPOWER_HINT_APP_TOUCH: set gpu opp level: 31
+11-16 21:26:14.837  1155  1219 I libPowerHal: MTKPOWER_HINT_APP_TOUCH: set gpu opp level max: 0
+11-16 21:26:14.837  1155  1219 I libPowerHal: [setGPUFreq] Soft min/max = (31, 0); Hard min/max = (31, 0)
+11-16 21:26:14.837  1155  1219 I libPowerHal: [setGPUFreq] final min/max = (31, 0)
+11-16 21:26:14.837  1155  1219 I libPowerHal: MTKPOWER_HINT_APP_TOUCH: set gpu opp level: 31
+11-16 21:26:14.837  1155  1219 I libPowerHal: MTKPOWER_HINT_APP_TOUCH: set gpu opp level max: 0
+11-16 21:26:14.837  1155  1219 I libPowerHal: [PD] MTKPOWER_HINT_APP_TOUCH update cmd:1408100 param:0, pr:6
+11-16 21:26:14.841  1155  1219 I libPowerHal: [PD] MTKPOWER_HINT_APP_TOUCH update cmd:1408300 param:0, pr:6
+11-16 21:26:14.842  1155  1219 I libPowerHal: [PD] MTKPOWER_HINT_APP_TOUCH update cmd:410000 param:0, pr:6
+11-16 21:26:14.843  1155  1219 I libPowerHal: hard user limit set cpu freq: -1 -1 3000000 -1
+11-16 21:26:14.843  1155  1219 I libPowerHal: [PD] MTKPOWER_HINT_APP_TOUCH update cmd:408000 param:-1 pr:6
+11-16 21:26:14.843  1155  1219 I libPowerHal: hard user limit set cpu freq: -1 -1 -1 -1
+11-16 21:26:14.843  1155  1219 I libPowerHal: [PD] MTKPOWER_HINT_APP_TOUCH update cmd:408100 param:-1 pr:6
+11-16 21:26:14.843  1155  1219 I libPowerHal: value: 0
+11-16 21:26:14.843  1155  1219 I libPowerHal: [PD] MTKPOWER_HINT_APP_TOUCH update cmd:410000 param:0 pr:6
+11-16 21:26:14.844  1155  1219 I libPowerHal: [PD] MTKPOWER_HINT_APP_TOUCH update cmd:1000000 param:-1 pr:6
+11-16 21:26:14.844  1155  1219 I libPowerHal: [recordCPUFreqInfo] set cluster[0] min(-1): -1 max(-1): -1 cluster[1] min(-1): -1 max(-1): -1
+11-16 21:26:14.845  1155  1219 W LibMBrainProxy: MBrain offline
+11-16 21:26:14.845  1155  1219 I libPowerHal: [perfLockRel] Done for hdl : 119979
+11-16 21:26:15.001  1152  1195 I libPerfCtl: xgfGetFPS pid:2643 fps:-1
+11-16 21:26:15.001  1152  1195 I libPerfCtl: xgfGetFPS pid:6014 fps:-1
+11-16 21:26:15.237  1927  2116 I MIUIInput: [MotionEvent] notifyMotion - eventTime=88854218097000, deviceId=3, source=0x1002, policyFlags=0x0, action=0x0, flags=0x0, downTime=88854218097000
+11-16 21:26:15.240  1927  2115 I MIUIInput: [MotionEvent] publisher action=0x0, deviceId=3, 88854218, channel '421e472 InputMethod (server)'
+11-16 21:26:15.240  1155  1219 I libPowerHal: [perfLockAcq] idx:1 hdl:119980 hint:25 pid:1155 tid:1155 duration:120 lock_user:vendor.mediatek => ret_hdl:119980
+11-16 21:26:15.240  1155  1219 I libPowerHal: [setGPUFreq] MTKPOWER_HINT_APP_TOUCH user set gpu freq min:0, max:-1
+11-16 21:26:15.240  1155  1219 I libPowerHal: MTKPOWER_HINT_APP_TOUCH: set gpu opp level: 0
+11-16 21:26:15.240  1927  2115 I MIUIInput: [MotionEvent] publisher action=0x0, deviceId=3, 88854218, channel '[Gesture Monitor] miui-gesture (server)'
+11-16 21:26:15.240  6014  6014 I MIUIInput: [MotionEvent] ViewRootImpl windowName 'InputMethod', { action=ACTION_DOWN, id[0]=0, pointerCount=1, eventTime=88854218, downTime=88854468, phoneEventTime=21:26:15.237 } moveCount:0
+11-16 21:26:15.241  1155  1219 I libPowerHal: MTKPOWER_HINT_APP_TOUCH: set gpu opp level max: 0
+11-16 21:26:15.241  1155  1219 I libPowerHal: [setGPUFreq] Soft min/max = (0, 0); Hard min/max = (31, 0)
+11-16 21:26:15.241  1155  1219 I libPowerHal: [setGPUFreq] final min/max = (0, 0)
+11-16 21:26:15.241  1155  1219 I libPowerHal: MTKPOWER_HINT_APP_TOUCH: set gpu opp level: 0
+11-16 21:26:15.241  1155  1219 I libPowerHal: MTKPOWER_HINT_APP_TOUCH: set gpu opp level max: 0
+11-16 21:26:15.245  1155  1219 I libPowerHal: [PE] MTKPOWER_HINT_APP_TOUCH update cmd:1408100, param:47, pr:3
+11-16 21:26:15.246  1155  1219 I libPowerHal: [PE] MTKPOWER_HINT_APP_TOUCH update cmd:1408300, param:100, pr:3
+11-16 21:26:15.246  1155  1219 I libPowerHal: [PE] MTKPOWER_HINT_APP_TOUCH update cmd:410000, param:1, pr:3
+11-16 21:26:15.247  1155  1219 I libPowerHal: hard user limit set cpu freq: 3000000 -1 -1 -1
+11-16 21:26:15.247  1155  1219 I libPowerHal: [PE] MTKPOWER_HINT_APP_TOUCH update cmd:408000 param:3000000 pr:3
+11-16 21:26:15.247  1155  1219 I libPowerHal: hard user limit set cpu freq: 3000000 -1 3000000 -1
+11-16 21:26:15.247  1155  1219 I libPowerHal: [PE] MTKPOWER_HINT_APP_TOUCH update cmd:408100 param:3000000 pr:3
+11-16 21:26:15.247  1155  1219 I libPowerHal: value: 1
+11-16 21:26:15.247  1155  1219 I libPowerHal: [PE] MTKPOWER_HINT_APP_TOUCH update cmd:410000 param:1 pr:3
+11-16 21:26:15.247  1155  1219 I libPowerHal: [setDvfsrcDevFreqOpp] opp:0, freq:3600000000
+11-16 21:26:15.247  1155  1219 I libPowerHal: [PE] MTKPOWER_HINT_APP_TOUCH update cmd:1000000 param:0 pr:3
+11-16 21:26:15.247  1155  1219 I libPowerHal: [recordCPUFreqInfo] set cluster[0] min(-1): -1 max(-1): -1 cluster[1] min(-1): -1 max(-1): -1
+11-16 21:26:15.247  1155  1219 I libPowerHal: [perfLockAcq] Done for hdl : 119980
+11-16 21:26:15.248  1155  1219 I libPowerHal: [perfLockRel] hdl:119979, idx:-1
+11-16 21:26:15.291  1621  1747 D AALLightSensor: oldLux=6 [SA:-1 LA:-1] newLux=7 (oriLux: 7)
+11-16 21:26:15.291  1621  1747 D AALService: [CRTC_114] onALIChanged: 6 -> 7
+11-16 21:26:15.307  1133  1133 I hwcomposer: [HWCDisplay] (0 updateFps():3644), (type:1, mode:2) fps:60.154110,dur:1014.06,max:18.11,min:14.41  
+11-16 21:26:15.311  1927  2778 D FileUtils: Rounded bytes from 5936353280 to 8000000000
+11-16 21:26:15.319  1927  2116 I MIUIInput: [MotionEvent] notifyMotion - eventTime=88854300707000, deviceId=3, source=0x1002, policyFlags=0x0, action=0x1, flags=0x0, downTime=88854218097000
+11-16 21:26:15.320  1155  1186 I libPowerHal: [mtkPowerHint] hint:25, hold:80, ext:0, ext_hold:0
+11-16 21:26:15.321  1927  2115 I MIUIInput: [MotionEvent] publisher action=0x1, deviceId=3, 88854300, channel '421e472 InputMethod (server)'
+11-16 21:26:15.321  1927  2115 I MIUIInput: [MotionEvent] publisher action=0x1, deviceId=3, 88854300, channel '[Gesture Monitor] miui-gesture (server)'
+11-16 21:26:15.321  6014  6014 I MIUIInput: [MotionEvent] ViewRootImpl windowName 'InputMethod', { action=ACTION_UP, id[0]=0, pointerCount=1, eventTime=88854300, downTime=88854468, phoneEventTime=21:26:15.319 } moveCount:0
+11-16 21:26:15.321  1155  1219 I libPowerHal: [perfLockAcq] idx:2 hdl:119981 hint:25 pid:1155 tid:1155 duration:80 lock_user:vendor.mediatek => ret_hdl:119981
+11-16 21:26:15.321  1155  1219 I libPowerHal: [setGPUFreq] MTKPOWER_HINT_APP_TOUCH user set gpu freq min:0, max:-1
+11-16 21:26:15.321  1155  1219 I libPowerHal: MTKPOWER_HINT_APP_TOUCH: set gpu opp level max: 0
+11-16 21:26:15.321  1155  1219 I libPowerHal: [setGPUFreq] Soft min/max = (0, 0); Hard min/max = (31, 0)
+11-16 21:26:15.321  1155  1219 I libPowerHal: [setGPUFreq] final min/max = (0, 0)
+11-16 21:26:15.321  1155  1219 I libPowerHal: MTKPOWER_HINT_APP_TOUCH: set gpu opp level: 0
+11-16 21:26:15.322  1155  1219 I libPowerHal: MTKPOWER_HINT_APP_TOUCH: set gpu opp level max: 0
+11-16 21:26:15.322  1155  1219 I libPowerHal: [perfLockAcq] Done for hdl : 119981
+11-16 21:26:15.322  1155  1219 I libPowerHal: [perfLockRel] hdl:119980, idx:1
+11-16 21:26:15.322  1155  1219 I libPowerHal: [unsetGPUFreq] current min:0, max:0; scn_gpu_min:0, scn_gpu_max:-1; scn_gpu_min(HL):-1, scn_gpu_max(HL):-1
+11-16 21:26:15.322  1155  1219 I libPowerHal: [setGPUFreq] Soft min/max = (0, 0); Hard min/max = (31, 0)
+11-16 21:26:15.322  1155  1219 I libPowerHal: [setGPUFreq] final min/max = (0, 0)
+11-16 21:26:15.322  1155  1219 I libPowerHal: MTKPOWER_HINT_APP_TOUCH: set gpu opp level: 0
+11-16 21:26:15.322  1155  1219 I libPowerHal: MTKPOWER_HINT_APP_TOUCH: set gpu opp level max: 0
+11-16 21:26:15.324  1155  1219 I libPowerHal: [perfLockRel] Done for hdl : 119980
+11-16 21:26:15.329   942   942 V VRI[TermuxActivity]: [ANR Warning]Input routeing takes more than 6000ms since 1970-01-01 02:00:00.000, this = com.mediatek.view.impl.ViewDebugManagerImpl@872ba75
+11-16 21:26:15.330   942   942 V VRI[TermuxActivity]: Input event delivered to android.view.ViewRootImpl$NativePostImeInputStage@83ddd7c at 2026-11-16 21:26:15.325
+11-16 21:26:15.330   942   942 V VRI[TermuxActivity]: Input event delivered to android.view.ViewRootImpl$EarlyPostImeInputStage@dccdc6f at 2026-11-16 21:26:15.325
+11-16 21:26:15.330   942   942 V VRI[TermuxActivity]: Input event delivered to android.view.ViewRootImpl$SyntheticInputStage@cf0865a at 2026-11-16 21:26:15.326
+11-16 21:26:15.330   942   942 V VRI[TermuxActivity]: Input event delivered to android.view.ViewRootImpl$ViewPostImeInputStage@5bb4605 at 2026-11-16 21:26:15.325
+11-16 21:26:15.331   942   942 V VRI[TermuxActivity]: [ANR Warning]Input routeing takes more than 6000ms since 1970-01-01 02:00:00.000, this = com.mediatek.view.impl.ViewDebugManagerImpl@872ba75
+11-16 21:26:15.331   942   942 V VRI[TermuxActivity]: Input event delivered to android.view.ViewRootImpl$NativePostImeInputStage@83ddd7c at 2026-11-16 21:26:15.330
+11-16 21:26:15.331   942   942 V VRI[TermuxActivity]: Input event delivered to android.view.ViewRootImpl$EarlyPostImeInputStage@dccdc6f at 2026-11-16 21:26:15.330
+11-16 21:26:15.331   942   942 V VRI[TermuxActivity]: Input event delivered to android.view.ViewRootImpl$SyntheticInputStage@cf0865a at 2026-11-16 21:26:15.330
+11-16 21:26:15.331   942   942 V VRI[TermuxActivity]: Input event delivered to android.view.ViewRootImpl$ViewPostImeInputStage@5bb4605 at 2026-11-16 21:26:15.330
+11-16 21:26:15.356  1211  1211 I BufferQueueProducer: [com.termux/com.termux.app.TermuxActivity#40734](this:0xb40000784a71a1d0,id:-1,api:0,p:-1,c:1211) queueBuffer: fps=0.62 dur=1616.27 max=1616.27 min=1616.27
+11-16 21:26:15.402  1155  1219 I mtkpower@impl: [powerd_req] TIMER_MSG_PERF_LOCK_TIMEOUT hdl:119981
+11-16 21:26:15.402  1155  1219 I libPowerHal: [perfLockRel] hdl:119981, idx:2
+11-16 21:26:15.402  1155  1219 I libPowerHal: [unsetGPUFreq] current min:0, max:0; scn_gpu_min:0, scn_gpu_max:-1; scn_gpu_min(HL):-1, scn_gpu_max(HL):-1
+11-16 21:26:15.402  1155  1219 I libPowerHal: MTKPOWER_HINT_APP_TOUCH: set gpu opp level: 31
+11-16 21:26:15.402  1155  1219 I libPowerHal: MTKPOWER_HINT_APP_TOUCH: set gpu opp level max: 0
+11-16 21:26:15.402  1155  1219 I libPowerHal: [setGPUFreq] Soft min/max = (31, 0); Hard min/max = (31, 0)
+11-16 21:26:15.402  1155  1219 I libPowerHal: [setGPUFreq] final min/max = (31, 0)
+11-16 21:26:15.403  1155  1219 I libPowerHal: MTKPOWER_HINT_APP_TOUCH: set gpu opp level: 31
+11-16 21:26:15.403  1155  1219 I libPowerHal: MTKPOWER_HINT_APP_TOUCH: set gpu opp level max: 0
+11-16 21:26:15.403  1155  1219 I libPowerHal: [PD] MTKPOWER_HINT_APP_TOUCH update cmd:1408100 param:0, pr:6
+11-16 21:26:15.406  1155  1219 I libPowerHal: [PD] MTKPOWER_HINT_APP_TOUCH update cmd:1408300 param:0, pr:6
+11-16 21:26:15.407  1155  1219 I libPowerHal: [PD] MTKPOWER_HINT_APP_TOUCH update cmd:410000 param:0, pr:6
+11-16 21:26:15.408  1155  1219 I libPowerHal: hard user limit set cpu freq: -1 -1 3000000 -1
+11-16 21:26:15.408  1155  1219 I libPowerHal: [PD] MTKPOWER_HINT_APP_TOUCH update cmd:408000 param:-1 pr:6
+11-16 21:26:15.408  1155  1219 I libPowerHal: hard user limit set cpu freq: -1 -1 -1 -1
+11-16 21:26:15.408  1155  1219 I libPowerHal: [PD] MTKPOWER_HINT_APP_TOUCH update cmd:408100 param:-1 pr:6
+11-16 21:26:15.408  1155  1219 I libPowerHal: value: 0
+11-16 21:26:15.408  1155  1219 I libPowerHal: [PD] MTKPOWER_HINT_APP_TOUCH update cmd:410000 param:0 pr:6
+11-16 21:26:15.409  1155  1219 I libPowerHal: [PD] MTKPOWER_HINT_APP_TOUCH update cmd:1000000 param:-1 pr:6
+11-16 21:26:15.409  1155  1219 I libPowerHal: [recordCPUFreqInfo] set cluster[0] min(-1): -1 max(-1): -1 cluster[1] min(-1): -1 max(-1): -1
+11-16 21:26:15.409  1155  1219 I libPowerHal: [perfLockRel] Done for hdl : 119981
