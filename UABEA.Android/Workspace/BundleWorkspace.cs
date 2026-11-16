@@ -55,7 +55,7 @@ public sealed class BundleWorkspace : IDisposable
             var replacement = new BundleWorkspaceItem(name, old.OriginalName, old.IsNew,
                 isSerialized, true, false, data);
             if (index >= 0) _items[index] = replacement;
-            if (old.IsNew) old.Stream.Dispose();
+            if (old.IsNew || old.IsModified) old.Stream.Dispose();
             _lookup.Remove(previousName);
             _lookup[name] = replacement;
             _removedFiles.Remove(old.OriginalName);
@@ -129,7 +129,7 @@ public sealed class BundleWorkspace : IDisposable
     private void DisposeNewStreams()
     {
         foreach (var item in _items)
-            if (item.IsNew) item.Stream.Dispose();
+            if (item.IsNew || item.IsModified) item.Stream.Dispose();
     }
 
     public void Dispose()
