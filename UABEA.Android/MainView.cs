@@ -681,20 +681,22 @@ public sealed class MainView : UserControl
 
         if (_currentPage == BrowserPage.Bundle && _currentBundle is not null)
         {
-            var entries = _currentBundle.file.BlockAndDirInfo.DirectoryInfos;
+            var entries = _bundleWorkspace.Files;
             var selectedType = _filterBox.SelectedItem?.ToString() ?? "All types";
-            var filtered = entries.Where(entry => (entry.Flags & 0x02) == 0 &&
+            var filtered = entries.Where(entry =>
                 (selectedType == "All types" || GetEntryKind(entry.Name) == selectedType) &&
-                (Matches(entry.Name, query) || Matches(entry.DecompressedSize.ToString(), query)))
+                (Matches(entry.Name, query) || Matches(entry.Stream.Length.ToString(), query)))
                 .ToList();
 
             _currentRows = filtered.Select(entry =>
             {
                 var name = entry.Name;
-                var isSerialized = (entry.Flags & 0x04) != 0;
-                var kind = isSerialized ? "Serialized assets file" : GetEntryKind(name);
-                return new RowData(name, $"{kind} • {FormatSize(entry.DecompressedSize)}",
-                    GetEntryIcon(name), () => _ = OpenBundleEntryAsync(name));
+                var kind = entry.IsSerialized ? "Serialized assets file" : GetEntryKind(name);
+                string detail = $"{kind} • {FormatSize(entry.Stream.Length)}" +
+                    (entry.IsNew ? " • Added" : entry.IsModified ? " • Replaced" :
+                    !string.Equals(entry.Name, entry.OriginalName, StringComparison.Ordinal) ? " • Renamed" : "");
+                return new RowData(name, detail, GetEntryIcon(name),
+                    () => _ = OpenBundleEntryAsync(entry.OriginalName));
             }).ToList();
         }
         else if (_currentPage == BrowserPage.Assets && _currentAssets is not null)
@@ -2538,7 +2540,6 @@ public sealed class MainView : UserControl
                     if (bundle is null)
                         throw new InvalidOperationException("The Unity bundle is no longer available.");
 
-                    _bundleWorkspace.Reset(bundle);
                     foreach (var changedFile in changedFiles)
                     {
                         var replacers = GetPendingAssetReplacers(changedFile);
@@ -2549,6 +2550,7 @@ public sealed class MainView : UserControl
                             changedFile.file.Write(assetsWriter, 0, replacers);
 
                         string entryName = ResolveBundleAssetsEntryName(bundle, changedFile);
+                        changedAssetsStream.Position = 0;
                         _bundleWorkspace.AddOrReplaceFile(changedAssetsStream, entryName, true);
                     }
 
