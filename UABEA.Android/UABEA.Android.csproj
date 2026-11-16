@@ -33,6 +33,7 @@
   <ItemGroup>
     <Compile Include="..\TexturePlugin\Texture2DSwitchDeswizzler.cs" Link="Texture2DSwitchDeswizzler.cs" />
     <Compile Include="..\TexturePlugin\TextureEncoderDecoder.cs" Link="TextureEncoderDecoder.cs" />
+    <Compile Include="..\TexturePlugin\PInvoke.cs" Link="PInvoke.cs" />
   </ItemGroup>
 
   <ItemGroup>
