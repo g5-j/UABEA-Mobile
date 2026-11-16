@@ -2231,7 +2231,13 @@ public sealed class MainView : UserControl
         var activeManager = manager ?? _assetsManager;
         if (activeManager is null) return null;
 
-        if ((_assetWorkspace?.TryGetPreviewData(instance, asset.PathId, out var workspaceData) == true && (replacementData = workspaceData) is not null) || _pendingAssetData.TryGetValue(new AssetID(instance.path, asset.PathId), out replacementData))
+        byte[]? replacementData = null;
+        if (_assetWorkspace?.TryGetPreviewData(instance, asset.PathId, out var workspaceData) == true)
+            replacementData = workspaceData;
+        else
+            _pendingAssetData.TryGetValue(new AssetID(instance.path, asset.PathId), out replacementData);
+
+        if (replacementData is not null)
         {
             var template = activeManager.GetTemplateBaseField(instance, asset);
             if (template is not null)
