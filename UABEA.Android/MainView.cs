@@ -817,6 +817,141 @@ public sealed class MainView : UserControl
             string.Equals(value, previous, StringComparison.OrdinalIgnoreCase)) ?? "All types";
     }
 
+    private async Task ImportBundleEntryAsync(string? replaceName)
+    {
+        if (_currentBundle is null || _isBusy) return;
+        var top = TopLevel.GetTopLevel(this);
+        if (top is null) return;
+        var selected = await top.StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
+        {
+            Title = replaceName is null ? "Add a file to the Unity bundle" : "Choose replacement bundle entry",
+            AllowMultiple = false
+        });
+        if (selected.Count == 0) return;
+        try
+        {
+            var memory = new MemoryStream();
+            await using (var input = await selected[0].OpenReadAsync())
+                await input.CopyToAsync(memory);
+            if (memory.Length == 0) throw new InvalidDataException("The selected file is empty.");
+            if (memory.Length > 1024L * 1024 * 1024)
+                throw new InvalidDataException("The selected file exceeds the 1 GB import limit.");
+            memory.Position = 0;
+            string name = replaceName ?? Path.GetFileName(selected[0].Name);
+            bool serialized = Path.GetExtension(name).Equals(".assets", StringComparison.OrdinalIgnoreCase) ||
+                Path.GetExtension(name).Equals(".asset", StringComparison.OrdinalIgnoreCase);
+            _bundleWorkspace.AddOrReplaceFile(memory, name, serialized);
+            _hasUnsavedChanges = true;
+            _status.Text = (replaceName is null ? "Added" : "Replaced") + $" bundle entry: {name}. Save the bundle to apply the change.";
+            UpdateFloatingActions();
+            RefreshCurrentList();
+        }
+        catch (Exception ex) { _status.Text = "Bundle import failed: " + ex.Message; }
+    }
+
+    private void DeleteBundleEntry(string name)
+    {
+        try
+        {
+            _bundleWorkspace.RemoveFile(name);
+            _hasUnsavedChanges = true;
+            _status.Text = $"Bundle entry marked for deletion: {name}. Save the bundle to apply it.";
+            UpdateFloatingActions();
+            RefreshCurrentList();
+        }
+        catch (Exception ex) { _status.Text = "Could not delete bundle entry: " + ex.Message; }
+    }
+
+    private void ShowRenameBundleEntry(string oldName)
+    {
+        if (_bundleWorkspaceOverlay is not null) return;
+        var nameBox = new TextBox
+        {
+            Text = oldName, Watermark = "New entry name", MinHeight = 48,
+            Background = SurfaceContainerBrush, Foreground = TextBrush,
+            BorderBrush = OutlineBrush, CornerRadius = new CornerRadius(12),
+            Padding = new Thickness(12)
+        };
+        var panel = new StackPanel { Spacing = 12, Width = 320 };
+        panel.Children.Add(new TextBlock { Text = "Rename bundle entry", FontSize = 18, FontWeight = FontWeight.SemiBold, Foreground = TextBrush });
+        panel.Children.Add(nameBox);
+        var buttons = new Grid { ColumnDefinitions = new ColumnDefinitions("*,*") };
+        var cancel = new Button { Content = "Cancel", MinHeight = 44, Background = SurfaceHighBrush, Foreground = TextBrush };
+        cancel.Click += (_, _) => CloseBundleRename();
+        var apply = new Button { Content = "Rename", MinHeight = 44, Background = PrimaryBrush, Foreground = OnPrimaryBrush };
+        apply.Click += (_, _) =>
+        {
+            try
+            {
+                _bundleWorkspace.RenameFile(oldName, nameBox.Text ?? "");
+                _hasUnsavedChanges = true;
+                _status.Text = $"Renamed bundle entry to {nameBox.Text}. Save the bundle to apply it.";
+                CloseBundleRename();
+                UpdateFloatingActions();
+                RefreshCurrentList();
+            }
+            catch (Exception ex) { _status.Text = "Rename failed: " + ex.Message; }
+        };
+        buttons.Children.Add(cancel); Grid.SetColumn(apply, 1); buttons.Children.Add(apply);
+        panel.Children.Add(buttons);
+        _bundleWorkspaceOverlay = new Border
+        {
+            Background = Brush.Parse("#F0101722"), Padding = new Thickness(22),
+            HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center,
+            Child = new Border { Background = SurfaceBrush, BorderBrush = OutlineBrush, BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(18), Padding = new Thickness(16), Child = panel }
+        };
+        _pageLayers.Children.Add(_bundleWorkspaceOverlay);
+        nameBox.Focus();
+    }
+
+    private Border? _bundleWorkspaceOverlay;
+    private void CloseBundleRename()
+    {
+        if (_bundleWorkspaceOverlay is null) return;
+        _pageLayers.Children.Remove(_bundleWorkspaceOverlay);
+        _bundleWorkspaceOverlay = null;
+    }
+
+    private async Task SaveBundleWorkspaceAsync()
+    {
+        if (_currentBundle is null || !_bundleWorkspace.Modified || _isBusy) return;
+        var top = TopLevel.GetTopLevel(this);
+        if (top is null) return;
+        var destination = await top.StorageProvider.SaveFilePickerAsync(new FilePickerSaveOptions
+        {
+            Title = "Save modified Unity bundle copy",
+            SuggestedFileName = Path.GetFileNameWithoutExtension(_currentFileName) + "-modified" + (Path.GetExtension(_currentFileName).Length == 0 ? ".bundle" : Path.GetExtension(_currentFileName))
+        });
+        if (destination is null) return;
+        string temp = Path.Combine(Path.GetTempPath(), "uabea-bundle-" + Guid.NewGuid().ToString("N") + ".bundle");
+        try
+        {
+            _isBusy = true;
+            SetLoading(true, "Rebuilding Unity bundle...");
+            await Task.Run(() =>
+            {
+                var replacers = _bundleWorkspace.GetReplacers();
+                if (replacers.Count == 0) throw new InvalidOperationException("There are no bundle entry changes to save.");
+                using var output = File.Create(temp);
+                using var writer = new AssetsFileWriter(output);
+                _currentBundle.file.Write(writer, replacers);
+            });
+            await using var outputStream = await destination.OpenWriteAsync();
+            await using var inputStream = File.OpenRead(temp);
+            await inputStream.CopyToAsync(outputStream);
+            await outputStream.FlushAsync();
+            _status.Text = $"Saved modified bundle: {destination.Name}. The source bundle remains unchanged.";
+        }
+        catch (Exception ex) { _status.Text = "Bundle save failed: " + ex.Message; }
+        finally
+        {
+            try { File.Delete(temp); } catch { }
+            _isBusy = false;
+            SetLoading(false);
+            UpdateFloatingActions();
+        }
+    }
+
     private async Task ExportBundleEntryAsync(string entryName)
     {
         if (_currentBundle is null) return;
@@ -6034,7 +6169,7 @@ public sealed class MainView : UserControl
             action();
         };
 
-        if (exportAction is not null || openAction is not null)
+        if (exportAction is not null || openAction is not null || (_currentPage == BrowserPage.Bundle && _currentBundle is not null))
         {
             var menu = new ContextMenu();
             if (openAction is not null)
@@ -6048,6 +6183,18 @@ public sealed class MainView : UserControl
                 var exportItem = new MenuItem { Header = "Export" };
                 exportItem.Click += (_, _) => exportAction();
                 menu.Items.Add(exportItem);
+            }
+            if (_currentPage == BrowserPage.Bundle && _currentBundle is not null)
+            {
+                var replaceItem = new MenuItem { Header = "Replace" };
+                replaceItem.Click += async (_, _) => await ImportBundleEntryAsync(title);
+                menu.Items.Add(replaceItem);
+                var renameItem = new MenuItem { Header = "Rename" };
+                renameItem.Click += (_, _) => ShowRenameBundleEntry(title);
+                menu.Items.Add(renameItem);
+                var deleteItem = new MenuItem { Header = "Delete" };
+                deleteItem.Click += (_, _) => DeleteBundleEntry(title);
+                menu.Items.Add(deleteItem);
             }
             button.ContextMenu = menu;
         }
@@ -6164,11 +6311,19 @@ public sealed class MainView : UserControl
     private void UpdateFloatingActions()
     {
         if (_floatingHost is null || _floatingMenu is null || _floatingActionButton is null) return;
-        _floatingHost.IsVisible = _currentPage == BrowserPage.Assets && _currentAssets is not null;
+        _floatingHost.IsVisible = (_currentPage == BrowserPage.Assets && _currentAssets is not null) || (_currentPage == BrowserPage.Bundle && _currentBundle is not null);
         _floatingActionButton.Content = CreateIcon(_selectionMode ? MaterialIconKind.CheckAll : MaterialIconKind.Menu, 25, OnPrimaryBrush);
         _floatingMenu.IsVisible = _floatingMenuOpen;
         if (_floatingMenu.Child is not StackPanel menu) return;
         menu.Children.Clear();
+        if (_currentPage == BrowserPage.Bundle && _currentBundle is not null)
+        {
+            menu.Children.Add(CreateFloatingMenuButton("Add bundle entry", MaterialIconKind.FilePlus, () => _ = ImportBundleEntryAsync(null)));
+            var saveBundle = CreateFloatingMenuButton("Save modified bundle", MaterialIconKind.ContentSave, () => _ = SaveBundleWorkspaceAsync());
+            saveBundle.IsEnabled = _bundleWorkspace.Modified;
+            menu.Children.Add(saveBundle);
+            return;
+        }
         if (_selectionMode)
         {
             int count = _selectedAssetIds.Count;
