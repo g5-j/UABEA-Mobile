@@ -959,45 +959,32 @@ public sealed class MainView : UserControl
 
     private async Task ExportBundleEntryAsync(string entryName)
     {
-        if (_currentBundle is null) return;
+        if (_currentBundle is null || !_bundleWorkspace.TryGetFile(entryName, out var item)) return;
         var topLevel = TopLevel.GetTopLevel(this);
         if (topLevel is null) return;
-
-        var bundle = _currentBundle;
-        var entries = bundle.file.BlockAndDirInfo.DirectoryInfos;
-        var index = Array.FindIndex(entries,
-            entry => string.Equals(entry.Name, entryName, StringComparison.Ordinal));
-        if (index < 0) return;
-
-        var entry = entries[index];
-        var destination = await topLevel.StorageProvider.SaveFilePickerAsync(
-            new FilePickerSaveOptions
-            {
-                Title = "Export bundle entry",
-                SuggestedFileName = Path.GetFileName(entry.Name)
-            });
+        var destination = await topLevel.StorageProvider.SaveFilePickerAsync(new FilePickerSaveOptions
+        {
+            Title = "Export bundle entry",
+            SuggestedFileName = Path.GetFileName(item.Name)
+        });
         if (destination is null) return;
 
-        SetLoading(true, $"Exporting {entry.Name}...");
+        SetLoading(true, $"Exporting {item.Name}...");
         try
         {
-            using var source = new SegmentStream(
-                bundle.file.DataReader.BaseStream, entry.Offset, entry.DecompressedSize);
+            if (item.Stream.CanSeek) item.Stream.Position = 0;
             await using var output = await destination.OpenWriteAsync();
-            await source.CopyToAsync(output);
-            _status.Text = $"Exported: {entry.Name}\nSize: {FormatSize(entry.DecompressedSize)}";
+            await item.Stream.CopyToAsync(output);
+            await output.FlushAsync();
+            if (item.Stream.CanSeek) item.Stream.Position = 0;
+            _status.Text = $"Exported: {item.Name}\nSize: {FormatSize(item.Stream.Length)}";
         }
         catch (Exception ex)
         {
             _status.Text = $"Could not export bundle entry:\n{ex.Message}";
         }
-        finally
-        {
-            SetLoading(false);
-        }
+        finally { SetLoading(false); }
     }
-
-
 
     private async Task ExportAssetsArchiveAsync(List<AssetFileInfo> assets)
     {
