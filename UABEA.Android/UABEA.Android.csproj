@@ -31,6 +31,11 @@
   </ItemGroup>
 
   <ItemGroup>
+    <Compile Include="..\TexturePlugin\Texture2DSwitchDeswizzler.cs" Link="Texture2DSwitchDeswizzler.cs" />
+    <Compile Include="..\TexturePlugin\TextureEncoderDecoder.cs" Link="TextureEncoderDecoder.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
     <Reference Include="AssetsTools.NET">
       <HintPath>..\Libs\AssetsTools.NET.dll</HintPath>
     </Reference>
