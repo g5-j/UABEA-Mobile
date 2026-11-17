@@ -15,6 +15,7 @@
     <RuntimeIdentifiers>android-arm64</RuntimeIdentifiers>
     <AndroidPackageFormat>apk</AndroidPackageFormat>
     <PublishTrimmed>false</PublishTrimmed>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <RunAOTCompilation>false</RunAOTCompilation>
     <InvariantGlobalization>false</InvariantGlobalization>
   </PropertyGroup>
