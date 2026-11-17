@@ -2,7 +2,7 @@ name: UABE Avalonia Android Release
 
 on:
   push:
-    branches: [ android-port ]
+    branches: [ android-port, android-native-engine ]
   workflow_dispatch:
 
 permissions:
