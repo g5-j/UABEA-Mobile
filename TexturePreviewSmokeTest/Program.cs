@@ -189,8 +189,8 @@ foreach (var candidate in instance.file.AssetInfos.Where(x => x.GetTypeId(instan
         var verifyManager = new AssetsManager();
         try
         {
-            var verified = verifyManager.LoadAssetsFile(roundTripPath, false);
             verifyManager.LoadClassPackage(classDataPath);
+            var verified = verifyManager.LoadAssetsFile(roundTripPath, false);
             verifyManager.LoadClassDatabaseFromPackage(verified.file.Metadata.UnityVersion);
             var verifiedAsset = verified.file.AssetInfos.FirstOrDefault(x => x.PathId == candidate.PathId)
                 ?? throw new InvalidDataException("Replaced Texture2D Path ID disappeared after save.");
@@ -198,8 +198,9 @@ foreach (var candidate in instance.file.AssetInfos.Where(x => x.GetTypeId(instan
             var verifiedTexture = TextureFile.ReadTextureFile(verifiedField);
             if (verifiedTexture.m_Width != originalTexture.m_Width ||
                 verifiedTexture.m_Height != originalTexture.m_Height ||
-                verifiedTexture.m_TextureFormat != originalTexture.m_TextureFormat ||
-                verifiedTexture.pictureData == null || verifiedTexture.pictureData.Length == 0)
+                verifiedTexture.m_TextureFormat != (int)TextureFormat.RGBA32 ||
+                verifiedTexture.pictureData == null ||
+                verifiedTexture.pictureData.Length != checked(originalTexture.m_Width * originalTexture.m_Height * 4))
                 throw new InvalidDataException("Reopened Texture2D metadata or image payload did not match the replacement.");
             _ = DecodeAndValidate(verifiedTexture.pictureData, (TextureFormat)verifiedTexture.m_TextureFormat,
                 verifiedTexture.m_Width, verifiedTexture.m_Height);
@@ -211,7 +212,7 @@ foreach (var candidate in instance.file.AssetInfos.Where(x => x.GetTypeId(instan
         }
 
         replacementRoundTrips++;
-        report.Add($"PASS Texture2D replacement save/reopen round-trip id={candidate.PathId} format={(TextureFormat)originalTexture.m_TextureFormat}");
+        report.Add($"PASS Texture2D replacement save/reopen round-trip id={candidate.PathId} source-format={(TextureFormat)originalTexture.m_TextureFormat} output-format=RGBA32");
         break;
     }
     catch (Exception ex)
