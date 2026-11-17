@@ -219,11 +219,11 @@ foreach (var candidate in instance.file.AssetInfos.Where(x => x.GetTypeId(instan
         report.Add($"Texture2D replacement round-trip candidate id={candidate.PathId} not usable: {ex.GetType().Name}: {ex.Message}");
     }
 }
-if (replacementRoundTrips == 0)
-    throw new InvalidDataException("No Texture2D in the fixture could complete an import, save, reopen and decode round-trip.");
-report.Add($"PASS Texture2D replacement round-trips={replacementRoundTrips}");
-
 report.Insert(1, $"SUMMARY textures={textureCount}, decoded={decodedCount}, missing-resource={missingResourceCount}, failed={failedCount}; sprites={spriteCount}, sourceTexturesDecoded={spriteTextureResolved}");
+File.WriteAllLines(Path.Combine(output, "report.txt"), report);
+if (replacementRoundTrips == 0)
+    throw new InvalidDataException("No Texture2D in the fixture could complete an import, save, reopen and decode round-trip. See texture-preview-output/report.txt for every candidate failure.");
+report.Add($"PASS Texture2D replacement round-trips={replacementRoundTrips}");
 File.WriteAllLines(Path.Combine(output, "report.txt"), report);
 Console.WriteLine($"UnityVersion={instance.file.Metadata.UnityVersion}");
 Console.WriteLine($"Textures={textureCount}, decoded={decodedCount}, missing-resource={missingResourceCount}, failed={failedCount}");
