@@ -85,6 +85,15 @@ jobs:
           dotnet run --project TexturePreviewSmokeTest/TexturePreviewSmokeTest.csproj -- "$ASSETS_FILE" ReleaseFiles/classdata.tpk
           test -s "texture-preview-output/report.txt"
 
+      - name: Upload texture diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: texture-diagnostics-${{ github.run_number }}
+          path: texture-preview-output/
+          if-no-files-found: warn
+          retention-days: 7
+
       - name: Prepare stable release signing key
         env:
           ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
