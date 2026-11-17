@@ -217,6 +217,7 @@ foreach (var candidate in instance.file.AssetInfos.Where(x => x.GetTypeId(instan
     catch (Exception ex)
     {
         report.Add($"Texture2D replacement round-trip candidate id={candidate.PathId} not usable: {ex.GetType().Name}: {ex.Message}");
+        Console.WriteLine($"REPLACEMENT-FAIL id={candidate.PathId}: {ex}");
     }
 }
 report.Insert(1, $"SUMMARY textures={textureCount}, decoded={decodedCount}, missing-resource={missingResourceCount}, failed={failedCount}; sprites={spriteCount}, sourceTexturesDecoded={spriteTextureResolved}");
