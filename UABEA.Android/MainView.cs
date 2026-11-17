@@ -25,6 +25,7 @@ using Avalonia.Threading;
 using Avalonia.Platform.Storage;
 using Material.Icons;
 using Material.Icons.Avalonia;
+using UABEA.Mobile.Engine;
 using Button = Avalonia.Controls.Button;
 using ProgressBar = Avalonia.Controls.ProgressBar;
 using Orientation = Avalonia.Layout.Orientation;
@@ -563,9 +564,7 @@ public sealed class MainView : UserControl
 
     private static OpenResult LoadFileInBackground(string path, string fileName)
     {
-        var manager = new AssetsManager();
-        var classDataPath = EnsureClassDataFile();
-        manager.LoadClassPackage(classDataPath);
+        var manager = UabeaEngineBridge.CreateManager(EnsureClassDataFile());
 
         var signature = new byte[8];
         using (var stream = File.OpenRead(path))
@@ -579,7 +578,7 @@ public sealed class MainView : UserControl
             // Read the original block compression before any LZMA unpacking.
             // BundleFile.Write produces an uncompressed UnityFS file; the save
             // pipeline must Pack it again using this original compression.
-            var bundle = manager.LoadBundleFile(path, false);
+            var bundle = UabeaEngineBridge.OpenBundle(manager, path);
             var originalCompression = bundle.file.GetCompressionType(bundle.file.BlockAndDirInfo.BlockInfos);
             if (bundle.file.DataIsCompressed)
                 bundle.file = BundleHelper.UnpackBundle(bundle.file);
@@ -603,7 +602,7 @@ public sealed class MainView : UserControl
 
         if (AssetsFile.IsAssetsFile(path))
         {
-            var assets = manager.LoadAssetsFile(path, false);
+            var assets = UabeaEngineBridge.OpenAssets(manager, path);
             LoadClassDatabase(manager, assets.file.Metadata.UnityVersion);
             var rows = BuildAssetRows(manager, assets);
             return new OpenResult(manager, null, assets,
@@ -934,50 +933,8 @@ public sealed class MainView : UserControl
         string outputPath,
         AssetBundleCompressionType originalCompression)
     {
-        if (sourceBundle is null)
-            throw new ArgumentNullException(nameof(sourceBundle));
-        if (replacers is null || replacers.Count == 0)
-            throw new InvalidOperationException("There are no bundle changes to write.");
-
-        string uncompressedPath = outputPath + ".uncompressed";
-        try
-        {
-            // First apply the bundle replacers. AssetBundleFile.Write intentionally
-            // writes an uncompressed bundle; it is an intermediate, not the final file.
-            using (var output = File.Create(uncompressedPath))
-            using (var writer = new AssetsFileWriter(output))
-                sourceBundle.file.Write(writer, replacers);
-
-            var intermediateInfo = new FileInfo(uncompressedPath);
-            if (!intermediateInfo.Exists || intermediateInfo.Length == 0)
-                throw new InvalidDataException("The intermediate Unity bundle is empty.");
-
-            // Re-open the intermediate through AssetsTools.NET and pack it back
-            // using the compression type detected from the original input bundle.
-            var packManager = new AssetsManager();
-            try
-            {
-                var uncompressedBundle = packManager.LoadBundleFile(uncompressedPath, false);
-                if (uncompressedBundle.file.DataIsCompressed)
-                    throw new InvalidDataException("The intermediate bundle was unexpectedly compressed.");
-
-                using (var packedOutput = File.Create(outputPath))
-                using (var packedWriter = new AssetsFileWriter(packedOutput))
-                    uncompressedBundle.file.Pack(uncompressedBundle.file.DataReader, packedWriter, originalCompression, true, null);
-            }
-            finally
-            {
-                packManager.UnloadAllBundleFiles();
-            }
-
-            var finalInfo = new FileInfo(outputPath);
-            if (!finalInfo.Exists || finalInfo.Length == 0)
-                throw new InvalidDataException("The compressed Unity bundle output is empty.");
-        }
-        finally
-        {
-            try { File.Delete(uncompressedPath); } catch { }
-        }
+        UabeaEngineBridge.WriteBundleCopyWithOriginalCompression(
+            sourceBundle, replacers, outputPath, originalCompression);
     }
 
     private async Task SaveBundleWorkspaceAsync()
@@ -2584,39 +2541,7 @@ public sealed class MainView : UserControl
 
     private static void ValidateSavedOutput(string path, bool isBundle, IReadOnlyCollection<AssetID> savedAssetIds)
     {
-        var verifier = new AssetsManager();
-        try
-        {
-            if (isBundle)
-            {
-                var verifiedBundle = verifier.LoadBundleFile(path, false);
-                if (verifiedBundle.file.BlockAndDirInfo.DirectoryInfos.Length == 0)
-                    throw new InvalidDataException("The saved Unity bundle contains no readable directory entries.");
-                return;
-            }
-
-            var verifiedAssets = verifier.LoadAssetsFile(path, false);
-            var availableIds = verifiedAssets.file.AssetInfos.Select(x => x.PathId).ToHashSet();
-            foreach (var assetId in savedAssetIds)
-                if (!availableIds.Contains(assetId.pathID))
-                    throw new InvalidDataException($"Saved .assets file is missing modified asset Path ID {assetId.pathID}.");
-
-            verifier.LoadClassPackage(EnsureClassDataFile());
-            verifier.LoadClassDatabaseFromPackage(verifiedAssets.file.Metadata.UnityVersion);
-            foreach (var assetId in savedAssetIds)
-            {
-                var asset = verifiedAssets.file.AssetInfos.FirstOrDefault(x => x.PathId == assetId.pathID)
-                    ?? throw new InvalidDataException($"Could not locate modified asset Path ID {assetId.pathID} after saving.");
-                if (asset.GetTypeId(verifiedAssets.file) == (int)AssetClassID.Texture2D &&
-                    verifier.GetBaseField(verifiedAssets, asset) is null)
-                    throw new InvalidDataException($"Modified Texture2D Path ID {assetId.pathID} could not be deserialized after saving.");
-            }
-        }
-        finally
-        {
-            verifier.UnloadAllAssetsFiles(true);
-            verifier.UnloadAllBundleFiles();
-        }
+        UabeaEngineBridge.ValidateSavedOutput(path, isBundle, savedAssetIds, EnsureClassDataFile());
     }
 
     private Task<string?> ShowBundleSaveChoiceAsync()
