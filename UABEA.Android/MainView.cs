@@ -2598,18 +2598,18 @@ public sealed class MainView : UserControl
             var verifiedAssets = verifier.LoadAssetsFile(path, false);
             var availableIds = verifiedAssets.file.AssetInfos.Select(x => x.PathId).ToHashSet();
             foreach (var assetId in savedAssetIds)
-                if (!availableIds.Contains(assetId.pathId))
-                    throw new InvalidDataException($"Saved .assets file is missing modified asset Path ID {assetId.pathId}.");
+                if (!availableIds.Contains(assetId.pathID))
+                    throw new InvalidDataException($"Saved .assets file is missing modified asset Path ID {assetId.pathID}.");
 
             verifier.LoadClassPackage(EnsureClassDataFile());
             verifier.LoadClassDatabaseFromPackage(verifiedAssets.file.Metadata.UnityVersion);
             foreach (var assetId in savedAssetIds)
             {
-                var asset = verifiedAssets.file.AssetInfos.FirstOrDefault(x => x.PathId == assetId.pathId)
-                    ?? throw new InvalidDataException($"Could not locate modified asset Path ID {assetId.pathId} after saving.");
+                var asset = verifiedAssets.file.AssetInfos.FirstOrDefault(x => x.PathId == assetId.pathID)
+                    ?? throw new InvalidDataException($"Could not locate modified asset Path ID {assetId.pathID} after saving.");
                 if (asset.GetTypeId(verifiedAssets.file) == (int)AssetClassID.Texture2D &&
                     verifier.GetBaseField(verifiedAssets, asset) is null)
-                    throw new InvalidDataException($"Modified Texture2D Path ID {assetId.pathId} could not be deserialized after saving.");
+                    throw new InvalidDataException($"Modified Texture2D Path ID {assetId.pathID} could not be deserialized after saving.");
             }
         }
         finally
