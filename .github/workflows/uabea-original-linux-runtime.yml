@@ -146,7 +146,6 @@ jobs:
       - name: Launch original UABEA through Box64 and Xvfb
         run: |
           set -euo pipefail
-          set -euo pipefail
           cd "$APP_DIR"
           Xvfb :1 -screen 0 1280x800x24 -nolisten tcp > "${RUNNER_TEMP}/xvfb.log" 2>&1 &
           XVFB_PID=$!
@@ -298,10 +297,24 @@ jobs:
           "$APKSIGNER" verify --print-certs UABEA-Original-Host-debug.apk
           echo "APK size: $(stat -c%s UABEA-Original-Host-debug.apk) bytes"
 
-      - name: Upload Android host APK
+      - name: Package signed APK as Ultra 7z
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y p7zip-full
+          SHORT_SHA="${GITHUB_SHA:0:7}"
+          ARCHIVE="UABEA-Original-Host-debug-${SHORT_SHA}.7z"
+          7z a -t7z -mx=9 -m0=lzma2 -mmt=on "$ARCHIVE" UABEA-Original-Host-debug.apk
+          7z t "$ARCHIVE"
+          7z l -slt "$ARCHIVE" | grep -E 'Path =|Method =|Size =|Packed Size ='
+          echo "APK_ARCHIVE=$ARCHIVE" >> "$GITHUB_ENV"
+          ls -lh UABEA-Original-Host-debug.apk "$ARCHIVE"
+
+      - name: Upload Android host APK (Ultra 7z)
         uses: actions/upload-artifact@v4
         with:
           name: UABEA-Original-Android-Host-${{ github.sha }}
-          path: UABEA-Original-Host-debug.apk
+          path: ${{ env.APK_ARCHIVE }}
           if-no-files-found: error
+          compression-level: 0
           retention-days: 30
