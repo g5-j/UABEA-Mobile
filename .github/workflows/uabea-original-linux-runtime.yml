@@ -190,7 +190,7 @@ jobs:
           SDK_ROOT="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-}}"
           SDKMANAGER="$(find "$SDK_ROOT/cmdline-tools" -type f -name sdkmanager | head -n 1)"
           "$SDKMANAGER" --licenses <<< "$(printf 'y\n%.0s' {1..30})" >/dev/null
-          "$SDKMANAGER" "ndk;27.2.12479018" "platforms;android-35" "build-tools;35.0.0"
+          "$SDKMANAGER" "ndk;27.2.12479018" "platforms;android-31" "platforms;android-35" "build-tools;35.0.0"
 
       - name: Build Android host APK
         run: |
