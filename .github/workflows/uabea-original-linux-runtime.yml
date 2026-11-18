@@ -3,7 +3,7 @@ name: UABEA Original Linux Runtime
 on:
   workflow_dispatch:
   push:
-    branches: [ uabea-original-runtime ]
+    branches: [ uabea-original-runtime, uabea-android-host ]
 
 permissions:
   contents: read
@@ -62,13 +62,19 @@ jobs:
           ARCHIVE="UABEA-Original-Linux-x64-${SHORT_SHA}.7z"
           7z a -t7z -mx=9 -m0=lzma2 -mmt=on "$ARCHIVE" "${RUNNER_TEMP}/uabea-original-linux-x64/"
           7z t "$ARCHIVE"
+          TAR_ARCHIVE="UABEA-Original-Linux-x64-${SHORT_SHA}.tar.gz"
+          tar -czf "$TAR_ARCHIVE" -C "${RUNNER_TEMP}/uabea-original-linux-x64" .
+          tar -tzf "$TAR_ARCHIVE" | grep -F "UABEAvalonia.dll"
           echo "ARCHIVE=$ARCHIVE" >> "$GITHUB_ENV"
+          echo "TAR_ARCHIVE=$TAR_ARCHIVE" >> "$GITHUB_ENV"
 
       - name: Upload original UABEA runtime payload
         uses: actions/upload-artifact@v4
         with:
           name: UABEA-Original-Linux-x64-${{ github.sha }}
-          path: ${{ env.ARCHIVE }}
+          path: |
+            ${{ env.ARCHIVE }}
+            ${{ env.TAR_ARCHIVE }}
           if-no-files-found: error
           compression-level: 0
           retention-days: 30
@@ -148,3 +154,66 @@ jobs:
             exit 1
           fi
           echo "Original UABEA remained running under Box64; Xvfb, x11vnc, websockify and noVNC HTTP endpoint passed."
+
+  android-host:
+    needs: smoke-box64
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Android host
+        uses: actions/checkout@v4
+
+      - name: Download original UABEA runtime payload
+        uses: actions/download-artifact@v4
+        with:
+          name: UABEA-Original-Linux-x64-${{ github.sha }}
+          path: "${{ runner.temp }}/original-payload"
+
+      - name: Embed original UABEA payload
+        run: |
+          set -euo pipefail
+          mkdir -p UABEA.Host.Android/Assets
+          PAYLOAD="$(find "${RUNNER_TEMP}/original-payload" -type f -name '*.tar.gz' | head -n 1)"
+          test -n "$PAYLOAD"
+          cp "$PAYLOAD" UABEA.Host.Android/Assets/uabea-original.tar.gz
+          tar -tzf UABEA.Host.Android/Assets/uabea-original.tar.gz | grep -F "UABEAvalonia.dll"
+          ls -lh UABEA.Host.Android/Assets/uabea-original.tar.gz
+
+      - name: Setup .NET 8 and Android workload
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Install Android workload and SDK components
+        run: |
+          set -euo pipefail
+          dotnet workload install android
+          SDK_ROOT="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-}}"
+          SDKMANAGER="$(find "$SDK_ROOT/cmdline-tools" -type f -name sdkmanager | head -n 1)"
+          "$SDKMANAGER" --licenses <<< "$(printf 'y\n%.0s' {1..30})" >/dev/null
+          "$SDKMANAGER" "ndk;27.2.12479018" "platforms;android-35" "build-tools;35.0.0"
+
+      - name: Build Android host APK
+        run: |
+          set -euo pipefail
+          dotnet restore UABEA.Host.Android/UABEA.Host.Android.csproj
+          dotnet publish UABEA.Host.Android/UABEA.Host.Android.csproj \
+            --configuration Debug \
+            --framework net8.0-android31.0 \
+            --runtime android-arm64 \
+            -p:AndroidPackageFormat=apk \
+            -p:PublishTrimmed=false \
+            -p:RunAOTCompilation=false
+          APK="$(find UABEA.Host.Android/bin/Debug/net8.0-android31.0/android-arm64/publish -maxdepth 1 -type f -name '*.apk' | head -n 1)"
+          test -n "$APK"
+          cp "$APK" UABEA-Original-Host-debug.apk
+          APKSIGNER="$(find "$ANDROID_HOME/build-tools" -type f -name apksigner | sort -V | tail -n 1)"
+          "$APKSIGNER" verify --verbose UABEA-Original-Host-debug.apk
+          echo "APK size: $(stat -c%s UABEA-Original-Host-debug.apk) bytes"
+
+      - name: Upload Android host APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: UABEA-Original-Android-Host-${{ github.sha }}
+          path: UABEA-Original-Host-debug.apk
+          if-no-files-found: error
+          retention-days: 30
