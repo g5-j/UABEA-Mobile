@@ -414,7 +414,7 @@ namespace UABEAvalonia
             {
                 setMonoTempGeneratorsYet = true;
                 FindCpp2IlFilesResult il2cppFiles = FindCpp2IlFiles.Find(fileDir);
-                if (il2cppFiles.success && ConfigurationManager.Settings.UseCpp2Il)
+                if (il2cppFiles.success && MobileEngineSettings.UseCpp2Il)
                 {
                     am.MonoTempGenerator = new Cpp2IlTempGenerator(il2cppFiles.metaPath, il2cppFiles.asmPath);
                     return true;
