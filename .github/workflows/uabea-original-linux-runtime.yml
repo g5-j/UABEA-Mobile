@@ -79,8 +79,30 @@ jobs:
           compression-level: 0
           retention-days: 30
 
+  linux-rootfs:
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout runtime bootstrap
+        uses: actions/checkout@v4
+
+      - name: Build Debian x64 Linux rootfs
+        run: |
+          set -euo pipefail
+          chmod +x runtime/build-linux-rootfs.sh
+          runtime/build-linux-rootfs.sh "${RUNNER_TEMP}/uabea-linux-rootfs" "${RUNNER_TEMP}/uabea-linux-x64-rootfs.tar.gz"
+          ls -lh "${RUNNER_TEMP}/uabea-linux-x64-rootfs.tar.gz"
+
+      - name: Upload Linux x64 rootfs
+        uses: actions/upload-artifact@v4
+        with:
+          name: UABEA-Android-Linux-x64-rootfs-${{ github.sha }}
+          path: ${{ runner.temp }}/uabea-linux-x64-rootfs.tar.gz
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 30
+
   smoke-box64:
-    needs: publish-original
+    needs: [publish-original, linux-rootfs]
     runs-on: ubuntu-24.04-arm
     steps:
       - name: Download original UABEA payload
@@ -156,7 +178,7 @@ jobs:
           echo "Original UABEA remained running under Box64; Xvfb, x11vnc, websockify and noVNC HTTP endpoint passed."
 
   android-host:
-    needs: publish-original
+    needs: [publish-original, linux-rootfs]
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Android host
@@ -191,6 +213,24 @@ jobs:
           SDKMANAGER="$(find "$SDK_ROOT/cmdline-tools" -type f -name sdkmanager | head -n 1)"
           "$SDKMANAGER" --licenses <<< "$(printf 'y\n%.0s' {1..30})" >/dev/null
           "$SDKMANAGER" "ndk;27.2.12479018" "platforms;android-31" "platforms;android-35" "build-tools;35.0.0"
+
+      - name: Build Android PRoot ARM64
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y git make python3 build-essential
+          git clone --depth 1 https://github.com/berilevi/proot-static.git "${RUNNER_TEMP}/proot-static"
+          NDK_DIR="$ANDROID_HOME/ndk/27.2.12479018"
+          NDK="$NDK_DIR" API=31 OUT="${RUNNER_TEMP}/proot-build" \
+            REPO_ARTIFACT_DIR="${RUNNER_TEMP}/proot-dist" \
+            bash "${RUNNER_TEMP}/proot-static/tools/build-static-aarch64.sh"
+          test -s "${RUNNER_TEMP}/proot-dist/proot"
+          test -s "${RUNNER_TEMP}/proot-dist/loader"
+          file "${RUNNER_TEMP}/proot-dist/proot"
+          readelf -h "${RUNNER_TEMP}/proot-dist/proot" | grep -E "Machine:.*AArch64"
+          cp "${RUNNER_TEMP}/proot-dist/proot" UABEA.Host.Android/Assets/proot
+          cp "${RUNNER_TEMP}/proot-dist/loader" UABEA.Host.Android/Assets/loader
+          chmod 755 UABEA.Host.Android/Assets/proot UABEA.Host.Android/Assets/loader
 
       - name: Build Box64 for Android ARM64
         run: |
