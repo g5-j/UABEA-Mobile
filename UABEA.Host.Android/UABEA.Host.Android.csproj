@@ -21,5 +21,8 @@
   </PropertyGroup>
   <ItemGroup>
     <AndroidAsset Include="Assets/uabea-original.tar.gz" Link="uabea-original.tar.gz" />
+    <AndroidNativeLibrary Include="runtimes/android-arm64/native/libbox64.so"
+                          Abi="arm64-v8a"
+                          Condition="Exists('runtimes/android-arm64/native/libbox64.so')" />
   </ItemGroup>
 </Project>
