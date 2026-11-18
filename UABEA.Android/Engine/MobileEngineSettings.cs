@@ -1,4 +1,4 @@
-namespace UABEA.Android.Engine;
+namespace UABEAvalonia;
 
 /// <summary>
 /// Runtime options for the Android engine. The desktop ConfigurationManager
