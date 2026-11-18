@@ -69,7 +69,7 @@ public sealed class MainView : UserControl
     private readonly System.Threading.SemaphoreSlim _assetNameLock = new(1, 1);
 
     private AssetsManager? _assetsManager;
-    private UABEAvalonia.AssetWorkspace? _assetWorkspace;
+    private UabeaEngineBridge? _assetWorkspace;
     private readonly BundleWorkspace _bundleWorkspace = new();
     private string? _currentTempDirectory;
     private Border _loadingOverlay = null!;
@@ -506,7 +506,7 @@ public sealed class MainView : UserControl
             _assetsManager?.UnloadAllAssetsFiles(true);
             if (_currentTempDirectory is not null) { try { Directory.Delete(_currentTempDirectory, true); } catch { } }
             _assetsManager = result.Manager;
-            _assetWorkspace = new UABEAvalonia.AssetWorkspace(result.Manager, result.Bundle is not null);
+            _assetWorkspace = new UabeaEngineBridge(result.Manager, result.Bundle is not null);
             _bundleWorkspace.Reset(result.Bundle);
             _sessionResourcePaths.Clear();
             _sessionResourcePaths.AddRange(selectedResourcePaths);
@@ -563,9 +563,8 @@ public sealed class MainView : UserControl
 
     private static OpenResult LoadFileInBackground(string path, string fileName)
     {
-        var manager = new AssetsManager();
         var classDataPath = EnsureClassDataFile();
-        manager.LoadClassPackage(classDataPath);
+        var manager = UabeaEngineBridge.CreateManager(classDataPath);
 
         var signature = new byte[8];
         using (var stream = File.OpenRead(path))
@@ -579,7 +578,7 @@ public sealed class MainView : UserControl
             // Read the original block compression before any LZMA unpacking.
             // BundleFile.Write produces an uncompressed UnityFS file; the save
             // pipeline must Pack it again using this original compression.
-            var bundle = manager.LoadBundleFile(path, false);
+            var bundle = UabeaEngineBridge.OpenBundle(manager, path);
             var originalCompression = bundle.file.GetCompressionType(bundle.file.BlockAndDirInfo.BlockInfos);
             if (bundle.file.DataIsCompressed)
                 bundle.file = BundleHelper.UnpackBundle(bundle.file);
@@ -603,7 +602,7 @@ public sealed class MainView : UserControl
 
         if (AssetsFile.IsAssetsFile(path))
         {
-            var assets = manager.LoadAssetsFile(path, false);
+            var assets = UabeaEngineBridge.OpenAssets(manager, path);
             LoadClassDatabase(manager, assets.file.Metadata.UnityVersion);
             var rows = BuildAssetRows(manager, assets);
             return new OpenResult(manager, null, assets,
@@ -928,58 +927,6 @@ public sealed class MainView : UserControl
         _bundleWorkspaceOverlay = null;
     }
 
-    private static void WriteBundleCopyWithOriginalCompression(
-        BundleFileInstance sourceBundle,
-        List<BundleReplacer> replacers,
-        string outputPath,
-        AssetBundleCompressionType originalCompression)
-    {
-        if (sourceBundle is null)
-            throw new ArgumentNullException(nameof(sourceBundle));
-        if (replacers is null || replacers.Count == 0)
-            throw new InvalidOperationException("There are no bundle changes to write.");
-
-        string uncompressedPath = outputPath + ".uncompressed";
-        try
-        {
-            // First apply the bundle replacers. AssetBundleFile.Write intentionally
-            // writes an uncompressed bundle; it is an intermediate, not the final file.
-            using (var output = File.Create(uncompressedPath))
-            using (var writer = new AssetsFileWriter(output))
-                sourceBundle.file.Write(writer, replacers);
-
-            var intermediateInfo = new FileInfo(uncompressedPath);
-            if (!intermediateInfo.Exists || intermediateInfo.Length == 0)
-                throw new InvalidDataException("The intermediate Unity bundle is empty.");
-
-            // Re-open the intermediate through AssetsTools.NET and pack it back
-            // using the compression type detected from the original input bundle.
-            var packManager = new AssetsManager();
-            try
-            {
-                var uncompressedBundle = packManager.LoadBundleFile(uncompressedPath, false);
-                if (uncompressedBundle.file.DataIsCompressed)
-                    throw new InvalidDataException("The intermediate bundle was unexpectedly compressed.");
-
-                using (var packedOutput = File.Create(outputPath))
-                using (var packedWriter = new AssetsFileWriter(packedOutput))
-                    uncompressedBundle.file.Pack(uncompressedBundle.file.DataReader, packedWriter, originalCompression, true, null);
-            }
-            finally
-            {
-                packManager.UnloadAllBundleFiles();
-            }
-
-            var finalInfo = new FileInfo(outputPath);
-            if (!finalInfo.Exists || finalInfo.Length == 0)
-                throw new InvalidDataException("The compressed Unity bundle output is empty.");
-        }
-        finally
-        {
-            try { File.Delete(uncompressedPath); } catch { }
-        }
-    }
-
     private async Task SaveBundleWorkspaceAsync()
     {
         if (_currentBundle is null || !_bundleWorkspace.Modified || _isBusy) return;
@@ -1000,7 +947,7 @@ public sealed class MainView : UserControl
             {
                 var replacers = _bundleWorkspace.GetReplacers();
                 if (replacers.Count == 0) throw new InvalidOperationException("There are no bundle entry changes to save.");
-                WriteBundleCopyWithOriginalCompression(
+                UabeaEngineBridge.WriteBundleCopyWithOriginalCompression(
                     _currentBundle, replacers, temp, _currentBundleCompression);
             });
             await using var outputStream = await destination.OpenWriteAsync();
@@ -2539,7 +2486,7 @@ public sealed class MainView : UserControl
                     if (bundleReplacers.Count == 0)
                         throw new InvalidOperationException("No modified serialized entries were found in this bundle.");
 
-                    WriteBundleCopyWithOriginalCompression(
+                    UabeaEngineBridge.WriteBundleCopyWithOriginalCompression(
                         bundle, bundleReplacers, temp, _currentBundleCompression);
                 }
                 else
