@@ -310,6 +310,21 @@ jobs:
           echo "APK_ARCHIVE=$ARCHIVE" >> "$GITHUB_ENV"
           ls -lh UABEA-Original-Host-debug.apk "$ARCHIVE"
 
+      - name: Publish APK to GitHub Releases
+        if: github.ref == 'refs/heads/uabea-android-host'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: android-host-${{ github.sha }}
+          name: UABEA Android Host (Test) - ${{ github.sha }}
+          target_commitish: ${{ github.sha }}
+          prerelease: true
+          generate_release_notes: true
+          body: |
+            Experimental Android ARM64 host containing the original UABEA Linux x64 application, PRoot, Box64 and the Debian runtime.
+
+            This build has passed the GitHub Actions build and CI smoke checks. It has not yet been verified on a physical Android device. The APK uses a debug signing certificate.
+          files: UABEA-Original-Host-debug.apk
+
       - name: Upload Android host APK (Ultra 7z)
         uses: actions/upload-artifact@v4
         with:
