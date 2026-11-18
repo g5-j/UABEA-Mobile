@@ -1,4 +1,4 @@
-name: UABE Avalonia Android Release
+name: UABEA Mobile - Original Engine Android Release
 
 on:
   push:
