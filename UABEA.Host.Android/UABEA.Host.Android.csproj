@@ -18,6 +18,6 @@
     <InvariantGlobalization>false</InvariantGlobalization>
   </PropertyGroup>
   <ItemGroup>
-    <AndroidAsset Include="Assets/**/*" />
+    <AndroidAsset Include="Assets/uabea-original.tar.gz" Link="uabea-original.tar.gz" />
   </ItemGroup>
 </Project>
