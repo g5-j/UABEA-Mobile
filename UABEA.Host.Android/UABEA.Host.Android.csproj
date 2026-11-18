@@ -17,6 +17,7 @@
     <RunAOTCompilation>false</RunAOTCompilation>
     <InvariantGlobalization>false</InvariantGlobalization>
     <CheckEolTargetFramework>false</CheckEolTargetFramework>
+    <CheckEolWorkloads>false</CheckEolWorkloads>
   </PropertyGroup>
   <ItemGroup>
     <AndroidAsset Include="Assets/uabea-original.tar.gz" Link="uabea-original.tar.gz" />
