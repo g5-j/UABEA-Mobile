@@ -45,6 +45,7 @@ jobs:
           test -s "$OUT/UABEAvalonia.dll"
           test -s "$OUT/UABEAvalonia.deps.json"
           test -s "$OUT/UABEAvalonia.runtimeconfig.json"
+          cp -a ReleaseFiles/. "$OUT/"
           test -s "$OUT/classdata.tpk"
           mkdir -p "$OUT/plugins"
           cp runtime/launch-uabea.sh "$OUT/launch-uabea.sh"
