@@ -1,22 +1,20 @@
 # UABEA Original Android Host
 
-This is a native Android host shell for the upstream UABEA desktop application. It is intentionally separate from the previous Avalonia mobile editor.
+This is a native Android host for the upstream UABEA desktop application. The desktop UI and asset engine remain the original Linux x64 UABEA build; this project does not replace them with a rewritten editor.
 
-## Implemented in this stage
+## Runtime included by the current integration
 
-- Native Android activity and touch-friendly controls.
-- Android Storage Access Framework picker; selected files are copied into private app storage.
-- Installer for the original Linux x64 UABEA publish payload embedded in the APK.
-- WebView display surface prepared for a local noVNC endpoint.
-- Runtime preflight that explicitly reports missing components rather than pretending to launch.
+- Android ARM64 host activity and touch-enabled WebView.
+- Android Storage Access Framework import and explicit Save copy export.
+- Debian Linux x64 root filesystem with .NET 8, Xvfb, x11vnc, noVNC and websockify.
+- Android ARM64 Box64 and statically linked Android PRoot/loader.
+- Runtime startup sequence: Xvfb, VNC bridge, then original UABEA.
+- Imported files are exposed to the Linux session at `/workspace`.
 
-## Not implemented yet
+## Important limitations
 
-- Box64 executable built and packaged for Android ARM64.
-- PRoot and a Linux root filesystem.
-- Linux x64 .NET 8 runtime in the root filesystem.
-- X server + VNC/noVNC service startup and lifecycle.
-- SAF-to-Linux shared-file bridge and save-back to the selected document URI.
-- End-to-end open/edit/replace/save/reopen testing on a physical Android device.
+The CI build verifies compilation and Linux-side runtime components, but it cannot prove that PRoot ptrace, Android linker namespace access, Box64, and the VNC bridge work on every physical Android device. The Android runtime must be tested on-device before describing the app as fully working.
 
-The app must not be described as a working UABEA emulator until those components are integrated and tested. The original UABEA binaries are unmodified; this host does not reimplement its UI or asset engine.
+Open a file with the Android picker, then use the original UABEA File > Open dialog and select `/workspace/<filename>`. After saving in UABEA, use **Save copy** to export the modified workspace file through Android's document picker.
+
+The first launch extracts the Linux rootfs into private app storage and can take several minutes. It also requires substantial free storage. The original UABEA binaries are not modified.
