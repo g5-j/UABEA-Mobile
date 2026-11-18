@@ -144,7 +144,6 @@ internal sealed class UabeaEngineBridge : IDisposable
             stream.Dispose();
         _workspace.NewAssetDatas.Clear();
         _workspace.NewAssets.Clear();
-        _workspace.NewAssetData.Clear();
         _workspace.LoadedAssets.Clear();
         _workspace.LoadedFiles.Clear();
         _workspace.LoadedFileNames.Clear();
