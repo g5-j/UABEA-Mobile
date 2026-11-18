@@ -18,7 +18,7 @@ namespace UABEA.OriginalHost;
     ConfigurationChanges = Android.Content.PM.ConfigChanges.Orientation |
                            Android.Content.PM.ConfigChanges.ScreenSize |
                            Android.Content.PM.ConfigChanges.UiMode)]
-public sealed class MainActivity : Activity
+public sealed class MainActivity : Android.App.Activity
 {
     const int PickFileRequest = 4101;
     const int SaveFileRequest = 4102;
@@ -27,7 +27,7 @@ public sealed class MainActivity : Activity
     TextView _status = null!;
     WebView _display = null!;
     string? _lastImportedFile;
-    readonly List<Process> _runtimeProcesses = new();
+    readonly List<System.Diagnostics.Process> _runtimeProcesses = new();
 
     string RuntimeDirectory => Path.Combine(FilesDir!.AbsolutePath, "runtime");
     string ImportDirectory => Path.Combine(FilesDir!.AbsolutePath, "imports");
@@ -308,7 +308,7 @@ public sealed class MainActivity : Activity
 
         var logPath = Path.Combine(RuntimeDirectory, "logs", name + ".log");
         var log = new StreamWriter(logPath, append: false) { AutoFlush = true };
-        var process = new Process { StartInfo = start, EnableRaisingEvents = true };
+        var process = new System.Diagnostics.Process { StartInfo = start, EnableRaisingEvents = true };
         process.OutputDataReceived += (_, e) => { if (e.Data is not null) lock (log) log.WriteLine(e.Data); };
         process.ErrorDataReceived += (_, e) => { if (e.Data is not null) lock (log) log.WriteLine(e.Data); };
         process.Exited += (_, _) => { try { log.Dispose(); } catch { } };
