@@ -69,7 +69,7 @@ public sealed class MainView : UserControl
     private readonly System.Threading.SemaphoreSlim _assetNameLock = new(1, 1);
 
     private AssetsManager? _assetsManager;
-    private AssetWorkspace? _assetWorkspace;
+    private UABEAvalonia.AssetWorkspace? _assetWorkspace;
     private readonly BundleWorkspace _bundleWorkspace = new();
     private string? _currentTempDirectory;
     private Border _loadingOverlay = null!;
@@ -506,7 +506,7 @@ public sealed class MainView : UserControl
             _assetsManager?.UnloadAllAssetsFiles(true);
             if (_currentTempDirectory is not null) { try { Directory.Delete(_currentTempDirectory, true); } catch { } }
             _assetsManager = result.Manager;
-            _assetWorkspace = new AssetWorkspace(result.Manager, result.Bundle is not null);
+            _assetWorkspace = new UABEAvalonia.AssetWorkspace(result.Manager, result.Bundle is not null);
             _bundleWorkspace.Reset(result.Bundle);
             _sessionResourcePaths.Clear();
             _sessionResourcePaths.AddRange(selectedResourcePaths);
