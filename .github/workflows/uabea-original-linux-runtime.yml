@@ -72,3 +72,60 @@ jobs:
           if-no-files-found: error
           compression-level: 0
           retention-days: 30
+
+  smoke-box64:
+    needs: publish-original
+    runs-on: ubuntu-24.04-arm
+    steps:
+      - name: Download original UABEA payload
+        uses: actions/download-artifact@v4
+        with:
+          pattern: UABEA-Original-Linux-x64-*
+          path: ${{ runner.temp }}/payload-zip
+          merge-multiple: true
+
+      - name: Extract original UABEA payload
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y p7zip-full xvfb libfontconfig1 libfreetype6 libx11-6 libice6 libsm6 libxrender1 libxext6 libxfixes3 libxi6 libxrandr2 libxss1 libxtst6 libglib2.0-0
+          mkdir -p "${RUNNER_TEMP}/uabea-payload"
+          ARCHIVE="$(find "${RUNNER_TEMP}/payload-zip" -type f -name '*.7z' | head -n 1)"
+          test -n "$ARCHIVE"
+          7z x "$ARCHIVE" "-o${RUNNER_TEMP}/uabea-payload" -y
+          APP_DIR="$(find "${RUNNER_TEMP}/uabea-payload" -type f -name UABEAvalonia.dll -printf '%h\n' | head -n 1)"
+          test -n "$APP_DIR"
+          echo "APP_DIR=$APP_DIR" >> "$GITHUB_ENV"
+
+      - name: Build Box64 for ARM64 runner
+        run: |
+          set -euo pipefail
+          sudo apt-get install -y git cmake build-essential
+          git clone --depth 1 https://github.com/ptitSeb/box64.git "${RUNNER_TEMP}/box64"
+          cmake -S "${RUNNER_TEMP}/box64" -B "${RUNNER_TEMP}/box64/build" -DCMAKE_BUILD_TYPE=RelWithDebInfo
+          cmake --build "${RUNNER_TEMP}/box64/build" --parallel 2
+          sudo cmake --install "${RUNNER_TEMP}/box64/build"
+          box64 --version
+
+      - name: Install x64 .NET 8 runtime
+        run: |
+          set -euo pipefail
+          curl -fsSL https://dot.net/v1/dotnet-install.sh -o "${RUNNER_TEMP}/dotnet-install.sh"
+          bash "${RUNNER_TEMP}/dotnet-install.sh" --runtime dotnet --channel 8.0 --architecture x64 --install-dir "${RUNNER_TEMP}/dotnet-x64"
+          test -x "${RUNNER_TEMP}/dotnet-x64/dotnet"
+          echo "DOTNET_X64=${RUNNER_TEMP}/dotnet-x64/dotnet" >> "$GITHUB_ENV"
+
+      - name: Launch original UABEA through Box64 and Xvfb
+        run: |
+          set -euo pipefail
+          cd "$APP_DIR"
+          set +e
+          timeout --signal=TERM 25s xvfb-run -a box64 "$DOTNET_X64" UABEAvalonia.dll > "${RUNNER_TEMP}/uabea-box64-smoke.log" 2>&1
+          STATUS=$?
+          set -e
+          cat "${RUNNER_TEMP}/uabea-box64-smoke.log"
+          if [ "$STATUS" -ne 124 ]; then
+            echo "::error::UABEA did not remain running under Box64 (exit code $STATUS)."
+            exit 1
+          fi
+          echo "Original UABEA remained running for 25 seconds under Box64 on ARM64."
