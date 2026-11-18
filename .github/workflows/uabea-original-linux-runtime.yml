@@ -205,9 +205,14 @@ jobs:
             -p:RunAOTCompilation=false
           APK="$(find UABEA.Host.Android/bin/Debug/net8.0-android31.0/android-arm64/publish -maxdepth 1 -type f -name '*.apk' | head -n 1)"
           test -n "$APK"
-          cp "$APK" UABEA-Original-Host-debug.apk
-          APKSIGNER="$(find "$ANDROID_HOME/build-tools" -type f -name apksigner | sort -V | tail -n 1)"
+          BUILD_TOOLS="$(find "$ANDROID_HOME/build-tools" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -n 1)"
+          ZIPALIGN="$BUILD_TOOLS/zipalign"
+          APKSIGNER="$BUILD_TOOLS/apksigner"
+          keytool -genkeypair -v -keystore "$RUNNER_TEMP/uabea-host-debug.keystore" -storepass android -alias androiddebugkey -keypass android -dname "CN=Android Debug,O=Android,C=US" -keyalg RSA -keysize 2048 -validity 10000
+          "$ZIPALIGN" -f -p 4 "$APK" "$RUNNER_TEMP/uabea-host-aligned.apk"
+          "$APKSIGNER" sign --ks "$RUNNER_TEMP/uabea-host-debug.keystore" --ks-key-alias androiddebugkey --ks-pass pass:android --key-pass pass:android --out UABEA-Original-Host-debug.apk "$RUNNER_TEMP/uabea-host-aligned.apk"
           "$APKSIGNER" verify --verbose UABEA-Original-Host-debug.apk
+          "$APKSIGNER" verify --print-certs UABEA-Original-Host-debug.apk
           echo "APK size: $(stat -c%s UABEA-Original-Host-debug.apk) bytes"
 
       - name: Upload Android host APK
