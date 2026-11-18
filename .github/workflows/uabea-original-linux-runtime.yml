@@ -156,7 +156,7 @@ jobs:
           echo "Original UABEA remained running under Box64; Xvfb, x11vnc, websockify and noVNC HTTP endpoint passed."
 
   android-host:
-    needs: smoke-box64
+    needs: publish-original
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Android host
