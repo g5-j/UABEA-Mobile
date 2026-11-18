@@ -21,6 +21,9 @@
   </PropertyGroup>
   <ItemGroup>
     <AndroidAsset Include="Assets/uabea-original.tar.gz" Link="uabea-original.tar.gz" />
+    <AndroidAsset Include="Assets/linux-x64-rootfs.tar.gz" Link="linux-x64-rootfs.tar.gz" />
+    <AndroidAsset Include="Assets/proot" Link="proot" />
+    <AndroidAsset Include="Assets/loader" Link="loader" />
     <AndroidNativeLibrary Include="runtimes/android-arm64/native/libbox64.so"
                           Abi="arm64-v8a"
                           Condition="Exists('runtimes/android-arm64/native/libbox64.so')" />
