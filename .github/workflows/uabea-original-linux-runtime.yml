@@ -1,0 +1,73 @@
+name: UABEA Original Linux Runtime
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ uabea-original-runtime ]
+
+permissions:
+  contents: read
+
+jobs:
+  publish-original:
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout original UABEA source
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup .NET 8
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Remove Windows-only solution project
+        run: dotnet sln UABEAvalonia.sln remove TexToolWrap/TexToolWrap.vcxproj
+
+      - name: Restore original solution
+        run: dotnet restore UABEAvalonia.sln
+
+      - name: Publish original UABEA for Linux x64
+        run: |
+          dotnet publish UABEAvalonia/UABEAvalonia.csproj \
+            --configuration Release \
+            --runtime linux-x64 \
+            --self-contained false \
+            --output "${RUNNER_TEMP}/uabea-original-linux-x64" \
+            -p:PublishAot=false \
+            -p:UseAppHost=false
+
+      - name: Verify original application payload
+        run: |
+          set -euo pipefail
+          OUT="${RUNNER_TEMP}/uabea-original-linux-x64"
+          test -s "$OUT/UABEAvalonia.dll"
+          test -s "$OUT/UABEAvalonia.deps.json"
+          test -s "$OUT/UABEAvalonia.runtimeconfig.json"
+          test -s "$OUT/classdata.tpk"
+          mkdir -p "$OUT/plugins"
+          cp runtime/launch-uabea.sh "$OUT/launch-uabea.sh"
+          chmod +x "$OUT/launch-uabea.sh"
+          printf 'Original UABEA Linux x64 payload\nCommit: %s\n' "$GITHUB_SHA" > "$OUT/BUILD-INFO.txt"
+          find "$OUT" -maxdepth 2 -type f -printf '%P\n' | sort
+
+      - name: Package original UABEA payload
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y p7zip-full
+          SHORT_SHA="${GITHUB_SHA:0:7}"
+          ARCHIVE="UABEA-Original-Linux-x64-${SHORT_SHA}.7z"
+          7z a -t7z -mx=9 -m0=lzma2 -mmt=on "$ARCHIVE" "${RUNNER_TEMP}/uabea-original-linux-x64/"
+          7z t "$ARCHIVE"
+          echo "ARCHIVE=$ARCHIVE" >> "$GITHUB_ENV"
+
+      - name: Upload original UABEA runtime payload
+        uses: actions/upload-artifact@v4
+        with:
+          name: UABEA-Original-Linux-x64-${{ github.sha }}
+          path: ${{ env.ARCHIVE }}
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 30
