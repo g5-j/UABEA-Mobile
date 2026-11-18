@@ -3,10 +3,14 @@ name: UABEA Original Linux Runtime
 on:
   workflow_dispatch:
   push:
-    branches: [ uabea-original-runtime, uabea-android-host ]
+    branches: [ uabea-android-host ]
 
 permissions:
   contents: write
+
+concurrency:
+  group: uabea-android-host-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   publish-original:
@@ -309,6 +313,32 @@ jobs:
           7z l -slt "$ARCHIVE" | grep -E 'Path =|Method =|Size =|Packed Size ='
           echo "APK_ARCHIVE=$ARCHIVE" >> "$GITHUB_ENV"
           ls -lh UABEA-Original-Host-debug.apk "$ARCHIVE"
+
+      - name: Clean old releases and unused branches
+        if: github.ref == 'refs/heads/uabea-android-host'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+
+          echo "Deleting all existing GitHub Releases..."
+          gh release list --limit 1000 --json tagName --jq '.[].tagName' | while IFS= read -r tag; do
+            [ -n "$tag" ] || continue
+            echo "Deleting release: $tag"
+            gh release delete "$tag" --yes
+          done
+
+          echo "Deleting obsolete branches; keeping master and uabea-android-host..."
+          gh api --paginate "repos/$GH_REPO/branches?per_page=100" --jq '.[].name' | while IFS= read -r branch; do
+            case "$branch" in
+              master|uabea-android-host) echo "Keeping branch: $branch" ;;
+              *)
+                echo "Deleting branch: $branch"
+                gh api --method DELETE "repos/$GH_REPO/git/refs/heads/$branch"
+                ;;
+            esac
+          done
 
       - name: Publish APK to GitHub Releases
         if: github.ref == 'refs/heads/uabea-android-host'
