@@ -190,15 +190,25 @@ jobs:
           name: UABEA-Original-Linux-x64-${{ github.sha }}
           path: "${{ runner.temp }}/original-payload"
 
-      - name: Embed original UABEA payload
+      - name: Download Linux x64 rootfs
+        uses: actions/download-artifact@v4
+        with:
+          name: UABEA-Android-Linux-x64-rootfs-${{ github.sha }}
+          path: "${{ runner.temp }}/linux-rootfs"
+
+      - name: Embed original UABEA payload and Linux rootfs
         run: |
           set -euo pipefail
           mkdir -p UABEA.Host.Android/Assets
           PAYLOAD="$(find "${RUNNER_TEMP}/original-payload" -type f -name '*.tar.gz' | head -n 1)"
+          ROOTFS="$(find "${RUNNER_TEMP}/linux-rootfs" -type f -name '*.tar.gz' | head -n 1)"
           test -n "$PAYLOAD"
+          test -n "$ROOTFS"
           cp "$PAYLOAD" UABEA.Host.Android/Assets/uabea-original.tar.gz
+          cp "$ROOTFS" UABEA.Host.Android/Assets/linux-x64-rootfs.tar.gz
           tar -tzf UABEA.Host.Android/Assets/uabea-original.tar.gz | grep -F "UABEAvalonia.dll"
-          ls -lh UABEA.Host.Android/Assets/uabea-original.tar.gz
+          tar -tzf UABEA.Host.Android/Assets/linux-x64-rootfs.tar.gz | grep -F "./opt/dotnet/dotnet"
+          ls -lh UABEA.Host.Android/Assets/*.tar.gz
 
       - name: Setup .NET 8 and Android workload
         uses: actions/setup-dotnet@v4
