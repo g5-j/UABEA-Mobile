@@ -19,10 +19,10 @@ sudo chroot "$ROOTFS" /usr/bin/env DEBIAN_FRONTEND=noninteractive apt-get instal
   fonts-dejavu-core fontconfig \
   libfontconfig1 libfreetype6 libx11-6 libice6 libsm6 libxrender1 libxext6 \
   libxfixes3 libxi6 libxrandr2 libxss1 libxtst6 libglib2.0-0 \
-  libgl1 libegl1 libxcb1 libxkbcommon0 libdbus-1-3 libgcc-s1 libstdc++6 \\
-  libx11-xcb1 libxcb-render0 libxcb-shape0 libxcb-randr0 libxcb-xfixes0 libxcb-sync1 \\
-  libxcb-xkb1 libxkbcommon-x11-0 libxcb-cursor0 libxcb-icccm4 libxcb-image0 \\
-  libxcb-keysyms1 libxcb-render-util0 libxcb-xinerama0 libharfbuzz0b libpng16-16 \\
+  libgl1 libegl1 libxcb1 libxkbcommon0 libdbus-1-3 libgcc-s1 libstdc++6 \
+  libx11-xcb1 libxcb-render0 libxcb-shape0 libxcb-randr0 libxcb-xfixes0 libxcb-sync1 \
+  libxcb-xkb1 libxkbcommon-x11-0 libxcb-cursor0 libxcb-icccm4 libxcb-image0 \
+  libxcb-keysyms1 libxcb-render-util0 libxcb-xinerama0 libharfbuzz0b libpng16-16 \
   zlib1g libssl3 libicu72
 sudo chroot "$ROOTFS" /usr/bin/env DEBIAN_FRONTEND=noninteractive apt-get clean
 sudo rm -rf "$ROOTFS/var/lib/apt/lists/"* "$ROOTFS/var/cache/apt/"*
