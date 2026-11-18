@@ -141,7 +141,7 @@ public sealed class MainActivity : Activity
 
     void StartOriginalRuntime()
     {
-        var box64 = Path.Combine(FilesDir!.AbsolutePath, "runtime", "bin", "box64");
+        var box64 = Path.Combine(ApplicationInfo!.NativeLibraryDir!, "libbox64.so");
         var proot = Path.Combine(FilesDir.AbsolutePath, "runtime", "bin", "proot");
         var dotnet = Path.Combine(FilesDir.AbsolutePath, "runtime", "rootfs", "usr", "share", "dotnet", "dotnet");
 
