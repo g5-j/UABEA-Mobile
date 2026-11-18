@@ -6,7 +6,7 @@ on:
     branches: [ uabea-original-runtime, uabea-android-host ]
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   publish-original:
