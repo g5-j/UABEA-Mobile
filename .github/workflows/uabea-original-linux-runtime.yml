@@ -192,6 +192,39 @@ jobs:
           "$SDKMANAGER" --licenses <<< "$(printf 'y\n%.0s' {1..30})" >/dev/null
           "$SDKMANAGER" "ndk;27.2.12479018" "platforms;android-31" "platforms;android-35" "build-tools;35.0.0"
 
+      - name: Build Box64 for Android ARM64
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y git cmake make python3 patchelf libzydis-dev
+          SDK_ROOT="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-}}"
+          NDK_DIR="$SDK_ROOT/ndk/27.2.12479018"
+          BOX64_CC="$NDK_DIR/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android31-clang"
+          test -x "$BOX64_CC"
+
+          git clone --depth 1 https://github.com/ptitSeb/box64.git "${RUNNER_TEMP}/box64-android"
+          git clone https://github.com/termux/termux-docker.git "${RUNNER_TEMP}/termux-docker"
+          git -C "${RUNNER_TEMP}/termux-docker" checkout 148b93d989cbc572719e050135b3e13f115f2a8e~1
+          sudo cp -rf "${RUNNER_TEMP}/termux-docker/system/arm" /system
+          sudo chown -R "$(whoami):$(whoami)" /system
+          sudo chmod 755 -R /system
+
+          cmake -S "${RUNNER_TEMP}/box64-android" -B "${RUNNER_TEMP}/box64-android/build" \
+            -DCMAKE_C_COMPILER="$BOX64_CC" \
+            -DANDROID=1 \
+            -DARM_DYNAREC=1 \
+            -DBAD_SIGNAL=1 \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCI=0
+          cmake --build "${RUNNER_TEMP}/box64-android/build" --parallel 2
+          BOX64_BIN="${RUNNER_TEMP}/box64-android/build/box64"
+          test -s "$BOX64_BIN"
+          readelf -h "$BOX64_BIN" | grep -E "Machine:.*AArch64"
+          mkdir -p UABEA.Host.Android/runtimes/android-arm64/native
+          cp "$BOX64_BIN" UABEA.Host.Android/runtimes/android-arm64/native/libbox64.so
+          chmod 755 UABEA.Host.Android/runtimes/android-arm64/native/libbox64.so
+          file UABEA.Host.Android/runtimes/android-arm64/native/libbox64.so
+
       - name: Build Android host APK
         run: |
           set -euo pipefail
