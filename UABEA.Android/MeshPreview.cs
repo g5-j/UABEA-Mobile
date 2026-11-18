@@ -1,0 +1,1155 @@
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Numerics;
+using AssetsTools.NET;
+using Avalonia;
+using Avalonia.Controls;
+using Avalonia.Input;
+using Avalonia.Media;
+using Avalonia.Media.Imaging;
+using Avalonia.Platform;
+using System.Runtime.InteropServices;
+
+namespace UABEA.Mobile;
+
+internal sealed record MeshPreviewData(Vector3[] Vertices, int[] Indices, Vector2[]? UVs = null);
+internal sealed record MeshStreamInfo(string Path, ulong Offset, ulong Size);
+
+internal static class MeshPreviewDataReader
+{
+    private const int MaxPreviewIndices = 360_000;
+    private sealed record Channel(int Stream, int Offset, int Format, int Dimension);
+    private sealed record StreamLayout(int Offset, int Stride);
+
+    public static MeshStreamInfo ReadStreamInfo(AssetTypeValueField mesh)
+    {
+        var stream = Child(mesh, "m_StreamData");
+        if (stream == null || stream.IsDummy)
+            return new MeshStreamInfo("", 0, 0);
+
+        return new MeshStreamInfo(
+            ReadString(Child(stream, "path")),
+            ReadUnsigned(Child(stream, "offset")),
+            ReadUnsigned(Child(stream, "size")));
+    }
+
+    public static MeshPreviewData Read(AssetTypeValueField mesh, byte[]? streamedVertexData = null)
+    {
+        var vertexData = Child(mesh, "m_VertexData");
+        Vector3[] vertices;
+        if (vertexData == null || vertexData.IsDummy)
+        {
+            vertices = ReadLegacyVertices(mesh);
+            if (vertices.Length < 3)
+                vertices = ReadCompressedVertices(mesh);
+        }
+        else
+        {
+            try
+            {
+                vertices = ReadVertexData(vertexData, streamedVertexData);
+            }
+            catch when (HasCompressedVertices(mesh))
+            {
+                vertices = ReadCompressedVertices(mesh);
+            }
+        }
+
+        if (vertices.Length < 3)
+            throw new InvalidOperationException("This Mesh does not contain readable vertex positions.");
+
+        int[] indices = ReadIndices(mesh, vertices.Length);
+        if (indices.Length < 3)
+            indices = ReadCompressedIndices(mesh, vertices.Length);
+        if (indices.Length < 3)
+            throw new InvalidOperationException("This Mesh has no supported triangle index data. The preview stopped instead of drawing a fake sequential index list.");
+
+        Vector2[] uvs = vertexData != null && !vertexData.IsDummy
+            ? ReadUvData(vertexData, streamedVertexData, vertices.Length)
+            : ReadLegacyUvs(mesh, vertices.Length);
+        return new MeshPreviewData(vertices, indices, uvs);
+    }
+
+    private static Vector3[] ReadLegacyVertices(AssetTypeValueField mesh)
+    {
+        var verticesField = Child(mesh, "m_Vertices");
+        var array = Child(verticesField, "Array");
+        if (array.IsDummy || array.Children.Count == 0)
+            return Array.Empty<Vector3>();
+
+        int count = Math.Min(array.Children.Count, 500_000);
+        var result = new Vector3[count];
+        for (int i = 0; i < count; i++)
+        {
+            var item = array.Children[i];
+            float x = ReadFloat(Child(item, "x"), 0);
+            float y = ReadFloat(Child(item, "y"), 0);
+            float z = ReadFloat(Child(item, "z"), 0);
+            if (item.Children.Count >= 3 && Child(item, "x").IsDummy)
+            {
+                x = ReadFloat(item.Children[0], 0);
+                y = ReadFloat(item.Children[1], 0);
+                z = ReadFloat(item.Children[2], 0);
+            }
+            result[i] = new Vector3(x, y, z);
+        }
+        return result;
+    }
+
+    private static Vector3[] ReadVertexData(AssetTypeValueField vertexData, byte[]? streamedVertexData)
+    {
+        int vertexCount = ReadInt(Child(vertexData, "m_VertexCount"), 0);
+        if (vertexCount <= 0 || vertexCount > 500_000)
+            throw new InvalidOperationException("The Mesh vertex count is invalid or exceeds the mobile preview limit.");
+
+        // Unity stores the actual vertex payload in m_Data (TypelessData).
+        // m_DataSize is only a byte count in several serialized versions.
+        byte[] data = streamedVertexData ?? ReadBytes(Child(vertexData, "m_Data"));
+        if (data.Length == 0)
+            data = ReadBytes(Child(vertexData, "_typelessdata"));
+        if (data.Length == 0)
+            data = ReadBytes(Child(vertexData, "m_DataSize"));
+        if (data.Length == 0)
+            throw new InvalidOperationException("The Mesh vertex payload (m_Data) is empty or unavailable.");
+
+        var channelsArray = Child(Child(vertexData, "m_Channels"), "Array");
+        var channels = new List<Channel>();
+        if (channelsArray != null && !channelsArray.IsDummy)
+        foreach (var item in channelsArray.Children)
+        {
+            channels.Add(new Channel(
+                ReadInt(Child(item, "stream"), 0),
+                ReadInt(Child(item, "offset"), 0),
+                ReadInt(Child(item, "format"), 0),
+                ReadInt(Child(item, "dimension"), 0)));
+        }
+
+        if (channels.Count == 0 || channels[0].Dimension <= 0)
+            throw new InvalidOperationException("The Mesh has no position vertex channel.");
+
+        Channel position = channels[0];
+        int componentSize = FormatSize(position.Format);
+        if (componentSize == 0 || position.Dimension < 3)
+            throw new NotSupportedException("This Mesh uses an unsupported position vertex format.");
+
+        var streamLayouts = new Dictionary<int, StreamLayout>();
+        var streamsArray = Child(Child(vertexData, "m_Streams"), "Array");
+        if (streamsArray != null && !streamsArray.IsDummy)
+        foreach (var stream in streamsArray.Children)
+        {
+            int streamIndex = ReadInt(Child(stream, "stream"), streamLayouts.Count);
+            int streamOffset = ReadInt(Child(stream, "offset"), 0);
+            int stride = ReadInt(Child(stream, "stride"), 0);
+            if (stride > 0)
+                streamLayouts[streamIndex] = new StreamLayout(streamOffset, stride);
+        }
+
+        if (!streamLayouts.TryGetValue(position.Stream, out var layout))
+        {
+            int stride = channels.Where(c => c.Stream == position.Stream)
+                .Select(c => c.Offset + FormatSize(c.Format) * c.Dimension)
+                .DefaultIfEmpty(position.Offset + componentSize * position.Dimension)
+                .Max();
+            layout = new StreamLayout(0, stride);
+        }
+
+        if (layout.Stride <= 0)
+            throw new InvalidOperationException("The Mesh vertex stream has an invalid stride.");
+
+        var result = new Vector3[vertexCount];
+        for (int i = 0; i < vertexCount; i++)
+        {
+            long start = (long)layout.Offset + (long)i * layout.Stride + position.Offset;
+            float x = ReadVertexComponent(data, start, position.Format);
+            float y = ReadVertexComponent(data, start + componentSize, position.Format);
+            float z = ReadVertexComponent(data, start + componentSize * 2, position.Format);
+            result[i] = new Vector3(x, y, z);
+        }
+        return result;
+    }
+
+    private static Vector2[] ReadLegacyUvs(AssetTypeValueField mesh, int vertexCount)
+    {
+        var array = Child(Child(mesh, "m_UV0"), "Array");
+        if (array == null || array.IsDummy || array.Children.Count < vertexCount)
+            return Array.Empty<Vector2>();
+        var result = new Vector2[vertexCount];
+        for (int i = 0; i < vertexCount; i++)
+        {
+            var item = array.Children[i];
+            result[i] = new Vector2(ReadFloat(Child(item, "x"), 0), ReadFloat(Child(item, "y"), 0));
+        }
+        return result;
+    }
+
+    private static Vector2[] ReadUvData(AssetTypeValueField vertexData, byte[]? streamedVertexData, int vertexCount)
+    {
+        var channels = Child(Child(vertexData, "m_Channels"), "Array");
+        if (channels == null || channels.IsDummy || channels.Children.Count <= 4)
+            return Array.Empty<Vector2>();
+        var channelField = channels.Children[4];
+        var channel = new Channel(ReadInt(Child(channelField, "stream"), 0), ReadInt(Child(channelField, "offset"), 0),
+            ReadInt(Child(channelField, "format"), 0), ReadInt(Child(channelField, "dimension"), 0));
+        int componentSize = FormatSize(channel.Format);
+        if (channel.Dimension < 2 || componentSize <= 0)
+            return Array.Empty<Vector2>();
+        byte[] data = streamedVertexData ?? ReadBytes(Child(vertexData, "m_Data"));
+        if (data.Length == 0) data = ReadBytes(Child(vertexData, "_typelessdata"));
+        if (data.Length == 0) return Array.Empty<Vector2>();
+        var layouts = new Dictionary<int, StreamLayout>();
+        var streams = Child(Child(vertexData, "m_Streams"), "Array");
+        if (streams != null && !streams.IsDummy)
+        foreach (var stream in streams.Children)
+        {
+            int index = ReadInt(Child(stream, "stream"), layouts.Count);
+            int offset = ReadInt(Child(stream, "offset"), 0);
+            int stride = ReadInt(Child(stream, "stride"), 0);
+            if (stride > 0) layouts[index] = new StreamLayout(offset, stride);
+        }
+        if (!layouts.TryGetValue(channel.Stream, out var layout))
+        {
+            int stride = channels.Children.Where(item => ReadInt(Child(item, "stream"), 0) == channel.Stream)
+                .Select(item => ReadInt(Child(item, "offset"), 0) + FormatSize(ReadInt(Child(item, "format"), 0)) * ReadInt(Child(item, "dimension"), 0))
+                .DefaultIfEmpty(channel.Offset + componentSize * channel.Dimension).Max();
+            layout = new StreamLayout(0, stride);
+        }
+        if (layout.Stride <= 0) return Array.Empty<Vector2>();
+        var result = new Vector2[vertexCount];
+        try
+        {
+            for (int i = 0; i < vertexCount; i++)
+            {
+                long start = (long)layout.Offset + (long)i * layout.Stride + channel.Offset;
+                result[i] = new Vector2(ReadVertexComponent(data, start, channel.Format),
+                    ReadVertexComponent(data, start + componentSize, channel.Format));
+            }
+            return result;
+        }
+        catch { return Array.Empty<Vector2>(); }
+    }
+    private static bool HasCompressedVertices(AssetTypeValueField mesh)
+    {
+        var packed = Child(Child(mesh, "m_CompressedMesh"), "m_Vertices");
+        return ReadInt(Child(packed, "m_NumItems"), 0) >= 9;
+    }
+
+    private static Vector3[] ReadCompressedVertices(AssetTypeValueField mesh)
+    {
+        var packed = Child(Child(mesh, "m_CompressedMesh"), "m_Vertices");
+        int itemCount = ReadInt(Child(packed, "m_NumItems"), 0);
+        int bitSize = ReadInt(Child(packed, "m_BitSize"), 0);
+        float range = ReadFloat(Child(packed, "m_Range"), 0);
+        float start = ReadFloat(Child(packed, "m_Start"), 0);
+        byte[] data = ReadBytes(Child(packed, "m_Data"));
+
+        if (itemCount < 9 || itemCount % 3 != 0 || itemCount > 1_500_000)
+            return Array.Empty<Vector3>();
+
+        uint[] values = UnpackPackedValues(data, itemCount, bitSize);
+        if (values.Length != itemCount)
+            return Array.Empty<Vector3>();
+
+        double maxValue = bitSize == 32 ? uint.MaxValue : (1UL << bitSize) - 1UL;
+        var vertices = new Vector3[itemCount / 3];
+        for (int i = 0; i < vertices.Length; i++)
+        {
+            float x = (float)(values[i * 3] / maxValue * range + start);
+            float y = (float)(values[i * 3 + 1] / maxValue * range + start);
+            float z = (float)(values[i * 3 + 2] / maxValue * range + start);
+            vertices[i] = new Vector3(x, y, z);
+        }
+        return vertices;
+    }
+
+    private static int[] ReadCompressedIndices(AssetTypeValueField mesh, int vertexCount)
+    {
+        var packed = Child(Child(mesh, "m_CompressedMesh"), "m_Triangles");
+        int itemCount = ReadInt(Child(packed, "m_NumItems"), 0);
+        int bitSize = ReadInt(Child(packed, "m_BitSize"), 0);
+        byte[] data = ReadBytes(Child(packed, "m_Data"));
+        if (itemCount < 3 || itemCount > 1_080_000)
+            return Array.Empty<int>();
+
+        uint[] values = UnpackPackedValues(data, itemCount, bitSize);
+        if (values.Length != itemCount)
+            return Array.Empty<int>();
+
+        int indexFormat = ReadInt(Child(mesh, "m_IndexFormat"), vertexCount > ushort.MaxValue ? 1 : 0);
+        int indexSize = indexFormat == 1 ? 4 : 2;
+        var subMeshes = Child(Child(mesh, "m_SubMeshes"), "Array");
+        var result = new List<int>(Math.Min(itemCount, MaxPreviewIndices));
+
+        if (subMeshes != null && !subMeshes.IsDummy && subMeshes.Children.Count > 0)
+        {
+            foreach (var subMesh in subMeshes.Children)
+            {
+                int topology = ReadInt(Child(subMesh, "topology"), 0);
+                int firstByte = ReadInt(Child(subMesh, "firstByte"), 0);
+                int count = ReadInt(Child(subMesh, "indexCount"), 0);
+                int baseVertex = ReadInt(Child(subMesh, "baseVertex"), 0);
+                int firstIndex = firstByte / indexSize;
+                if (topology == 0)
+                    AppendPackedTriangleRange(values, firstIndex, count, baseVertex, vertexCount, result);
+                else if (topology == 1)
+                    AppendPackedStripRange(values, firstIndex, count, baseVertex, vertexCount, result);
+                else if (topology == 2)
+                    AppendPackedQuadRange(values, firstIndex, count, baseVertex, vertexCount, result);
+            }
+        }
+        else
+        {
+            AppendPackedTriangleRange(values, 0, values.Length, 0, vertexCount, result);
+        }
+
+        return result.Count >= 3 ? result.ToArray() : Array.Empty<int>();
+    }
+
+    private static void AppendPackedTriangleRange(uint[] values, int first, int count,
+        int baseVertex, int vertexCount, List<int> output)
+    {
+        if (first < 0 || count < 3 || first > values.Length ||
+            (long)first + count > values.Length)
+            return;
+
+        int usable = Math.Min(count - count % 3, MaxPreviewIndices - output.Count);
+        for (int i = 0; i < usable; i += 3)
+        {
+            long a = (long)values[first + i] + baseVertex;
+            long b = (long)values[first + i + 1] + baseVertex;
+            long c = (long)values[first + i + 2] + baseVertex;
+            if ((ulong)a >= (ulong)vertexCount || (ulong)b >= (ulong)vertexCount ||
+                (ulong)c >= (ulong)vertexCount || a == b || b == c || a == c)
+                continue;
+            output.Add((int)a); output.Add((int)b); output.Add((int)c);
+        }
+    }
+
+    private static void AppendPackedStripRange(uint[] values, int first, int count,
+        int baseVertex, int vertexCount, List<int> output)
+    {
+        if (first < 0 || count < 3 || first > values.Length ||
+            (long)first + count > values.Length)
+            return;
+
+        int end = Math.Min(count, MaxPreviewIndices - output.Count);
+        for (int i = 0; i + 2 < end; i++)
+        {
+            long a = (long)values[first + i] + baseVertex;
+            long b = (long)values[first + i + 1] + baseVertex;
+            long c = (long)values[first + i + 2] + baseVertex;
+            if ((ulong)a >= (ulong)vertexCount || (ulong)b >= (ulong)vertexCount ||
+                (ulong)c >= (ulong)vertexCount || a == b || b == c || a == c)
+                continue;
+            if ((i & 1) == 0)
+            {
+                output.Add((int)a); output.Add((int)b); output.Add((int)c);
+            }
+            else
+            {
+                output.Add((int)a); output.Add((int)c); output.Add((int)b);
+            }
+        }
+    }
+
+    private static void AppendPackedQuadRange(uint[] values, int first, int count,
+        int baseVertex, int vertexCount, List<int> output)
+    {
+        if (first < 0 || count < 4 || first > values.Length ||
+            (long)first + count > values.Length)
+            return;
+
+        int usable = Math.Min(count - count % 4, Math.Max(0, MaxPreviewIndices - output.Count) / 6 * 4);
+        for (int i = 0; i < usable; i += 4)
+        {
+            long a = (long)values[first + i] + baseVertex;
+            long b = (long)values[first + i + 1] + baseVertex;
+            long c = (long)values[first + i + 2] + baseVertex;
+            long d = (long)values[first + i + 3] + baseVertex;
+            if ((ulong)a >= (ulong)vertexCount || (ulong)b >= (ulong)vertexCount ||
+                (ulong)c >= (ulong)vertexCount || (ulong)d >= (ulong)vertexCount)
+                continue;
+            output.Add((int)a); output.Add((int)b); output.Add((int)c);
+            output.Add((int)a); output.Add((int)c); output.Add((int)d);
+        }
+    }
+
+    private static uint[] UnpackPackedValues(byte[] data, int count, int bitSize)
+    {
+        if (count <= 0 || count > 1_500_000 || bitSize <= 0 || bitSize > 32 ||
+            data.Length == 0 || (long)data.Length * 8 < (long)count * bitSize)
+            return Array.Empty<uint>();
+
+        var values = new uint[count];
+        long bitOffset = 0;
+        for (int i = 0; i < count; i++)
+        {
+            uint value = 0;
+            for (int bit = 0; bit < bitSize; bit++, bitOffset++)
+            {
+                int byteIndex = (int)(bitOffset >> 3);
+                int bitIndex = (int)(bitOffset & 7);
+                if ((data[byteIndex] & (1 << bitIndex)) != 0)
+                    value |= 1u << bit;
+            }
+            values[i] = value;
+        }
+        return values;
+    }
+
+    private static int[] ReadIndices(AssetTypeValueField mesh, int vertexCount)
+    {
+        byte[] indexBytes = ReadBytes(Child(mesh, "m_IndexBuffer"));
+        var subMeshes = Child(Child(mesh, "m_SubMeshes"), "Array");
+        var indices = new List<int>();
+
+        if (indexBytes.Length > 0)
+        {
+            int indexFormat = ReadInt(Child(mesh, "m_IndexFormat"), vertexCount > ushort.MaxValue ? 1 : 0);
+            int indexSize = indexFormat == 1 ? 4 : 2;
+            if (subMeshes != null && !subMeshes.IsDummy)
+            foreach (var subMesh in subMeshes.Children)
+            {
+                int topology = ReadInt(Child(subMesh, "topology"), 0);
+                int firstByte = ReadInt(Child(subMesh, "firstByte"), 0);
+                int indexCount = ReadInt(Child(subMesh, "indexCount"), 0);
+                int baseVertex = ReadInt(Child(subMesh, "baseVertex"), 0);
+
+                if (topology == 0)
+                    AppendIndexRange(indexBytes, firstByte, indexCount, indexSize, baseVertex, vertexCount, indices);
+                else if (topology == 2)
+                    AppendQuadRange(indexBytes, firstByte, indexCount, indexSize, baseVertex, vertexCount, indices);
+            }
+
+            if (indices.Count == 0 && (subMeshes == null || subMeshes.IsDummy || subMeshes.Children.Count == 0))
+                AppendIndexRange(indexBytes, 0, indexBytes.Length / indexSize, indexSize, 0, vertexCount, indices);
+        }
+        else
+        {
+            var legacy = Child(Child(mesh, "m_Indices"), "Array");
+            if (legacy != null && !legacy.IsDummy)
+            foreach (var item in legacy.Children)
+            {
+                int value = ReadInt(item, -1);
+                if (value >= 0 && value < vertexCount)
+                    indices.Add(value);
+            }
+        }
+
+        int usable = Math.Min(indices.Count - indices.Count % 3, 360_000);
+        return usable > 0 ? indices.Take(usable).ToArray() : Array.Empty<int>();
+    }
+
+    private static void AppendQuadRange(
+        byte[] bytes, int firstByte, int count, int indexSize, int baseVertex,
+        int vertexCount, List<int> output)
+    {
+        if (firstByte < 0 || count < 4 || firstByte > bytes.Length ||
+            (long)firstByte + (long)count * indexSize > bytes.Length)
+            return;
+
+        int safeCount = Math.Min(count - count % 4, Math.Max(0, 360_000 - output.Count) / 6 * 4);
+        for (int i = 0; i + 3 < safeCount; i += 4)
+        {
+            int offset = firstByte + i * indexSize;
+            int a = ReadRawIndex(bytes, offset, indexSize) + baseVertex;
+            int b = ReadRawIndex(bytes, offset + indexSize, indexSize) + baseVertex;
+            int c = ReadRawIndex(bytes, offset + indexSize * 2, indexSize) + baseVertex;
+            int d = ReadRawIndex(bytes, offset + indexSize * 3, indexSize) + baseVertex;
+            if ((uint)a >= vertexCount || (uint)b >= vertexCount || (uint)c >= vertexCount || (uint)d >= vertexCount)
+                continue;
+            output.Add(a); output.Add(b); output.Add(c);
+            output.Add(a); output.Add(c); output.Add(d);
+        }
+    }
+
+    private static int ReadRawIndex(byte[] bytes, int offset, int indexSize) =>
+        indexSize == 4 ? BitConverter.ToInt32(bytes, offset) : BitConverter.ToUInt16(bytes, offset);
+
+    private static void AppendIndexRange(
+        byte[] bytes, int firstByte, int count, int indexSize, int baseVertex,
+        int vertexCount, List<int> output)
+    {
+        if (firstByte < 0 || count <= 0 || firstByte > bytes.Length ||
+            (long)firstByte + (long)count * indexSize > bytes.Length)
+            return;
+
+        int safeCount = Math.Min(count - count % 3, 360_000 - output.Count);
+        // Each iteration consumes one complete triangle (three indices).
+        for (int i = 0; i + 2 < safeCount; i += 3)
+        {
+            int offset = firstByte + i * indexSize;
+            long a = (long)ReadRawIndex(bytes, offset, indexSize) + baseVertex;
+            long b = (long)ReadRawIndex(bytes, offset + indexSize, indexSize) + baseVertex;
+            long c = (long)ReadRawIndex(bytes, offset + indexSize * 2, indexSize) + baseVertex;
+            if ((ulong)a >= (ulong)vertexCount || (ulong)b >= (ulong)vertexCount ||
+                (ulong)c >= (ulong)vertexCount || a == b || b == c || a == c)
+                continue;
+            output.Add((int)a);
+            output.Add((int)b);
+            output.Add((int)c);
+        }
+    }
+
+    private static float ReadVertexComponent(byte[] data, long offset, int format)
+    {
+        int size = FormatSize(format);
+        if (offset < 0 || offset + size > data.Length)
+            throw new InvalidOperationException("The Mesh vertex buffer is shorter than its vertex layout.");
+
+        int i = (int)offset;
+        return format switch
+        {
+            0 => BitConverter.ToSingle(data, i),
+            1 => (float)BitConverter.UInt16BitsToHalf(BitConverter.ToUInt16(data, i)),
+            2 => data[i] / 255f,
+            3 => Math.Max(unchecked((sbyte)data[i]) / 127f, -1f),
+            4 => BitConverter.ToUInt16(data, i) / 65535f,
+            5 => Math.Max(BitConverter.ToInt16(data, i) / 32767f, -1f),
+            _ => throw new NotSupportedException("This Mesh position format is not supported.")
+        };
+    }
+
+    private static int FormatSize(int format) => format switch
+    {
+        0 => 4, 1 => 2, 2 or 3 => 1, 4 or 5 => 2,
+        6 or 7 => 1, 8 or 9 => 2, 10 or 11 => 4,
+        _ => 0
+    };
+
+    private static AssetTypeValueField Child(AssetTypeValueField parent, string name)
+    {
+        if (parent == null || parent.IsDummy)
+            return parent!;
+        return parent[name];
+    }
+
+    private static byte[] ReadBytes(AssetTypeValueField field)
+    {
+        if (field == null || field.IsDummy)
+            return Array.Empty<byte>();
+
+        byte[] direct = TryReadByteArray(field);
+        if (direct.Length > 0)
+            return direct;
+
+        // TypelessData is a struct: { size, data: UInt8[] }.
+        // Some Unity type trees expose the byte vector directly as Array.
+        foreach (string childName in new[] { "data", "m_Data", "_typelessdata", "Array" })
+        {
+            var child = Child(field, childName);
+            if (child == null || child.IsDummy)
+                continue;
+
+            direct = TryReadByteArray(child);
+            if (direct.Length > 0)
+                return direct;
+
+            var array = Child(child, "Array");
+            if (array != null && !array.IsDummy && array.Children.Count > 0)
+            {
+                var bytes = new byte[array.Children.Count];
+                for (int i = 0; i < bytes.Length; i++)
+                    bytes[i] = ReadByte(array.Children[i]);
+                return bytes;
+            }
+        }
+
+        return Array.Empty<byte>();
+    }
+
+    private static byte[] TryReadByteArray(AssetTypeValueField field)
+    {
+        try
+        {
+            var bytes = field.AsByteArray;
+            return bytes ?? Array.Empty<byte>();
+        }
+        catch { return Array.Empty<byte>(); }
+    }
+
+    private static byte ReadByte(AssetTypeValueField field)
+    {
+        if (field == null || field.IsDummy || field.Value == null)
+            return 0;
+        try
+        {
+            return field.Value.ValueType switch
+            {
+                AssetValueType.UInt8 => field.AsByte,
+                AssetValueType.Int8 => unchecked((byte)field.AsSByte),
+                AssetValueType.UInt16 => (byte)field.AsUShort,
+                AssetValueType.Int16 => unchecked((byte)field.AsShort),
+                AssetValueType.UInt32 => (byte)field.AsUInt,
+                AssetValueType.Int32 => unchecked((byte)field.AsInt),
+                _ => (byte)Math.Clamp(ReadInt(field, 0), 0, 255)
+            };
+        }
+        catch { return 0; }
+    }
+
+    private static string ReadString(AssetTypeValueField field)
+    {
+        if (field == null || field.IsDummy || field.Value == null)
+            return "";
+        try { return field.AsString ?? ""; }
+        catch { return ""; }
+    }
+
+    private static ulong ReadUnsigned(AssetTypeValueField field)
+    {
+        if (field == null || field.IsDummy || field.Value == null)
+            return 0;
+        try
+        {
+            return field.Value.ValueType switch
+            {
+                AssetValueType.Int8 => (ulong)Math.Max(0, (int)field.AsSByte),
+                AssetValueType.UInt8 => field.AsByte,
+                AssetValueType.Int16 => (ulong)Math.Max(0, (int)field.AsShort),
+                AssetValueType.UInt16 => field.AsUShort,
+                AssetValueType.Int32 => (ulong)Math.Max(0, field.AsInt),
+                AssetValueType.UInt32 => field.AsUInt,
+                AssetValueType.Int64 => (ulong)Math.Max(0, field.AsLong),
+                AssetValueType.UInt64 => field.AsULong,
+                _ => 0
+            };
+        }
+        catch { return 0; }
+    }
+
+    private static int ReadInt(AssetTypeValueField field, int fallback)
+    {
+        if (field == null || field.IsDummy || field.Value == null)
+            return fallback;
+
+        try
+        {
+            return field.Value.ValueType switch
+            {
+                AssetValueType.Int8 => field.AsSByte,
+                AssetValueType.UInt8 => field.AsByte,
+                AssetValueType.Int16 => field.AsShort,
+                AssetValueType.UInt16 => field.AsUShort,
+                AssetValueType.Int32 => field.AsInt,
+                AssetValueType.UInt32 => checked((int)field.AsUInt),
+                AssetValueType.Int64 => checked((int)field.AsLong),
+                AssetValueType.UInt64 => checked((int)field.AsULong),
+                AssetValueType.Bool => field.AsBool ? 1 : 0,
+                _ => fallback
+            };
+        }
+        catch { return fallback; }
+    }
+
+    private static float ReadFloat(AssetTypeValueField field, float fallback)
+    {
+        if (field == null || field.IsDummy || field.Value == null)
+            return fallback;
+
+        try
+        {
+            return field.Value.ValueType switch
+            {
+                AssetValueType.Float => field.AsFloat,
+                AssetValueType.Double => (float)field.AsDouble,
+                AssetValueType.Int32 => field.AsInt,
+                AssetValueType.UInt32 => field.AsUInt,
+                _ => fallback
+            };
+        }
+        catch { return fallback; }
+    }
+}
+
+internal sealed class MeshPreviewControl : Control, IDisposable
+{
+    private readonly bool _interactive;
+    private readonly bool _cameraInside;
+    private readonly Color? _surfaceColor;
+    private readonly Vector2[] _uvs;
+    private int[]? _texturePixels;
+    private int _textureWidth, _textureHeight;
+    private readonly Vector3[] _normalizedVertices;
+    private readonly int[] _indices;
+    private readonly Vector3[] _cameraVertices;
+    private readonly Point[] _screenVertices;
+    private readonly float[] _cameraDepths;
+    private readonly Dictionary<IPointer, Point> _pointers = new();
+    private readonly Dictionary<IPointer, Point> _gestureStarts = new();
+    // Lock each one-finger drag to one axis so a diagonal/finger-noise movement
+    // cannot rotate yaw and pitch together or make the controls fight each other.
+    private readonly Dictionary<IPointer, int> _gestureAxes = new();
+    private readonly HashSet<IPointer> _capturedPointers = new();
+    private int _pinchDragAxis;
+
+    private WriteableBitmap? _frameBitmap;
+    private int[] _colorBuffer = Array.Empty<int>();
+    private float[] _depthBuffer = Array.Empty<float>();
+    private int _frameWidth;
+    private int _frameHeight;
+    private double _yaw = -0.55;
+    private double _pitch = 0.25;
+    private double _zoom = 1.0;
+    private bool _wireframe;
+    private double _lastPinchDistance;
+    private Point _lastPinchCenter;
+    private bool _disposed;
+
+    private const int MaxRenderDimension = 720;
+    private const int MaxPreviewIndices = 360_000;
+    private static readonly Vector3 LightDirection =
+        Vector3.Normalize(new Vector3(-0.35f, 0.65f, 0.7f));
+
+    public MeshPreviewControl(Vector3[] vertices, int[] indices, bool interactive = false, Color? surfaceColor = null, Vector2[]? uvs = null, bool cameraInside = false)
+    {
+        _interactive = interactive;
+        _cameraInside = cameraInside;
+        _surfaceColor = surfaceColor;
+        _uvs = uvs != null && uvs.Length == (vertices?.Length ?? 0) ? uvs : Array.Empty<Vector2>();
+        _indices = indices ?? Array.Empty<int>();
+        _normalizedVertices = NormalizeVertices(vertices ?? Array.Empty<Vector3>());
+        _cameraVertices = new Vector3[_normalizedVertices.Length];
+        _screenVertices = new Point[_normalizedVertices.Length];
+        _cameraDepths = new float[_normalizedVertices.Length];
+
+        MinHeight = 300;
+        Height = 360;
+        ClipToBounds = true;
+        Focusable = interactive;
+        DetachedFromVisualTree += (_, _) => Dispose();
+    }
+
+    private static Vector3[] NormalizeVertices(Vector3[] vertices)
+    {
+        if (vertices.Length == 0)
+            return Array.Empty<Vector3>();
+
+        Vector3 min = vertices[0], max = vertices[0];
+        foreach (Vector3 v in vertices)
+        {
+            min = Vector3.Min(min, v);
+            max = Vector3.Max(max, v);
+        }
+
+        Vector3 center = (min + max) * 0.5f;
+        float size = Math.Max(max.X - min.X, Math.Max(max.Y - min.Y, max.Z - min.Z));
+        float scale = size < 0.00001f ? 1f : 2.2f / size;
+
+        var result = new Vector3[vertices.Length];
+        for (int i = 0; i < vertices.Length; i++)
+            result[i] = (vertices[i] - center) * scale;
+        return result;
+    }
+
+    public void SetTexture(int[]? pixels, int width, int height)
+    {
+        if (pixels != null && width > 0 && height > 0 && (long)width * height == pixels.Length)
+        {
+            _texturePixels = pixels;
+            _textureWidth = width;
+            _textureHeight = height;
+        }
+        else
+        {
+            _texturePixels = null;
+            _textureWidth = _textureHeight = 0;
+        }
+        InvalidateVisual();
+    }
+
+    public void ResetView()
+    {
+        if (_disposed) return;
+        _yaw = -0.55;
+        _pitch = 0.25;
+        _zoom = 1.0;
+        InvalidateVisual();
+    }
+
+    public void ToggleWireframe()
+    {
+        if (_disposed) return;
+        _wireframe = !_wireframe;
+        InvalidateVisual();
+    }
+
+    protected override void OnPointerPressed(PointerPressedEventArgs e)
+    {
+        base.OnPointerPressed(e);
+        if (!_interactive || _disposed)
+            return;
+
+        Point position = e.GetPosition(this);
+        _pointers[e.Pointer] = position;
+        _gestureStarts[e.Pointer] = position;
+
+        if (_pointers.Count >= 2)
+        {
+            foreach (var pointer in _pointers.Keys)
+            {
+                pointer.Capture(this);
+                _capturedPointers.Add(pointer);
+            }
+
+            Point[] pair = _pointers.Values.Take(2).ToArray();
+            _lastPinchDistance = Distance(pair[0], pair[1]);
+            _lastPinchCenter = Midpoint(pair[0], pair[1]);
+            e.Handled = true;
+        }
+    }
+
+    protected override void OnPointerMoved(PointerEventArgs e)
+    {
+        base.OnPointerMoved(e);
+        if (!_interactive || _disposed || !_pointers.TryGetValue(e.Pointer, out Point previous))
+            return;
+
+        Point current = e.GetPosition(this);
+        _pointers[e.Pointer] = current;
+
+        if (_pointers.Count >= 2)
+        {
+            Point[] pair = _pointers.Values.Take(2).ToArray();
+            double distance = Distance(pair[0], pair[1]);
+            Point center = Midpoint(pair[0], pair[1]);
+
+            if (_lastPinchDistance > 1)
+                _zoom = Math.Clamp(_zoom * (distance / _lastPinchDistance), 0.45, 2.0);
+
+            double centerDx = center.X - _lastPinchCenter.X;
+            double centerDy = center.Y - _lastPinchCenter.Y;
+            if (_pinchDragAxis == 0 && Math.Abs(centerDx) + Math.Abs(centerDy) >= 1)
+                _pinchDragAxis = Math.Abs(centerDx) >= Math.Abs(centerDy) ? 1 : 2;
+            if (_pinchDragAxis == 1)
+                _yaw += centerDx * 0.008;
+            else if (_pinchDragAxis == 2)
+                _pitch -= centerDy * 0.008;
+            _lastPinchDistance = distance;
+            _lastPinchCenter = center;
+            InvalidateVisual();
+            e.Handled = true;
+            return;
+        }
+
+        if (!_capturedPointers.Contains(e.Pointer))
+        {
+            Point start = _gestureStarts[e.Pointer];
+            double dx = current.X - start.X;
+            double dy = current.Y - start.Y;
+            if (Math.Abs(dx) + Math.Abs(dy) < 2)
+                return;
+
+            e.Pointer.Capture(this);
+            _capturedPointers.Add(e.Pointer);
+            _gestureAxes[e.Pointer] = Math.Abs(dx) >= Math.Abs(dy) ? 1 : 2;
+        }
+
+        int dragAxis = _gestureAxes.TryGetValue(e.Pointer, out int selectedAxis) ? selectedAxis : 0;
+        if (dragAxis == 1)
+            _yaw += (current.X - previous.X) * 0.008;
+        else if (dragAxis == 2)
+            _pitch -= (current.Y - previous.Y) * 0.008;
+        InvalidateVisual();
+        e.Handled = true;
+    }
+
+    protected override void OnPointerReleased(PointerReleasedEventArgs e)
+    {
+        base.OnPointerReleased(e);
+        if (!_interactive)
+            return;
+
+        _pointers.Remove(e.Pointer);
+        _gestureStarts.Remove(e.Pointer);
+        _gestureAxes.Remove(e.Pointer);
+        bool captured = _capturedPointers.Remove(e.Pointer);
+        if (captured)
+            e.Pointer.Capture(null);
+
+        _lastPinchDistance = 0;
+        _pinchDragAxis = 0;
+        if (_pointers.Count == 1)
+        {
+            IPointer remaining = _pointers.Keys.First();
+            _gestureStarts[remaining] = _pointers[remaining];
+            _gestureAxes.Remove(remaining);
+        }
+        if (captured)
+            e.Handled = true;
+    }
+
+    protected override void OnPointerCaptureLost(PointerCaptureLostEventArgs e)
+    {
+        base.OnPointerCaptureLost(e);
+        _pointers.Clear();
+        _gestureStarts.Clear();
+        _gestureAxes.Clear();
+        _capturedPointers.Clear();
+        _lastPinchDistance = 0;
+    }
+
+    public override void Render(DrawingContext context)
+    {
+        base.Render(context);
+        Rect bounds = new(Bounds.Size);
+        context.FillRectangle(new SolidColorBrush(Color.FromRgb(12, 12, 12)), bounds);
+
+        if (_disposed || _normalizedVertices.Length < 3 || _indices.Length < 3 ||
+            Bounds.Width <= 0 || Bounds.Height <= 0)
+            return;
+
+        double scale = Math.Min(1.0, MaxRenderDimension / Math.Max(Bounds.Width, Bounds.Height));
+        int width = Math.Max(1, (int)Math.Ceiling(Bounds.Width * scale));
+        int height = Math.Max(1, (int)Math.Ceiling(Bounds.Height * scale));
+        EnsureFrameBuffer(width, height);
+        Array.Fill(_colorBuffer, unchecked((int)0xFF0C0C0C));
+        Array.Fill(_depthBuffer, float.PositiveInfinity);
+
+        double cy = Math.Cos(_yaw), sy = Math.Sin(_yaw);
+        double cp = Math.Cos(_pitch), sp = Math.Sin(_pitch);
+        float cameraDistance = _cameraInside ? 0f : (float)(4.4 / _zoom);
+        float focal = Math.Min(width, height) * 1.05f * (_cameraInside ? (float)_zoom : 1f);
+        float centerX = width * 0.5f, centerY = height * 0.5f;
+
+        for (int i = 0; i < _normalizedVertices.Length; i++)
+        {
+            Vector3 p = _normalizedVertices[i];
+            float rx = (float)(p.X * cy - p.Z * sy);
+            float rz = (float)(p.X * sy + p.Z * cy);
+            float ry = (float)(p.Y * cp - rz * sp);
+            rz = (float)(p.Y * sp + rz * cp);
+
+            _cameraVertices[i] = new Vector3(rx, ry, rz);
+            float depth = cameraDistance + rz;
+            _cameraDepths[i] = depth;
+            if (depth <= 0.05f)
+            {
+                _screenVertices[i] = new Point(-100000, -100000);
+                continue;
+            }
+
+            _screenVertices[i] = new Point(
+                centerX + rx * focal / depth,
+                centerY - ry * focal / depth);
+        }
+
+        int indexLimit = Math.Min(_indices.Length - _indices.Length % 3, MaxPreviewIndices);
+        for (int i = 0; i < indexLimit; i += 3)
+        {
+            int ia = _indices[i], ib = _indices[i + 1], ic = _indices[i + 2];
+            if ((uint)ia >= _screenVertices.Length || (uint)ib >= _screenVertices.Length ||
+                (uint)ic >= _screenVertices.Length)
+                continue;
+
+            float za = _cameraDepths[ia], zb = _cameraDepths[ib], zc = _cameraDepths[ic];
+            if (za <= 0.05f || zb <= 0.05f || zc <= 0.05f)
+                continue;
+
+            RasterizeTriangle(_screenVertices[ia], _screenVertices[ib], _screenVertices[ic],
+                za, zb, zc, _cameraVertices[ia], _cameraVertices[ib], _cameraVertices[ic],
+                _uvs.Length == _normalizedVertices.Length ? _uvs[ia] : Vector2.Zero,
+                _uvs.Length == _normalizedVertices.Length ? _uvs[ib] : Vector2.Zero,
+                _uvs.Length == _normalizedVertices.Length ? _uvs[ic] : Vector2.Zero,
+                width, height);
+        }
+
+        using (var framebuffer = _frameBitmap!.Lock())
+        {
+            for (int y = 0; y < height; y++)
+                Marshal.Copy(_colorBuffer, y * width,
+                    IntPtr.Add(framebuffer.Address, y * framebuffer.RowBytes), width);
+        }
+
+        context.DrawImage(_frameBitmap!, new Rect(0, 0, width, height), bounds);
+    }
+
+    private void RasterizeTriangle(
+        Point pa, Point pb, Point pc,
+        float za, float zb, float zc,
+        Vector3 va, Vector3 vb, Vector3 vc,
+        Vector2 uva, Vector2 uvb, Vector2 uvc,
+        int width, int height)
+    {
+        float ax = (float)pa.X, ay = (float)pa.Y;
+        float bx = (float)pb.X, by = (float)pb.Y;
+        float cx = (float)pc.X, cy = (float)pc.Y;
+
+        float area = Edge(ax, ay, bx, by, cx, cy);
+        if (Math.Abs(area) < 0.0001f)
+            return;
+
+        int minX = Math.Clamp((int)MathF.Floor(Math.Min(ax, Math.Min(bx, cx))), 0, width - 1);
+        int maxX = Math.Clamp((int)MathF.Ceiling(Math.Max(ax, Math.Max(bx, cx))), 0, width - 1);
+        int minY = Math.Clamp((int)MathF.Floor(Math.Min(ay, Math.Min(by, cy))), 0, height - 1);
+        int maxY = Math.Clamp((int)MathF.Ceiling(Math.Max(ay, Math.Max(by, cy))), 0, height - 1);
+        if (maxX < minX || maxY < minY)
+            return;
+
+        Vector3 normal = Vector3.Cross(vb - va, vc - va);
+        float normalLengthSquared = normal.LengthSquared();
+        if (normalLengthSquared < 0.000001f)
+            return;
+        normal /= MathF.Sqrt(normalLengthSquared);
+
+        // Keep the existing mesh preview's face lighting, but shade material spheres
+        // per pixel using interpolated normals for a smooth, rounded surface.
+        float faceLighting = Math.Clamp(MathF.Abs(Vector3.Dot(normal, LightDirection)), 0.18f, 1f);
+        int faceShade = 48 + (int)(faceLighting * 165f);
+        int faceRed = Math.Min(255, faceShade + 18);
+        int faceGreen = Math.Min(255, faceShade + 8);
+        int faceBlue = faceShade;
+
+        float inverseArea = 1f / area;
+        float inverseZa = 1f / za, inverseZb = 1f / zb, inverseZc = 1f / zc;
+
+        for (int y = minY; y <= maxY; y++)
+        {
+            float py = y + 0.5f;
+            int row = y * width;
+            for (int x = minX; x <= maxX; x++)
+            {
+                float px = x + 0.5f;
+                float wa = Edge(bx, by, cx, cy, px, py) * inverseArea;
+                float wb = Edge(cx, cy, ax, ay, px, py) * inverseArea;
+                float wc = 1f - wa - wb;
+                if (wa < -0.0001f || wb < -0.0001f || wc < -0.0001f)
+                    continue;
+
+                float inverseDepth = wa * inverseZa + wb * inverseZb + wc * inverseZc;
+                if (inverseDepth <= 0)
+                    continue;
+
+                float depth = 1f / inverseDepth;
+                int pixel = row + x;
+                if (depth < _depthBuffer[pixel])
+                {
+                    _depthBuffer[pixel] = depth;
+                    if (_surfaceColor is Color surface)
+                    {
+                        Vector3 smoothNormal = va * wa + vb * wb + vc * wc;
+                        if (smoothNormal.LengthSquared() > 0.000001f)
+                            smoothNormal = Vector3.Normalize(smoothNormal);
+                        float diffuse = 0.20f + Math.Clamp(MathF.Abs(Vector3.Dot(smoothNormal, LightDirection)), 0.0f, 1f) * 0.82f;
+                        Vector3 viewDirection = Vector3.Normalize(new Vector3(
+                            (float)(width * 0.5 - x), (float)(height * 0.5 - y), 180f));
+                        Vector3 halfVector = Vector3.Normalize(LightDirection + viewDirection);
+                        float specular = MathF.Pow(Math.Clamp(MathF.Abs(Vector3.Dot(smoothNormal, halfVector)), 0f, 1f), 28f) * 0.24f;
+                        if (_texturePixels != null && _textureWidth > 0 && _textureHeight > 0 && _uvs.Length == _normalizedVertices.Length)
+                        {
+                            float u = (float)((wa * uva.X * inverseZa + wb * uvb.X * inverseZb + wc * uvc.X * inverseZc) / inverseDepth);
+                            float v = (float)((wa * uva.Y * inverseZa + wb * uvb.Y * inverseZb + wc * uvc.Y * inverseZc) / inverseDepth);
+                            int texel = SampleTexture(u, v);
+                            int tr = (texel >> 16) & 255, tg = (texel >> 8) & 255, tb = texel & 255;
+                            int red = Math.Clamp((int)(tr * diffuse + 255f * specular), 0, 255);
+                            int green = Math.Clamp((int)(tg * diffuse + 255f * specular), 0, 255);
+                            int blue = Math.Clamp((int)(tb * diffuse + 255f * specular), 0, 255);
+                            _colorBuffer[pixel] = unchecked((int)(0xFF000000u | ((uint)red << 16) | ((uint)green << 8) | (uint)blue));
+                        }
+                        else
+                        {
+                            int red = Math.Clamp((int)(surface.R * diffuse + 255f * specular), 0, 255);
+                            int green = Math.Clamp((int)(surface.G * diffuse + 255f * specular), 0, 255);
+                            int blue = Math.Clamp((int)(surface.B * diffuse + 255f * specular), 0, 255);
+                            _colorBuffer[pixel] = unchecked((int)(0xFF000000u | ((uint)red << 16) | ((uint)green << 8) | (uint)blue));
+                        }
+                    }
+                    else
+                    {
+                        _colorBuffer[pixel] = unchecked((int)(0xFF000000u |
+                            ((uint)faceRed << 16) | ((uint)faceGreen << 8) | (uint)faceBlue));
+                    }
+                }
+            }
+        }
+
+        if (_wireframe)
+        {
+            const int wireColor = unchecked((int)0xFF17202A);
+            DrawDepthLine(pa, pb, za, zb, width, height, wireColor);
+            DrawDepthLine(pb, pc, zb, zc, width, height, wireColor);
+            DrawDepthLine(pc, pa, zc, za, width, height, wireColor);
+        }
+    }
+
+    private int SampleTexture(float u, float v)
+    {
+        if (_texturePixels == null || _textureWidth <= 0 || _textureHeight <= 0)
+            return unchecked((int)0xFFFFFFFF);
+        u -= MathF.Floor(u);
+        v -= MathF.Floor(v);
+        int x = Math.Clamp((int)(u * (_textureWidth - 1)), 0, _textureWidth - 1);
+        int y = Math.Clamp((int)((1f - v) * (_textureHeight - 1)), 0, _textureHeight - 1);
+        return _texturePixels[y * _textureWidth + x];
+    }
+    private void DrawDepthLine(Point start, Point end, float startDepth, float endDepth,
+        int width, int height, int color)
+    {
+        float dx = (float)(end.X - start.X);
+        float dy = (float)(end.Y - start.Y);
+        int steps = Math.Max(1, (int)MathF.Ceiling(Math.Max(Math.Abs(dx), Math.Abs(dy))));
+        float inverseStart = 1f / startDepth;
+        float inverseEnd = 1f / endDepth;
+
+        for (int i = 0; i <= steps; i++)
+        {
+            float t = i / (float)steps;
+            int x = (int)MathF.Round((float)start.X + dx * t);
+            int y = (int)MathF.Round((float)start.Y + dy * t);
+            if ((uint)x >= width || (uint)y >= height)
+                continue;
+
+            float inverseDepth = inverseStart + (inverseEnd - inverseStart) * t;
+            if (inverseDepth <= 0)
+                continue;
+
+            float depth = 1f / inverseDepth;
+            int pixel = y * width + x;
+            if (depth <= _depthBuffer[pixel] + 0.002f)
+                _colorBuffer[pixel] = color;
+        }
+    }
+
+    private static float Edge(float ax, float ay, float bx, float by, float px, float py) =>
+        (px - ax) * (by - ay) - (py - ay) * (bx - ax);
+
+    private void EnsureFrameBuffer(int width, int height)
+    {
+        if (_frameBitmap != null && width == _frameWidth && height == _frameHeight)
+            return;
+
+        _frameBitmap?.Dispose();
+        _frameWidth = width;
+        _frameHeight = height;
+        _frameBitmap = new WriteableBitmap(
+            new PixelSize(width, height),
+            new Avalonia.Vector(96, 96),
+            PixelFormat.Bgra8888,
+            AlphaFormat.Premul);
+        _colorBuffer = new int[width * height];
+        _depthBuffer = new float[width * height];
+    }
+
+    public void Dispose()
+    {
+        if (_disposed)
+            return;
+        _disposed = true;
+        _frameBitmap?.Dispose();
+        _frameBitmap = null;
+        _colorBuffer = Array.Empty<int>();
+        _depthBuffer = Array.Empty<float>();
+        _pointers.Clear();
+        _gestureStarts.Clear();
+        _capturedPointers.Clear();
+    }
+
+    private static Point Midpoint(Point a, Point b) =>
+        new((a.X + b.X) * 0.5, (a.Y + b.Y) * 0.5);
+
+    private static double Distance(Point a, Point b)
+    {
+        double x = a.X - b.X, y = a.Y - b.Y;
+        return Math.Sqrt(x * x + y * y);
+    }
+}

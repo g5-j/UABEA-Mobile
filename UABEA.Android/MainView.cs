@@ -1,0 +1,6682 @@
+using System;
+using System.Collections.Generic;
+using System.Collections.ObjectModel;
+using System.IO;
+using System.IO.Compression;
+using System.Globalization;
+using System.Linq;
+using System.Reflection;
+using System.Text;
+using System.Threading.Tasks;
+using AssetsTools.NET;
+using AssetsTools.NET.Extra;
+using AssetsTools.NET.Texture;
+using Fmod5Sharp;
+using Fmod5Sharp.FmodTypes;
+using NVorbis;
+using Avalonia;
+using Avalonia.Controls;
+using Avalonia.Controls.Primitives;
+using Avalonia.Controls.Templates;
+using Avalonia.Layout;
+using Avalonia.Input;
+using Avalonia.Media;
+using Avalonia.Threading;
+using Avalonia.Platform.Storage;
+using Material.Icons;
+using Material.Icons.Avalonia;
+using Button = Avalonia.Controls.Button;
+using ProgressBar = Avalonia.Controls.ProgressBar;
+using Orientation = Avalonia.Layout.Orientation;
+
+namespace UABEA.Mobile;
+
+public sealed class MainView : UserControl
+{
+    private const int PageSize = 150;
+    private const int AssetNameBatchSize = 32;
+
+    private static readonly IBrush BackgroundBrush = Brush.Parse("#0A0F18");
+    private static readonly IBrush SurfaceBrush = Brush.Parse("#101722");
+    private static readonly IBrush SurfaceContainerBrush = Brush.Parse("#151F2C");
+    private static readonly IBrush SurfaceHighBrush = Brush.Parse("#202D3D");
+    private static readonly IBrush OutlineBrush = Brush.Parse("#2B3B50");
+    private static readonly IBrush PrimaryBrush = Brush.Parse("#83B9FF");
+    private static readonly IBrush OnPrimaryBrush = Brush.Parse("#071321");
+    private static readonly IBrush TextBrush = Brush.Parse("#F3F7FC");
+    private static readonly IBrush MutedBrush = Brush.Parse("#A8B6C8");
+
+    private readonly TextBlock _status;
+    private StackPanel _items;
+    private readonly StackPanel _assetsListItems;
+    private Border? _assetDetailsOverlay;
+    private Border? _fullscreenOverlay;
+    private Action? _fullscreenCleanup;
+    private readonly TextBox _searchBox;
+    private readonly ComboBox _filterBox;
+    private readonly Button _filterButton;
+    private readonly ListBox _assetListBox;
+    private readonly ObservableCollection<RowData> _displayedRows = new();
+    private readonly StackPanel _listHeader;
+    private readonly TextBlock _listPlaceholder;
+    private readonly Grid _pageLayers;
+    private readonly Button _backButton;
+    private readonly Button _loadMoreButton;
+    private readonly StackPanel _loadingIndicator;
+    private readonly TextBlock _spinnerGlyph;
+    private readonly RotateTransform _spinnerRotation;
+    private readonly DispatcherTimer _spinnerTimer;
+    private readonly System.Threading.SemaphoreSlim _assetNameLock = new(1, 1);
+
+    private AssetsManager? _assetsManager;
+    private AssetWorkspace? _assetWorkspace;
+    private readonly BundleWorkspace _bundleWorkspace = new();
+    private string? _currentTempDirectory;
+    private Border _loadingOverlay = null!;
+    private Border _imageViewerOverlay = null!;
+    private Image _zoomImage = null!;
+    private ScaleTransform _zoomScale = null!;
+    private TranslateTransform _zoomTranslate = null!;
+    private readonly Dictionary<IPointer, Point> _zoomPointers = new();
+    private readonly List<RotateTransform> _previewSpinnerRotations = new();
+    private double _pinchStartDistance;
+    private double _pinchStartScale = 1;
+    private Point _lastPanPoint;
+    private long _lastZoomTap;
+    private bool _zoomGestureUsed;
+    private BundleFileInstance? _currentBundle;
+    private AssetBundleCompressionType _currentBundleCompression = AssetBundleCompressionType.None;
+    private AssetsFileInstance? _currentAssets;
+    private string _currentFileName = "";
+    private BrowserPage _currentPage = BrowserPage.Home;
+    private List<RowData> _currentRows = new();
+    private List<AssetRow> _assetRows = new();
+    private int _visibleRows;
+    private bool _isRendering;
+    private bool _isBusy;
+    private global::Android.Media.MediaPlayer? _audioPlayer;
+    private DispatcherTimer? _audioProgressTimer;
+    private string? _audioTempPath;
+    private readonly List<string> _sessionResourcePaths = new();
+    private bool _sessionResourceWasExplicitlySelected;
+    private readonly Dictionary<AssetID, AssetsReplacer> _pendingAssetChanges = new();
+    private readonly Dictionary<AssetID, AssetsFileInstance> _pendingAssetInstances = new();
+    private readonly HashSet<AssetID> _savedAssetChanges = new();
+    private readonly HashSet<long> _selectedAssetIds = new();
+    private readonly HashSet<long> _pendingDeleteIds = new();
+    private bool _selectionMode;
+    private bool _floatingMenuOpen;
+    private bool _hasUnsavedChanges;
+    private Button? _floatingActionButton;
+    private Border? _floatingMenu;
+    private System.Threading.CancellationTokenSource? _exportCancellation;
+    private readonly Dictionary<AssetID, byte[]> _pendingAssetData = new();
+    private Border? _saveChoiceOverlay;
+    private TaskCompletionSource<string?>? _saveChoiceCompletion;
+
+    private enum BrowserPage { Home, Bundle, Assets, EntryDetails, AssetDetails }
+
+    private sealed record RowData(string Title, string Detail, MaterialIconKind Icon, Action Action, AssetFileInfo? AssetInfo = null);
+    private sealed record OpenResult(AssetsManager Manager, BundleFileInstance? Bundle,
+        AssetsFileInstance? Assets, List<RowData> Rows, List<AssetRow> AssetRows,
+        string Summary, BrowserPage Page,
+        AssetBundleCompressionType? BundleCompression = null);
+    private sealed record AssetRow(AssetFileInfo Info, string Name, string TypeName);
+    private sealed record AssetExportPayload(byte[]? Data, string Extension, bool IsRaw);
+
+    public MainView()
+    {
+        var root = new Grid
+        {
+            Margin = new Thickness(16, 14, 16, 14),
+            RowDefinitions = new RowDefinitions("Auto,Auto,Auto,Auto,Auto,*,Auto")
+        };
+        void AddRoot(Control control, int row)
+        {
+            Grid.SetRow(control, row);
+            root.Children.Add(control);
+        }
+
+        var header = new StackPanel { Spacing = 5, Margin = new Thickness(2, 0, 2, 12) };
+        header.Children.Add(new TextBlock
+        {
+            Text = "UABE Avalonia",
+            FontSize = 28,
+            FontWeight = FontWeight.Bold,
+            Foreground = TextBrush
+        });
+        header.Children.Add(new TextBlock
+        {
+            Text = "Unity Assets & AssetBundle Explorer  •  v" + (typeof(MainView).Assembly.GetName().Version?.ToString(3) ?? "0.2.0"),
+            FontSize = 13,
+            Foreground = MutedBrush
+        });
+        AddRoot(header, 0);
+
+        var toolbar = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto"), Margin = new Thickness(0, 0, 0, 10) };
+        var openButton = new Button
+        {
+            Content = CreateIconLabel(MaterialIconKind.FolderOpen, "Open Unity file", OnPrimaryBrush, 16),
+            MinHeight = 54,
+            HorizontalAlignment = HorizontalAlignment.Stretch,
+            HorizontalContentAlignment = HorizontalAlignment.Center,
+            Background = PrimaryBrush,
+            Foreground = OnPrimaryBrush,
+            FontWeight = FontWeight.SemiBold,
+            CornerRadius = new CornerRadius(18),
+            Padding = new Thickness(18, 10)
+        };
+        ToolTip.SetTip(openButton, "Open a Unity file");
+        openButton.Click += OpenFile_Click;
+
+        _backButton = new Button
+        {
+            Content = CreateIcon(MaterialIconKind.ArrowLeft, 22, TextBrush),
+            MinWidth = 54,
+            MinHeight = 54,
+            IsVisible = false,
+            Margin = new Thickness(10, 0, 0, 0),
+            Background = SurfaceHighBrush,
+            Foreground = TextBrush,
+            CornerRadius = new CornerRadius(18)
+        };
+        ToolTip.SetTip(_backButton, "Back");
+        _backButton.Click += (_, _) => GoBack();
+        Grid.SetColumn(_backButton, 1);
+        toolbar.Children.Add(openButton);
+        toolbar.Children.Add(_backButton);
+        AddRoot(toolbar, 1);
+
+        var searchToolbar = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto"), Margin = new Thickness(0, 0, 0, 8) };
+        _searchBox = new TextBox
+        {
+            Watermark = "Search files or assets",
+            MinHeight = 50,
+            Padding = new Thickness(16, 10),
+            Background = SurfaceContainerBrush,
+            Foreground = TextBrush,
+            BorderBrush = OutlineBrush,
+            CornerRadius = new CornerRadius(16),
+            VerticalContentAlignment = VerticalAlignment.Center,
+            IsVisible = false
+        };
+        _searchBox.TextChanged += (_, _) =>
+        {
+            if (_currentPage is BrowserPage.Bundle or BrowserPage.Assets)
+                RefreshCurrentList();
+        };
+        _searchBox.GotFocus += (_, _) => _filterButton.IsEnabled = false;
+        _searchBox.LostFocus += (_, _) =>
+        {
+            if (!_filterBox.IsVisible)
+                _filterButton.IsEnabled = true;
+        };
+
+        _filterButton = new Button
+        {
+            Content = CreateIcon(MaterialIconKind.FilterVariant, 22, TextBrush),
+            MinWidth = 50,
+            MinHeight = 50,
+            IsVisible = false,
+            Margin = new Thickness(10, 0, 0, 0),
+            Background = SurfaceHighBrush,
+            Foreground = TextBrush,
+            CornerRadius = new CornerRadius(16)
+        };
+        ToolTip.SetTip(_filterButton, "Filter by asset type");
+        _filterButton.Click += (_, _) =>
+        {
+            if (_searchBox.IsFocused || !_filterButton.IsEnabled)
+                return;
+            _searchBox.IsEnabled = false;
+            _filterButton.Focus();
+            _filterBox.IsVisible = !_filterBox.IsVisible;
+            if (_filterBox.IsVisible)
+                _filterBox.Focus();
+            else
+            {
+                _searchBox.IsEnabled = true;
+                _filterButton.IsEnabled = true;
+            }
+        };
+
+        searchToolbar.Children.Add(_searchBox);
+        Grid.SetColumn(_filterButton, 1);
+        searchToolbar.Children.Add(_filterButton);
+        AddRoot(searchToolbar, 2);
+
+        _filterBox = new ComboBox
+        {
+            MinHeight = 48,
+            Margin = new Thickness(0, 0, 0, 8),
+            HorizontalAlignment = HorizontalAlignment.Stretch,
+            Background = SurfaceContainerBrush,
+            Foreground = TextBrush,
+            IsVisible = false,
+            ItemsSource = new[] { "All types" },
+            SelectedIndex = 0
+        };
+        _filterBox.SelectionChanged += (_, _) =>
+        {
+            try
+            {
+                if (_currentPage is BrowserPage.Bundle or BrowserPage.Assets)
+                    RefreshCurrentList();
+            }
+            finally
+            {
+                _filterBox.IsVisible = false;
+                _searchBox.IsEnabled = true;
+                _filterButton.IsEnabled = true;
+            }
+        };
+        AddRoot(_filterBox, 3);
+
+        _spinnerRotation = new RotateTransform();
+        _spinnerGlyph = new TextBlock
+        {
+            Text = "◌",
+            FontSize = 32,
+            Foreground = PrimaryBrush,
+            HorizontalAlignment = HorizontalAlignment.Center,
+            RenderTransform = _spinnerRotation
+        };
+        _loadingIndicator = new StackPanel
+        {
+            Orientation = Orientation.Vertical,
+            HorizontalAlignment = HorizontalAlignment.Center,
+            Spacing = 2,
+            IsVisible = false,
+            Children =
+            {
+                _spinnerGlyph,
+                new TextBlock
+                {
+                    Text = "Loading...",
+                    FontSize = 12,
+                    Foreground = MutedBrush,
+                    HorizontalAlignment = HorizontalAlignment.Center
+                }
+            }
+        };
+        _spinnerTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(45) };
+        _spinnerTimer.Tick += (_, _) => { _spinnerRotation.Angle = (_spinnerRotation.Angle + 18) % 360; foreach (var rotation in _previewSpinnerRotations) rotation.Angle = (rotation.Angle + 18) % 360; };
+
+        var statusCard = new Border
+        {
+            Background = SurfaceBrush,
+            BorderBrush = OutlineBrush,
+            BorderThickness = new Thickness(1),
+            CornerRadius = new CornerRadius(18),
+            Padding = new Thickness(15),
+            Margin = new Thickness(0, 0, 0, 10)
+        };
+        _status = new TextBlock
+        {
+            Text = "Open a Unity AssetBundle or serialized assets file.",
+            TextWrapping = TextWrapping.Wrap,
+            Foreground = TextBrush,
+            FontSize = 14
+        };
+        statusCard.Child = _status;
+        AddRoot(statusCard, 4);
+
+        _items = new StackPanel { Spacing = 9 };
+        _assetsListItems = _items;
+        _listHeader = new StackPanel { Spacing = 8 };
+        _listPlaceholder = new TextBlock
+        {
+            Text = "Open a Unity file to view its contents.",
+            Foreground = MutedBrush,
+            FontSize = 14,
+            TextWrapping = TextWrapping.Wrap,
+            HorizontalAlignment = HorizontalAlignment.Center,
+            VerticalAlignment = VerticalAlignment.Center,
+            IsVisible = true
+        };
+        _assetListBox = new ListBox
+        {
+            ItemsSource = _displayedRows,
+            HorizontalAlignment = HorizontalAlignment.Stretch,
+            VerticalAlignment = VerticalAlignment.Stretch,
+            Background = Brushes.Transparent,
+            BorderThickness = new Thickness(0),
+            Padding = new Thickness(0),
+            IsTabStop = false
+        };
+        ScrollViewer.SetHorizontalScrollBarVisibility(_assetListBox, ScrollBarVisibility.Disabled);
+        _assetListBox.ItemTemplate = new FuncDataTemplate<RowData>((row, nameScope) =>
+        {
+            bool isBundleEntry = _currentPage == BrowserPage.Bundle && _currentBundle is not null;
+            bool isAssetEntry = _currentPage == BrowserPage.Assets && row.AssetInfo is not null;
+            Action? exportAction = null;
+            Action? openAction = null;
+            Action? holdAction = null;
+            if (isBundleEntry)
+            {
+                exportAction = () => _ = ExportBundleEntryAsync(row.Title);
+                openAction = () => _ = OpenBundleEntryAsync(row.Title);
+            }
+            else if (isAssetEntry)
+            {
+                exportAction = () => _ = ExportAssetAsync(row.AssetInfo!);
+                openAction = () => { if (_selectionMode) ToggleAssetSelection(row.AssetInfo!); else ShowAssetDetails(row.AssetInfo!); };
+                holdAction = () => EnterSelectionMode(row.AssetInfo!);
+            }
+            return CreateActionRow(row.Title, row.Detail, row.Icon, row.Action,
+                exportAction, openAction, holdAction);
+        }, supportsRecycling: true);
+        var listBody = new Grid { RowDefinitions = new RowDefinitions("Auto,*") };
+        listBody.Children.Add(_listHeader);
+        Grid.SetRow(_assetListBox, 1);
+        listBody.Children.Add(_assetListBox);
+        var listContent = new Grid();
+        listContent.Children.Add(listBody);
+        listContent.Children.Add(_listPlaceholder);
+        var listFrame = new Border
+        {
+            Background = SurfaceBrush,
+            BorderBrush = OutlineBrush,
+            BorderThickness = new Thickness(1),
+            CornerRadius = new CornerRadius(21),
+            Padding = new Thickness(11),
+            Child = listContent
+        };
+        AddRoot(listFrame, 5);
+
+        _loadMoreButton = new Button
+        {
+            Content = CreateIconLabel(MaterialIconKind.ChevronDown, "Load more", TextBrush, 15),
+            MinHeight = 48,
+            HorizontalAlignment = HorizontalAlignment.Stretch,
+            Background = SurfaceHighBrush,
+            Foreground = TextBrush,
+            CornerRadius = new CornerRadius(16),
+            Margin = new Thickness(0, 8, 0, 0),
+            IsVisible = false
+        };
+        _loadMoreButton.Click += (_, _) => RenderNextPage();
+        AddRoot(_loadMoreButton, 6);
+
+        _pageLayers = new Grid();
+        _pageLayers.Children.Add(root);
+        _loadingOverlay = new Border { Background = Brush.Parse("#D9000000"), IsVisible = false, HorizontalAlignment = HorizontalAlignment.Stretch, VerticalAlignment = VerticalAlignment.Stretch, Child = _loadingIndicator };
+        _loadingIndicator.HorizontalAlignment = HorizontalAlignment.Center;
+        _loadingIndicator.VerticalAlignment = VerticalAlignment.Center;
+        _pageLayers.Children.Add(_loadingOverlay);
+        _zoomScale = new ScaleTransform(1, 1);
+        _zoomTranslate = new TranslateTransform();
+        _zoomImage = new Image { Stretch = Stretch.Uniform, HorizontalAlignment = HorizontalAlignment.Stretch, VerticalAlignment = VerticalAlignment.Stretch, RenderTransformOrigin = RelativePoint.Center, RenderTransform = new TransformGroup { Children = { _zoomScale, _zoomTranslate } } };
+        _zoomImage.PointerPressed += OnZoomPointerPressed;
+        _zoomImage.PointerMoved += OnZoomPointerMoved;
+        _zoomImage.PointerReleased += OnZoomPointerReleased;
+        var closeViewer = new Button { Content = "✕", Width = 48, Height = 48, Margin = new Thickness(14), HorizontalAlignment = HorizontalAlignment.Right, VerticalAlignment = VerticalAlignment.Top, Background = SurfaceHighBrush, Foreground = TextBrush, CornerRadius = new CornerRadius(24) };
+        closeViewer.Click += (_, _) => CloseImageViewer();
+        var viewerGrid = new Grid();
+        viewerGrid.Children.Add(_zoomImage);
+        viewerGrid.Children.Add(closeViewer);
+        _imageViewerOverlay = new Border { Background = Brush.Parse("#FF000000"), IsVisible = false, Child = viewerGrid };
+        _pageLayers.Children.Add(_imageViewerOverlay);
+        BuildFloatingActions();
+        Content = _pageLayers;
+        Background = BackgroundBrush;
+    }
+
+    public bool HandleSystemBack()
+    {
+        if (_bundleWorkspaceOverlay is not null) { CloseBundleRename(); return true; }
+        if (_saveChoiceOverlay is not null)
+        {
+            CompleteBundleSaveChoice(null);
+            return true;
+        }
+        if (_exportCancellation is { IsCancellationRequested: false } exportCancellation)
+        {
+            exportCancellation.Cancel();
+            _status.Text = "Cancelling export...";
+            return true;
+        }
+        if (CloseFullscreenOverlay()) return true;
+        if (_imageViewerOverlay.IsVisible) { CloseImageViewer(); return true; }
+        if (_currentPage == BrowserPage.Home) return false;
+        GoBack();
+        return true;
+    }
+
+    private async void OpenFile_Click(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        var topLevel = TopLevel.GetTopLevel(this);
+        if (topLevel is null || _isBusy) return;
+        var selected = await topLevel.StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
+        { Title = "Select an assets file and its resource files", AllowMultiple = true });
+        if (selected.Count == 0) return;
+        var file = selected.FirstOrDefault(x => x.Name.EndsWith(".assets", StringComparison.OrdinalIgnoreCase))
+            ?? selected.FirstOrDefault(x => !IsResourceFileName(x.Name));
+        if (file is null) return;
+        _isBusy = true;
+        _sessionResourcePaths.Clear();
+        _sessionResourceWasExplicitlySelected = false;
+        _assetWorkspace?.Dispose();
+        _assetWorkspace = null;
+        _bundleWorkspace.Reset(null);
+        _pendingAssetChanges.Clear();
+        _pendingAssetInstances.Clear();
+        _savedAssetChanges.Clear();
+        _pendingAssetData.Clear();
+        _pendingDeleteIds.Clear();
+        _selectedAssetIds.Clear();
+        _selectionMode = false;
+        _hasUnsavedChanges = false;
+        _currentPage = BrowserPage.Home;
+        UpdateFloatingActions();
+        SetLoading(true, $"Copying {file.Name}...");
+        _items.Children.Clear();
+        _displayedRows.Clear();
+        _listHeader.Children.Clear();
+        _listPlaceholder.IsVisible = true;
+        _assetListBox.IsVisible = false;
+        _searchBox.IsVisible = false;
+        _filterButton.IsVisible = false;
+        _filterBox.IsVisible = false;
+        _loadMoreButton.IsVisible = false;
+        _searchBox.Text = "";
+        SetFilterOptions(new[] { "All types" });
+        string? tempDirectory = null;
+        try
+        {
+            tempDirectory = Path.Combine(Path.GetTempPath(), "uabea-mobile-" + Guid.NewGuid().ToString("N"));
+            Directory.CreateDirectory(tempDirectory);
+            string? primaryPath = null;
+            var selectedResourcePaths = new List<string>();
+            foreach (var selectedFile in selected)
+            {
+                string safeName = Path.GetFileName(selectedFile.Name);
+                string destinationPath = Path.Combine(tempDirectory, safeName);
+                if (File.Exists(destinationPath)) destinationPath = Path.Combine(tempDirectory, Guid.NewGuid().ToString("N") + "_" + safeName);
+                await using var source = await selectedFile.OpenReadAsync();
+                await using var destination = File.Create(destinationPath);
+                await source.CopyToAsync(destination);
+                if (ReferenceEquals(selectedFile, file)) primaryPath = destinationPath;
+                if (IsResourceFileName(selectedFile.Name))
+                    selectedResourcePaths.Add(destinationPath);
+            }
+            if (primaryPath is null) throw new InvalidDataException("The selected assets file could not be copied.");
+            SetLoading(true, $"Analyzing {file.Name}...");
+            var result = await Task.Run(() => LoadFileInBackground(primaryPath, file.Name));
+            _assetsManager?.UnloadAllAssetsFiles(true);
+            if (_currentTempDirectory is not null) { try { Directory.Delete(_currentTempDirectory, true); } catch { } }
+            _assetsManager = result.Manager;
+            _assetWorkspace = new AssetWorkspace(result.Manager, result.Bundle is not null);
+            _bundleWorkspace.Reset(result.Bundle);
+            _sessionResourcePaths.Clear();
+            _sessionResourcePaths.AddRange(selectedResourcePaths);
+            _currentTempDirectory = tempDirectory;
+            tempDirectory = null;
+            _currentBundle = result.Bundle;
+            _currentBundleCompression = result.BundleCompression ?? AssetBundleCompressionType.None;
+            _currentAssets = result.Assets;
+            _currentFileName = file.Name;
+            _currentPage = result.Page;
+            _currentRows = result.Rows;
+            _assetRows = result.AssetRows;
+            UpdateFloatingActions();
+            _status.Text = result.Summary;
+            _searchBox.IsVisible = result.Page is BrowserPage.Bundle or BrowserPage.Assets;
+            _filterButton.IsVisible = _searchBox.IsVisible;
+            _filterBox.IsVisible = false;
+            SetFilterOptions(result.Page == BrowserPage.Assets ? result.AssetRows.Select(row => row.TypeName) : result.Rows.Select(row => GetEntryKind(row.Title)));
+            _searchBox.Watermark = result.Page == BrowserPage.Bundle ? "Search bundle entries..." : "Search by asset name or type...";
+            _searchBox.Text = "";
+            _visibleRows = 0;
+            RefreshCurrentList();
+            UpdateNavigation();
+        }
+        catch (Exception ex)
+        {
+            _status.Text = $"Could not open this file:\n{ex.Message}";
+            _items.Children.Clear();
+            _displayedRows.Clear();
+            _listHeader.Children.Clear();
+            _listPlaceholder.IsVisible = true;
+            _assetListBox.IsVisible = false;
+            _currentBundle = null;
+            _currentAssets = null;
+            _currentRows.Clear();
+            _assetRows.Clear();
+            _currentPage = BrowserPage.Home;
+            _filterButton.IsVisible = false;
+            _filterBox.IsVisible = false;
+            UpdateNavigation();
+        }
+        finally
+        {
+            if (tempDirectory is not null) { try { Directory.Delete(tempDirectory, true); } catch { } }
+            _isBusy = false;
+            SetLoading(false);
+        }
+    }
+
+    private static bool IsResourceFileName(string name) =>
+        name.EndsWith(".resource", StringComparison.OrdinalIgnoreCase) ||
+        name.EndsWith(".resources", StringComparison.OrdinalIgnoreCase) ||
+        name.EndsWith(".resS", StringComparison.OrdinalIgnoreCase);
+
+    private static OpenResult LoadFileInBackground(string path, string fileName)
+    {
+        var manager = new AssetsManager();
+        var classDataPath = EnsureClassDataFile();
+        manager.LoadClassPackage(classDataPath);
+
+        var signature = new byte[8];
+        using (var stream = File.OpenRead(path))
+            _ = stream.Read(signature, 0, signature.Length);
+
+        var header = Encoding.ASCII.GetString(signature);
+        if (header.StartsWith("UnityFS", StringComparison.Ordinal) ||
+            header.StartsWith("UnityRaw", StringComparison.Ordinal) ||
+            header.StartsWith("UnityWeb", StringComparison.Ordinal))
+        {
+            // Read the original block compression before any LZMA unpacking.
+            // BundleFile.Write produces an uncompressed UnityFS file; the save
+            // pipeline must Pack it again using this original compression.
+            var bundle = manager.LoadBundleFile(path, false);
+            var originalCompression = bundle.file.GetCompressionType(bundle.file.BlockAndDirInfo.BlockInfos);
+            if (bundle.file.DataIsCompressed)
+                bundle.file = BundleHelper.UnpackBundle(bundle.file);
+
+            var rows = new List<RowData>();
+            var entries = bundle.file.BlockAndDirInfo.DirectoryInfos;
+            foreach (var entry in entries)
+            {
+                if ((entry.Flags & 0x02) != 0) continue;
+                var capturedName = entry.Name;
+                var kind = (entry.Flags & 0x04) != 0
+                    ? "Serialized assets file" : GetEntryKind(entry.Name);
+                rows.Add(new RowData(capturedName,
+                    $"{kind} • {FormatSize(entry.DecompressedSize)}",
+                    GetEntryIcon(capturedName), () => { }));
+            }
+            return new OpenResult(manager, bundle, null, rows, new List<AssetRow>(),
+                $"Bundle: {fileName}\nEntries: {rows.Count}", BrowserPage.Bundle,
+                originalCompression);
+        }
+
+        if (AssetsFile.IsAssetsFile(path))
+        {
+            var assets = manager.LoadAssetsFile(path, false);
+            LoadClassDatabase(manager, assets.file.Metadata.UnityVersion);
+            var rows = BuildAssetRows(manager, assets);
+            return new OpenResult(manager, null, assets,
+                rows.Select(row => new RowData(row.Name,
+                    $"{row.TypeName} • {FormatSize(row.Info.ByteSize)} • ID: {row.Info.PathId}",
+                    GetAssetIcon(row.TypeName), () => { })).ToList(), rows,
+                $"Assets file: {assets.name}\nAssets: {rows.Count}", BrowserPage.Assets);
+        }
+
+        manager.UnloadAllAssetsFiles(true);
+        throw new InvalidDataException($"Unsupported or unrecognized Unity file: {fileName}");
+    }
+
+    private static string EnsureClassDataFile()
+    {
+        const string resourceName = "UABEA.Mobile.classdata.tpk";
+        var targetPath = Path.Combine(Path.GetTempPath(), "uabea-mobile-classdata.tpk");
+
+        if (File.Exists(targetPath) && new FileInfo(targetPath).Length > 0)
+            return targetPath;
+
+        using var resource = typeof(MainView).GetTypeInfo().Assembly.GetManifestResourceStream(resourceName)
+            ?? throw new FileNotFoundException("The embedded Unity class database (classdata.tpk) is missing.");
+        using var output = File.Create(targetPath);
+        resource.CopyTo(output);
+        return targetPath;
+    }
+
+    private static void LoadClassDatabase(AssetsManager manager, string? unityVersion)
+    {
+        if (string.IsNullOrWhiteSpace(unityVersion) || unityVersion == "0.0.0")
+            return;
+
+        try
+        {
+            manager.LoadClassDatabaseFromPackage(unityVersion);
+        }
+        catch
+        {
+            // A bundle may carry its own type tree. Keep reading it even if this
+            // class database does not contain the exact Unity version.
+        }
+    }
+
+    private static List<AssetRow> BuildAssetRows(AssetsManager manager, AssetsFileInstance instance)
+    {
+        var infos = instance.file.AssetInfos;
+        var result = new List<AssetRow>(infos.Count);
+        foreach (var info in infos)
+        {
+            var typeId = info.GetTypeId(instance.file);
+            var typeName = Enum.GetName(typeof(AssetClassID), typeId) ?? $"Type {typeId}";
+            // Avoid parsing every asset's serialized fields during initial loading.
+            // Large files can contain thousands of complex assets; read names only on demand.
+            var name = "Unnamed asset";
+            result.Add(new AssetRow(info, name, typeName));
+        }
+        return result;
+    }
+
+    private string TryReadAssetName(AssetsManager manager, AssetsFileInstance instance,
+        AssetFileInfo info, string fallbackType)
+    {
+        try
+        {
+            var baseField = GetAssetBaseField(instance, info, manager);
+            var nameField = baseField["m_Name"];
+            var name = nameField?.AsString;
+            if (!string.IsNullOrWhiteSpace(name))
+                return name.Trim();
+        }
+        catch
+        {
+            // Some asset classes do not contain m_Name or have unsupported layouts.
+        }
+
+        return "Unnamed asset";
+    }
+
+    private void RefreshCurrentList()
+    {
+        if (_assetListBox is null) return;
+        _displayedRows.Clear();
+        _listHeader.Children.Clear();
+        _visibleRows = 0;
+        var query = (_searchBox.Text ?? "").Trim();
+
+        if (_currentPage == BrowserPage.Bundle && _currentBundle is not null)
+        {
+            var entries = _bundleWorkspace.Files;
+            var selectedType = _filterBox.SelectedItem?.ToString() ?? "All types";
+            var filtered = entries.Where(entry =>
+                (selectedType == "All types" || GetEntryKind(entry.Name) == selectedType) &&
+                (Matches(entry.Name, query) || Matches(entry.Stream.Length.ToString(), query)))
+                .ToList();
+
+            _currentRows = filtered.Select(entry =>
+            {
+                var name = entry.Name;
+                var kind = entry.IsSerialized ? "Serialized assets file" : GetEntryKind(name);
+                string detail = $"{kind} • {FormatSize(entry.Stream.Length)}" +
+                    (entry.IsNew ? " • Added" : entry.IsModified ? " • Replaced" :
+                    !string.Equals(entry.Name, entry.OriginalName, StringComparison.Ordinal) ? " • Renamed" : "");
+                return new RowData(name, detail, GetEntryIcon(name),
+                    () => _ = OpenBundleEntryAsync(entry.OriginalName));
+            }).ToList();
+        }
+        else if (_currentPage == BrowserPage.Assets && _currentAssets is not null)
+        {
+            var selectedType = _filterBox.SelectedItem?.ToString() ?? "All types";
+            _currentRows = _assetRows
+                .Where(row => !_pendingDeleteIds.Contains(row.Info.PathId))
+                .Where(row => selectedType == "All types" || row.TypeName == selectedType)
+                .Where(row => Matches(row.Name, query) || Matches(row.TypeName, query))
+                .Select(row => new RowData(
+                    _selectionMode && _selectedAssetIds.Contains(row.Info.PathId) ? "✓ " + row.Name : row.Name,
+                    $"{row.TypeName} • {FormatSize(row.Info.ByteSize)} • ID: {row.Info.PathId}",
+                    GetAssetIcon(row.TypeName), () => { if (_selectionMode) ToggleAssetSelection(row.Info); else ShowAssetDetails(row.Info); }, row.Info))
+                .ToList();
+        }
+        else
+        {
+            _currentRows = new List<RowData>();
+        }
+
+        if (_currentRows.Count == 0)
+        {
+            _listPlaceholder.Text = string.IsNullOrEmpty(query)
+                ? "This file contains no displayable entries."
+                : "No items match this search.";
+            _listPlaceholder.IsVisible = true;
+            _assetListBox.IsVisible = false;
+            _loadMoreButton.IsVisible = false;
+            return;
+        }
+
+        _listPlaceholder.IsVisible = false;
+        _assetListBox.IsVisible = true;
+
+        RenderNextPage();
+    }
+
+    private void RenderNextPage()
+    {
+        if (_isRendering || _visibleRows >= _currentRows.Count) return;
+        _isRendering = true;
+        var pendingAssetNames = new List<AssetFileInfo>();
+        try
+        {
+            var end = Math.Min(_visibleRows + PageSize, _currentRows.Count);
+            for (var i = _visibleRows; i < end; i++)
+            {
+                var row = _currentRows[i];
+                _displayedRows.Add(row);
+                if (row.AssetInfo is not null &&
+                    string.Equals(row.Title, "Unnamed asset", StringComparison.Ordinal))
+                    pendingAssetNames.Add(row.AssetInfo);
+            }
+            _visibleRows = end;
+            _loadMoreButton.IsVisible = _visibleRows < _currentRows.Count;
+            _loadMoreButton.Content = CreateIconLabel(MaterialIconKind.ChevronDown,
+                $"Load more ({_currentRows.Count - _visibleRows} remaining)", TextBrush, 15);
+        }
+        finally { _isRendering = false; }
+        if (pendingAssetNames.Count > 0)
+            _ = ResolveAssetNamesAsync(pendingAssetNames, _currentAssets, _assetsManager);
+    }
+
+    private async Task ResolveAssetNamesAsync(
+        List<AssetFileInfo> pending, AssetsFileInstance? instance, AssetsManager? manager)
+    {
+        if (instance is null || manager is null) return;
+        List<(long PathId, string Name)> resolved;
+        try
+        {
+            await _assetNameLock.WaitAsync();
+            try
+            {
+                resolved = await Task.Run(() => pending.Select(info =>
+                    (info.PathId, TryReadAssetName(manager, instance, info, "Unnamed asset"))).ToList());
+            }
+            finally { _assetNameLock.Release(); }
+        }
+        catch { return; }
+
+        if (_currentAssets != instance || _currentPage != BrowserPage.Assets) return;
+        foreach (var item in resolved)
+        {
+            int assetIndex = _assetRows.FindIndex(row => row.Info.PathId == item.PathId);
+            if (assetIndex >= 0)
+                _assetRows[assetIndex] = _assetRows[assetIndex] with { Name = item.Name };
+
+            int currentIndex = _currentRows.FindIndex(row => row.AssetInfo?.PathId == item.PathId);
+            if (currentIndex < 0) continue;
+            var oldRow = _currentRows[currentIndex];
+            string resolvedType = _assetRows.FirstOrDefault(x => x.Info.PathId == item.PathId)?.TypeName ?? "Unknown";
+            var updated = oldRow with
+            {
+                Title = item.Name,
+                Detail = $"{resolvedType} • {FormatSize(oldRow.AssetInfo!.ByteSize)} • ID: {item.PathId}"
+            };
+            _currentRows[currentIndex] = updated;
+            int visibleIndex = _displayedRows.ToList().FindIndex(row => row.AssetInfo?.PathId == item.PathId);
+            if (visibleIndex >= 0)
+                _displayedRows[visibleIndex] = updated;
+        }
+    }
+
+    private void TryAutoLoadMore()
+    {
+        // The ListBox owns its scrolling surface. More rows are appended only
+        // when requested, while virtualization keeps realized controls bounded.
+    }
+
+    private void SetFilterOptions(IEnumerable<string> values)
+    {
+        var options = new[] { "All types" }
+            .Concat(values.Where(value => !string.IsNullOrWhiteSpace(value))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .OrderBy(value => value, StringComparer.OrdinalIgnoreCase))
+            .ToArray();
+        var previous = _filterBox.SelectedItem?.ToString() ?? "All types";
+        _filterBox.ItemsSource = options;
+        _filterBox.SelectedItem = options.FirstOrDefault(value =>
+            string.Equals(value, previous, StringComparison.OrdinalIgnoreCase)) ?? "All types";
+    }
+
+    private async Task ImportBundleEntryAsync(string? replaceName)
+    {
+        if (_currentBundle is null || _isBusy) return;
+        var top = TopLevel.GetTopLevel(this);
+        if (top is null) return;
+        var selected = await top.StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
+        {
+            Title = replaceName is null ? "Add a file to the Unity bundle" : "Choose replacement bundle entry",
+            AllowMultiple = false
+        });
+        if (selected.Count == 0) return;
+        try
+        {
+            using var memory = new MemoryStream();
+            await using (var input = await selected[0].OpenReadAsync())
+                await input.CopyToAsync(memory);
+            if (memory.Length == 0) throw new InvalidDataException("The selected file is empty.");
+            if (memory.Length > 1024L * 1024 * 1024)
+                throw new InvalidDataException("The selected file exceeds the 1 GB import limit.");
+            memory.Position = 0;
+            string name = replaceName ?? Path.GetFileName(selected[0].Name);
+            if (replaceName is null && _bundleWorkspace.TryGetFile(name, out _))
+                throw new IOException("A bundle entry with that name already exists. Use Replace from the entry menu.");
+            bool serialized = Path.GetExtension(name).Equals(".assets", StringComparison.OrdinalIgnoreCase) ||
+                Path.GetExtension(name).Equals(".asset", StringComparison.OrdinalIgnoreCase);
+            _bundleWorkspace.AddOrReplaceFile(memory, name, serialized);
+            _hasUnsavedChanges = true;
+            _status.Text = (replaceName is null ? "Added" : "Replaced") + $" bundle entry: {name}. Save the bundle to apply the change.";
+            UpdateFloatingActions();
+            RefreshCurrentList();
+        }
+        catch (Exception ex) { _status.Text = "Bundle import failed: " + ex.Message; }
+    }
+
+    private void DeleteBundleEntry(string name)
+    {
+        try
+        {
+            _bundleWorkspace.RemoveFile(name);
+            _hasUnsavedChanges = true;
+            _status.Text = $"Bundle entry marked for deletion: {name}. Save the bundle to apply it.";
+            UpdateFloatingActions();
+            RefreshCurrentList();
+        }
+        catch (Exception ex) { _status.Text = "Could not delete bundle entry: " + ex.Message; }
+    }
+
+    private void ShowRenameBundleEntry(string oldName)
+    {
+        if (_bundleWorkspaceOverlay is not null) return;
+        var nameBox = new TextBox
+        {
+            Text = oldName, Watermark = "New entry name", MinHeight = 48,
+            Background = SurfaceContainerBrush, Foreground = TextBrush,
+            BorderBrush = OutlineBrush, CornerRadius = new CornerRadius(12),
+            Padding = new Thickness(12)
+        };
+        var panel = new StackPanel { Spacing = 12, Width = 320 };
+        panel.Children.Add(new TextBlock { Text = "Rename bundle entry", FontSize = 18, FontWeight = FontWeight.SemiBold, Foreground = TextBrush });
+        panel.Children.Add(nameBox);
+        var buttons = new Grid { ColumnDefinitions = new ColumnDefinitions("*,*") };
+        var cancel = new Button { Content = "Cancel", MinHeight = 44, Background = SurfaceHighBrush, Foreground = TextBrush };
+        cancel.Click += (_, _) => CloseBundleRename();
+        var apply = new Button { Content = "Rename", MinHeight = 44, Background = PrimaryBrush, Foreground = OnPrimaryBrush };
+        apply.Click += (_, _) =>
+        {
+            try
+            {
+                _bundleWorkspace.RenameFile(oldName, nameBox.Text ?? "");
+                _hasUnsavedChanges = true;
+                _status.Text = $"Renamed bundle entry to {nameBox.Text}. Save the bundle to apply it.";
+                CloseBundleRename();
+                UpdateFloatingActions();
+                RefreshCurrentList();
+            }
+            catch (Exception ex) { _status.Text = "Rename failed: " + ex.Message; }
+        };
+        buttons.Children.Add(cancel); Grid.SetColumn(apply, 1); buttons.Children.Add(apply);
+        panel.Children.Add(buttons);
+        _bundleWorkspaceOverlay = new Border
+        {
+            Background = Brush.Parse("#F0101722"), Padding = new Thickness(22),
+            HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center,
+            Child = new Border { Background = SurfaceBrush, BorderBrush = OutlineBrush, BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(18), Padding = new Thickness(16), Child = panel }
+        };
+        _pageLayers.Children.Add(_bundleWorkspaceOverlay);
+        nameBox.Focus();
+    }
+
+    private Border? _bundleWorkspaceOverlay;
+    private void CloseBundleRename()
+    {
+        if (_bundleWorkspaceOverlay is null) return;
+        _pageLayers.Children.Remove(_bundleWorkspaceOverlay);
+        _bundleWorkspaceOverlay = null;
+    }
+
+    private static void WriteBundleCopyWithOriginalCompression(
+        BundleFileInstance sourceBundle,
+        List<BundleReplacer> replacers,
+        string outputPath,
+        AssetBundleCompressionType originalCompression)
+    {
+        if (sourceBundle is null)
+            throw new ArgumentNullException(nameof(sourceBundle));
+        if (replacers is null || replacers.Count == 0)
+            throw new InvalidOperationException("There are no bundle changes to write.");
+
+        string uncompressedPath = outputPath + ".uncompressed";
+        try
+        {
+            // First apply the bundle replacers. AssetBundleFile.Write intentionally
+            // writes an uncompressed bundle; it is an intermediate, not the final file.
+            using (var output = File.Create(uncompressedPath))
+            using (var writer = new AssetsFileWriter(output))
+                sourceBundle.file.Write(writer, replacers);
+
+            var intermediateInfo = new FileInfo(uncompressedPath);
+            if (!intermediateInfo.Exists || intermediateInfo.Length == 0)
+                throw new InvalidDataException("The intermediate Unity bundle is empty.");
+
+            // Re-open the intermediate through AssetsTools.NET and pack it back
+            // using the compression type detected from the original input bundle.
+            var packManager = new AssetsManager();
+            try
+            {
+                var uncompressedBundle = packManager.LoadBundleFile(uncompressedPath, false);
+                if (uncompressedBundle.file.DataIsCompressed)
+                    throw new InvalidDataException("The intermediate bundle was unexpectedly compressed.");
+
+                using (var packedOutput = File.Create(outputPath))
+                using (var packedWriter = new AssetsFileWriter(packedOutput))
+                    uncompressedBundle.file.Pack(uncompressedBundle.file.DataReader, packedWriter, originalCompression, true, null);
+            }
+            finally
+            {
+                packManager.UnloadAllBundleFiles();
+            }
+
+            var finalInfo = new FileInfo(outputPath);
+            if (!finalInfo.Exists || finalInfo.Length == 0)
+                throw new InvalidDataException("The compressed Unity bundle output is empty.");
+        }
+        finally
+        {
+            try { File.Delete(uncompressedPath); } catch { }
+        }
+    }
+
+    private async Task SaveBundleWorkspaceAsync()
+    {
+        if (_currentBundle is null || !_bundleWorkspace.Modified || _isBusy) return;
+        var top = TopLevel.GetTopLevel(this);
+        if (top is null) return;
+        var destination = await top.StorageProvider.SaveFilePickerAsync(new FilePickerSaveOptions
+        {
+            Title = "Save modified Unity bundle copy",
+            SuggestedFileName = Path.GetFileNameWithoutExtension(_currentFileName) + "-modified" + (Path.GetExtension(_currentFileName).Length == 0 ? ".bundle" : Path.GetExtension(_currentFileName))
+        });
+        if (destination is null) return;
+        string temp = Path.Combine(Path.GetTempPath(), "uabea-bundle-" + Guid.NewGuid().ToString("N") + ".bundle");
+        try
+        {
+            _isBusy = true;
+            SetLoading(true, "Rebuilding Unity bundle...");
+            await Task.Run(() =>
+            {
+                var replacers = _bundleWorkspace.GetReplacers();
+                if (replacers.Count == 0) throw new InvalidOperationException("There are no bundle entry changes to save.");
+                WriteBundleCopyWithOriginalCompression(
+                    _currentBundle, replacers, temp, _currentBundleCompression);
+            });
+            await using var outputStream = await destination.OpenWriteAsync();
+            await using var inputStream = File.OpenRead(temp);
+            await inputStream.CopyToAsync(outputStream);
+            await outputStream.FlushAsync();
+            _status.Text = $"Saved modified bundle: {destination.Name}. The source bundle remains unchanged.";
+        }
+        catch (Exception ex) { _status.Text = "Bundle save failed: " + ex.Message; }
+        finally
+        {
+            try { File.Delete(temp); } catch { }
+            _isBusy = false;
+            SetLoading(false);
+            UpdateFloatingActions();
+        }
+    }
+
+    private async Task ExportBundleEntryAsync(string entryName)
+    {
+        if (_currentBundle is null || !_bundleWorkspace.TryGetFile(entryName, out var item)) return;
+        var topLevel = TopLevel.GetTopLevel(this);
+        if (topLevel is null) return;
+        var destination = await topLevel.StorageProvider.SaveFilePickerAsync(new FilePickerSaveOptions
+        {
+            Title = "Export bundle entry",
+            SuggestedFileName = Path.GetFileName(item.Name)
+        });
+        if (destination is null) return;
+
+        SetLoading(true, $"Exporting {item.Name}...");
+        try
+        {
+            if (item.Stream.CanSeek) item.Stream.Position = 0;
+            await using var output = await destination.OpenWriteAsync();
+            await item.Stream.CopyToAsync(output);
+            await output.FlushAsync();
+            if (item.Stream.CanSeek) item.Stream.Position = 0;
+            _status.Text = $"Exported: {item.Name}\nSize: {FormatSize(item.Stream.Length)}";
+        }
+        catch (Exception ex)
+        {
+            _status.Text = $"Could not export bundle entry:\n{ex.Message}";
+        }
+        finally { SetLoading(false); }
+    }
+
+    private async Task ExportAssetsArchiveAsync(List<AssetFileInfo> assets)
+    {
+        if (_currentAssets is null || _assetsManager is null || _isBusy || assets.Count == 0) return;
+        var instance = _currentAssets;
+        var manager = _assetsManager;
+        var topLevel = TopLevel.GetTopLevel(this);
+        if (topLevel is null) return;
+
+        var destination = await topLevel.StorageProvider.SaveFilePickerAsync(new FilePickerSaveOptions
+        {
+            Title = "Export filtered Unity assets",
+            // Android save providers may append DefaultExtension automatically.
+            // Keep the suggested name extension-free to prevent ".zip.zip".
+            SuggestedFileName = "UABEA-Assets-Export",
+            DefaultExtension = "zip",
+            FileTypeChoices = new[]
+            {
+                new FilePickerFileType("ZIP archive") { Patterns = new[] { "*.zip" } }
+            }
+        });
+        if (destination is null) return;
+
+        var cancellation = new System.Threading.CancellationTokenSource();
+        _exportCancellation = cancellation;
+        var cancellationToken = cancellation.Token;
+        _isBusy = true;
+        SetLoading(true, $"Exporting {assets.Count} assets...");
+        int exported = 0;
+        int failedCount = 0;
+        var usedNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        try
+        {
+            await using var output = await destination.OpenWriteAsync();
+            using (var archive = new ZipArchive(output, ZipArchiveMode.Create, true))
+            {
+                for (int index = 0; index < assets.Count; index++)
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
+                    var asset = assets[index];
+                    string name = $"Asset_{index + 1}";
+                    try
+                    {
+                        int typeId = asset.GetTypeId(instance.file);
+                        string typeName = Enum.GetName(typeof(AssetClassID), typeId) ?? $"Type_{typeId}";
+                        name = await Task.Run(() => TryReadAssetName(manager, instance, asset, typeName));
+                        AssetExportPayload payload;
+
+                        try
+                        {
+                            payload = await Task.Run(() => BuildAssetExportPayload(manager, instance, asset, typeId), cancellationToken);
+                        }
+                        catch (FileNotFoundException ex) when (!string.IsNullOrWhiteSpace(ex.FileName))
+                        {
+                            SetLoading(false);
+                            _status.Text = $"Resource required for {name}: {Path.GetFileName(ex.FileName)}";
+                            bool selected = await ChooseSessionResourceAsync(ex.FileName!, instance);
+                            if (!selected)
+                                throw new InvalidOperationException("Required external resource was not selected; this asset was skipped.");
+                            SetLoading(true, $"Retrying {name} ({index + 1}/{assets.Count})...");
+                            payload = await Task.Run(() => BuildAssetExportPayload(manager, instance, asset, typeId), cancellationToken);
+                        }
+
+                        // Export using the Unity asset's own name only.
+                        // Keep PathID/source names out of the filename; disambiguate collisions.
+                        string baseName = $"{SanitizeExportName(name)}{payload.Extension}";
+                        string entryName = baseName;
+                        int duplicate = 2;
+                        while (usedNames.Contains(entryName))
+                        {
+                            string stem = Path.GetFileNameWithoutExtension(baseName);
+                            entryName = $"{stem}_{duplicate++}{payload.Extension}";
+                        }
+
+                        // Build/validate the payload before creating the ZIP entry so a
+                        // failed asset does not leave an empty or partial entry behind.
+                        if (!payload.IsRaw && payload.Data is null)
+                            throw new InvalidDataException($"No export data was produced for {name}.");
+
+                        var zipEntry = archive.CreateEntry(entryName, CompressionLevel.Optimal);
+                        using (var entryStream = zipEntry.Open())
+                        {
+                            if (payload.IsRaw)
+                            {
+                                long rawStart = asset.GetAbsoluteByteStart(instance.file);
+                                using var source = new SegmentStream(instance.file.Reader.BaseStream, rawStart, asset.ByteSize);
+                                await source.CopyToAsync(entryStream, 81920, cancellationToken);
+                            }
+                            else
+                            {
+                                await entryStream.WriteAsync(payload.Data!, cancellationToken);
+                            }
+                        }
+
+                        usedNames.Add(entryName);
+                        exported++;
+                        _status.Text = $"Exporting assets...\nSucceeded: {exported}\nFailed: {failedCount}\nTotal: {assets.Count}";
+                    }
+                    catch
+                    {
+                        failedCount++;
+                        _status.Text = $"Exporting assets...\nSucceeded: {exported}\nFailed: {failedCount}\nTotal: {assets.Count}";
+                    }
+                }
+            }
+
+            await output.FlushAsync(cancellationToken);
+            _status.Text = $"Export completed\nSucceeded: {exported}\nFailed: {failedCount}\nTotal: {assets.Count}";
+        }
+        catch (OperationCanceledException)
+        {
+            int remaining = Math.Max(0, assets.Count - exported - failedCount);
+            _status.Text = $"Export cancelled\nSucceeded: {exported}\nFailed: {failedCount}\nNot processed: {remaining}\nThe ZIP may contain partial results.";
+        }
+        catch (Exception ex)
+        {
+            _status.Text = $"Archive export failed\nSucceeded: {exported}\nFailed: {assets.Count - exported}\nTotal: {assets.Count}";
+        }
+        finally
+        {
+            if (ReferenceEquals(_exportCancellation, cancellation)) _exportCancellation = null;
+            cancellation.Dispose();
+            _isBusy = false;
+            SetLoading(false);
+        }
+    }
+
+    private async Task ExportRawAssetAsync(AssetFileInfo asset)
+    {
+        if (_currentAssets is null || _isBusy) return;
+        var instance = _currentAssets;
+        var top = TopLevel.GetTopLevel(this);
+        if (top is null) return;
+        string name = "Asset";
+        try
+        {
+            name = TryReadAssetName(_assetsManager!, instance, asset, "Asset");
+            byte[]? pending = _assetWorkspace is not null &&
+                _assetWorkspace.TryGetPreviewData(instance, asset.PathId, out var data) ? data : null;
+            byte[] raw = await Task.Run(() => AssetImportExport.ExportRaw(instance, asset, pending));
+            var destination = await top.StorageProvider.SaveFilePickerAsync(new FilePickerSaveOptions
+            {
+                Title = "Export raw serialized asset",
+                SuggestedFileName = SanitizeExportName(name),
+                DefaultExtension = "assetdata",
+                FileTypeChoices = new[] { new FilePickerFileType("Raw asset data") { Patterns = new[] { "*.assetdata", "*.bin" } } }
+            });
+            if (destination is null) return;
+            await using var output = await destination.OpenWriteAsync();
+            await output.WriteAsync(raw);
+            await output.FlushAsync();
+            _status.Text = $"Exported raw asset data: {name}\n{FormatSize(raw.LongLength)}";
+        }
+        catch (Exception ex) { _status.Text = "Raw asset export failed: " + ex.Message; }
+    }
+
+    private async Task ExportAssetDumpAsync(AssetFileInfo asset)
+    {
+        if (_currentAssets is null || _assetsManager is null || _isBusy) return;
+        var instance = _currentAssets;
+        var manager = _assetsManager;
+        var top = TopLevel.GetTopLevel(this);
+        if (top is null) return;
+        try
+        {
+            string name = await Task.Run(() => TryReadAssetName(manager, instance, asset, "Asset"));
+            byte[] json = await Task.Run(() =>
+            {
+                var field = GetAssetBaseField(instance, asset, manager)
+                    ?? throw new InvalidDataException("Asset data could not be read for JSON dump export.");
+                return AssetImportExport.ExportTypeTreeDump(field);
+            });
+            var destination = await top.StorageProvider.SaveFilePickerAsync(new FilePickerSaveOptions
+            {
+                Title = "Export type-tree JSON dump",
+                SuggestedFileName = SanitizeExportName(name),
+                DefaultExtension = "json",
+                FileTypeChoices = new[] { new FilePickerFileType("JSON type-tree dump") { Patterns = new[] { "*.json" } } }
+            });
+            if (destination is null) return;
+            await using var output = await destination.OpenWriteAsync();
+            await output.WriteAsync(json);
+            await output.FlushAsync();
+            _status.Text = $"Exported JSON dump: {name}\n{FormatSize(json.LongLength)}";
+        }
+        catch (Exception ex) { _status.Text = "JSON dump export failed: " + ex.Message; }
+    }
+
+    private async Task ExportAssetAsync(AssetFileInfo asset, bool resourceRetry = false)
+    {
+        if (_currentAssets is null || _assetsManager is null || _isBusy) return;
+        var instance = _currentAssets;
+        var manager = _assetsManager;
+        int typeId = asset.GetTypeId(instance.file);
+        string typeName = Enum.GetName(typeof(AssetClassID), typeId) ?? $"Type_{typeId}";
+        string assetName = "Asset";
+        SetLoading(true, $"Preparing {typeName} for export...");
+
+        try
+        {
+            assetName = await Task.Run(() => TryReadAssetName(manager, instance, asset, typeName));
+            var payload = await Task.Run(() => BuildAssetExportPayload(manager, instance, asset, typeId));
+            SetLoading(false);
+
+            // Use the original Unity asset name without source filename or PathID.
+            string suggestedName = SanitizeExportName(assetName);
+            string normalizedExtension = NormalizeExportExtension(payload.Extension);
+            var destination = await TopLevel.GetTopLevel(this)!.StorageProvider.SaveFilePickerAsync(
+                new FilePickerSaveOptions
+                {
+                    Title = $"Export {typeName}",
+                    // Keep the extension in DefaultExtension only. Several Android
+                    // document providers append it themselves when SuggestedFileName
+                    // already contains it, producing names such as ".zip.zip".
+                    SuggestedFileName = suggestedName,
+                    DefaultExtension = normalizedExtension.TrimStart('.'),
+                    FileTypeChoices = new[]
+                    {
+                        new FilePickerFileType($"{payload.Extension.TrimStart('.').ToUpperInvariant()} file")
+                        {
+                            Patterns = new[] { "*" + normalizedExtension }
+                        },
+                        new FilePickerFileType("All files") { Patterns = new[] { "*.*" } }
+                    }
+                });
+            if (destination is null) return;
+
+            SetLoading(true, $"Exporting {assetName}...");
+            await using var output = await destination.OpenWriteAsync();
+            if (payload.IsRaw)
+            {
+                byte[] rawBytes = AssetImportExport.ExportRaw(instance, asset,
+                    _assetWorkspace is not null &&
+                    _assetWorkspace.TryGetPreviewData(instance, asset.PathId, out var pendingRaw)
+                        ? pendingRaw : null);
+                await output.WriteAsync(rawBytes);
+            }
+            else
+            {
+                if (payload.Data is null)
+                    throw new InvalidDataException("The exported resource data is unavailable.");
+                await output.WriteAsync(payload.Data);
+            }
+            await output.FlushAsync();
+            _status.Text = $"Export completed\n{assetName}\n{FormatSize(payload.IsRaw ? asset.ByteSize : payload.Data!.LongLength)}";
+        }
+        catch (FileNotFoundException ex) when (!resourceRetry && !string.IsNullOrWhiteSpace(ex.FileName))
+        {
+            SetLoading(false);
+            _status.Text = "The matching external Unity resource is required.";
+            if (await ChooseSessionResourceAsync(ex.FileName!, instance))
+                await ExportAssetAsync(asset, true);
+            else
+                _status.Text = "Export cancelled. The required resource file was not selected.";
+        }
+        catch (Exception ex)
+        {
+            _status.Text = $"Could not export {typeName}:\n{ex.Message}";
+        }
+        finally
+        {
+            SetLoading(false);
+        }
+    }
+
+
+    private async Task ImportRawAssetAsync(AssetFileInfo asset)
+    {
+        if (_currentAssets is null || _isBusy) return;
+        var topLevel = TopLevel.GetTopLevel(this);
+        if (topLevel is null) return;
+        var selected = await topLevel.StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
+        {
+            Title = "Select serialized raw asset data",
+            AllowMultiple = false,
+            FileTypeFilter = new[]
+            {
+                new FilePickerFileType("UABEA raw asset data") { Patterns = new[] { "*.assetdata", "*.bin", "*.*" } }
+            }
+        });
+        if (selected.Count == 0) return;
+
+        _isBusy = true;
+        SetLoading(true, "Reading raw replacement data...");
+        try
+        {
+            byte[] replacementData;
+            await using (var input = await selected[0].OpenReadAsync())
+            using (var memory = new MemoryStream())
+            {
+                await input.CopyToAsync(memory);
+                replacementData = memory.ToArray();
+            }
+            if (replacementData.Length == 0)
+                throw new InvalidDataException("The selected replacement file is empty.");
+            if (replacementData.LongLength > 512L * 1024 * 1024)
+                throw new InvalidDataException("The raw replacement exceeds the 512 MB safety limit.");
+
+            // Raw import is queued in the active AssetWorkspace, just like UABEA.
+            // It no longer writes a separate output file immediately.
+            var instance = _currentAssets ?? throw new InvalidOperationException("No assets file is open.");
+            RegisterPendingAssetChange(instance, AssetImportExport.ImportRaw(instance, asset, replacementData));
+            _hasUnsavedChanges = true;
+            _status.Text = $"Raw replacement queued for asset {asset.PathId}. Use Save changes to export the modified file.";
+            UpdateFloatingActions();
+        }
+        catch (Exception ex)
+        {
+            _status.Text = "Could not replace asset: " + ex.Message;
+        }
+        finally
+        {
+            _isBusy = false;
+            SetLoading(false);
+        }
+    }
+
+    private async Task ImportNewRawAssetAsync(AssetFileInfo sourceAsset)
+    {
+        if (_currentAssets is null || _assetsManager is null || _isBusy) return;
+        var topLevel = TopLevel.GetTopLevel(this);
+        if (topLevel is null) return;
+
+        var selected = await topLevel.StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
+        {
+            Title = "Select serialized asset data to add",
+            AllowMultiple = false,
+            FileTypeFilter = new[]
+            {
+                new FilePickerFileType("UABEA serialized asset data")
+                { Patterns = new[] { "*.assetdata", "*.bin" } }
+            }
+        });
+        if (selected.Count == 0) return;
+
+        _isBusy = true;
+        SetLoading(true, "Reading serialized asset data...");
+        try
+        {
+            byte[] data;
+            await using (var input = await selected[0].OpenReadAsync())
+            using (var memory = new MemoryStream())
+            {
+                await input.CopyToAsync(memory);
+                data = memory.ToArray();
+            }
+            if (data.Length == 0)
+                throw new InvalidDataException("The selected asset data file is empty.");
+            if (data.LongLength > 256L * 1024 * 1024)
+                throw new InvalidDataException("The selected asset data exceeds the 256 MB safety limit.");
+
+            var instance = _currentAssets;
+            var template = _assetsManager.GetTemplateBaseField(instance, sourceAsset)
+                ?? throw new InvalidDataException("The selected asset's type tree could not be loaded.");
+            using (var validationStream = new MemoryStream(data, writable: false))
+            using (var validationReader = new AssetsFileReader(validationStream))
+            {
+                validationReader.BigEndian = instance.file.Reader.BigEndian;
+                _ = template.MakeValue(validationReader);
+                if (validationStream.Position != validationStream.Length)
+                    throw new InvalidDataException("The serialized data does not match the selected asset type or contains trailing bytes.");
+            }
+
+            await SaveNewAssetDataAsync(sourceAsset, data, "New raw asset import");
+        }
+        catch (Exception ex)
+        {
+            _status.Text = "Could not add the new asset:\\n" + ex.Message;
+        }
+        finally
+        {
+            _isBusy = false;
+            SetLoading(false);
+        }
+    }
+
+    private async Task ImportTextureImageAsync(AssetFileInfo asset, bool addNew = false)
+    {
+        if (_currentAssets is null || _assetsManager is null || _isBusy) return;
+        var topLevel = TopLevel.GetTopLevel(this);
+        if (topLevel is null) return;
+
+        var selected = await topLevel.StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
+        {
+            Title = "Choose replacement image",
+            AllowMultiple = false,
+            FileTypeFilter = new[]
+            {
+                new FilePickerFileType("PNG or JPEG image") { Patterns = new[] { "*.png", "*.jpg", "*.jpeg" } }
+            }
+        });
+        if (selected.Count == 0) return;
+
+        var instance = _currentAssets;
+        var manager = _assetsManager;
+        _isBusy = true;
+        SetLoading(true, "Decoding replacement image...");
+        try
+        {
+            byte[] encoded;
+            await using (var input = await selected[0].OpenReadAsync())
+            using (var memory = new MemoryStream())
+            {
+                await input.CopyToAsync(memory);
+                encoded = memory.ToArray();
+            }
+            if (encoded.Length == 0) throw new InvalidDataException("The selected image is empty.");
+
+            byte[] serialized = await Task.Run(() =>
+                TextureAssetImporter.CreateReplacementData(manager!, instance, asset, encoded));
+
+            await SaveAssetReplacementAsync(asset, serialized, "Texture2D image import", addNew);
+        }
+        catch (Exception ex)
+        {
+            _status.Text = "Image import failed:\n" + ex.Message;
+        }
+        finally
+        {
+            _isBusy = false;
+            SetLoading(false);
+        }
+    }
+
+    private async Task ImportAudioClipAsync(AssetFileInfo asset, bool addNew = false)
+    {
+        if (_currentAssets is null || _assetsManager is null || _isBusy) return;
+        var topLevel = TopLevel.GetTopLevel(this);
+        if (topLevel is null) return;
+        var selected = await topLevel.StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
+        {
+            Title = "Choose replacement audio (WAV / OGG)",
+            AllowMultiple = false,
+            FileTypeFilter = new[]
+            {
+                new FilePickerFileType("WAV / OGG audio") { Patterns = new[] { "*.wav", "*.ogg" } }
+            }
+        });
+        if (selected.Count == 0) return;
+
+        var instance = _currentAssets;
+        _isBusy = true;
+        SetLoading(true, "Converting audio to Unity PCM...");
+        string? temporaryAssets = null;
+        try
+        {
+            byte[] sourceBytes;
+            await using (var input = await selected[0].OpenReadAsync())
+            using (var memory = new MemoryStream())
+            {
+                await input.CopyToAsync(memory);
+                sourceBytes = memory.ToArray();
+            }
+            if (sourceBytes.Length == 0) throw new InvalidDataException("The selected audio file is empty.");
+
+            string extension = Path.GetExtension(selected[0].Name).ToLowerInvariant();
+            var decoded = await Task.Run(() =>
+            {
+                if (extension == ".wav") return DecodeWaveToPcm16(sourceBytes);
+                if (extension == ".ogg") return DecodeOggToPcm16(sourceBytes);
+                throw new NotSupportedException("Only WAV and OGG files are supported.");
+            });
+            byte[] fsbData = BuildFsb5Pcm16(decoded.Pcm16, decoded.Channels, decoded.SampleRate);
+
+            if (!FsbLoader.TryLoadFsbFromByteArray(fsbData, out FmodSoundBank? validationBank) ||
+                validationBank?.Samples is null || validationBank.Samples.Count != 1)
+                throw new InvalidDataException("The generated FMOD FSB5 bank failed validation.");
+            validationBank.Samples[0].RebuildAsStandardFileFormat(out var validationAudio, out _);
+            if (validationAudio is null || validationAudio.Length == 0)
+                throw new InvalidDataException("The generated FSB5 sample could not be decoded.");
+
+            var field = await Task.Run(() =>
+            {
+                var template = _assetsManager.GetTemplateBaseField(instance, asset)
+                    ?? throw new InvalidDataException("AudioClip type information could not be read.");
+                var audioTemplate = template.Children.FirstOrDefault(x => x.Name == "m_AudioData");
+                if (audioTemplate is null || audioTemplate.Children.Count == 0)
+                    throw new NotSupportedException("This AudioClip layout has no embedded audio-data array.");
+                audioTemplate.Children[0].ValueType = AssetValueType.ByteArray;
+                var reader = instance.file.Reader;
+                lock (reader)
+                    return template.MakeValue(reader, asset.GetAbsoluteByteStart(instance.file), null);
+            });
+            var sourceField = GetChildField(field, "m_Resource.m_Source")
+                ?? throw new NotSupportedException("This AudioClip layout has no external resource source field.");
+            var offsetField = GetChildField(field, "m_Resource.m_Offset")
+                ?? throw new NotSupportedException("This AudioClip layout has no resource offset field.");
+            var sizeField = GetChildField(field, "m_Resource.m_Size")
+                ?? throw new NotSupportedException("This AudioClip layout has no resource size field.");
+
+            var embeddedAudio = GetChildField(field, "m_AudioData.Array");
+            if (embeddedAudio is null || embeddedAudio.Value?.ValueType != AssetValueType.ByteArray)
+                throw new NotSupportedException("This Unity AudioClip layout does not expose a readable embedded m_AudioData byte array. The clip was not modified.");
+            embeddedAudio.AsByteArray = fsbData;
+            sourceField.AsString = "";
+            offsetField.AsULong = 0;
+            sizeField.AsULong = 0;
+            SetOptionalIntField(field, "m_Channels", decoded.Channels);
+            SetOptionalIntField(field, "m_Frequency", decoded.SampleRate);
+            SetOptionalIntField(field, "m_BitsPerSample", 16);
+            SetOptionalFloatField(field, "m_Length",
+                (float)((double)decoded.Pcm16.Length / (decoded.Channels * 2.0 * decoded.SampleRate)));
+            SetOptionalIntField(field, "m_CompressionFormat", 0);
+            var trackerField = GetChildField(field, "m_IsTrackerFormat");
+            if (trackerField is not null) trackerField.AsBool = false;
+
+            byte[] serialized = field.WriteToByteArray(instance.file.Reader.BigEndian);
+            if (addNew)
+                await SaveNewAssetDataAsync(asset, serialized, "AudioClip import");
+            else
+                await SaveAssetReplacementAsync(asset, serialized, "AudioClip import");
+            _status.Text = $"AudioClip import prepared as embedded FSB5 data. Channels: {decoded.Channels}; sample rate: {decoded.SampleRate} Hz. Use the floating menu → Save.";
+        }
+        catch (Exception ex)
+        {
+            _status.Text = "Audio import failed:\n" + ex.Message;
+        }
+        finally
+        {
+            if (!string.IsNullOrWhiteSpace(temporaryAssets))
+            {
+                try { File.Delete(temporaryAssets); } catch { }
+            }
+            _isBusy = false;
+            SetLoading(false);
+        }
+    }
+
+    private static void SetOptionalIntField(AssetTypeValueField root, string name, int value)
+    {
+        var field = GetChildField(root, name);
+        if (field is null || field.Value is null) return;
+        switch (field.Value.ValueType)
+        {
+            case AssetValueType.Int8: field.AsSByte = checked((sbyte)value); break;
+            case AssetValueType.UInt8: field.AsByte = checked((byte)value); break;
+            case AssetValueType.Int16: field.AsShort = checked((short)value); break;
+            case AssetValueType.UInt16: field.AsUShort = checked((ushort)value); break;
+            case AssetValueType.Int32: field.AsInt = value; break;
+            case AssetValueType.UInt32: field.AsUInt = checked((uint)value); break;
+            case AssetValueType.Int64: field.AsLong = value; break;
+            case AssetValueType.UInt64: field.AsULong = checked((ulong)value); break;
+            default: throw new InvalidDataException($"AudioClip field '{name}' is not an integer.");
+        }
+    }
+
+    private static void SetOptionalFloatField(AssetTypeValueField root, string name, float value)
+    {
+        var field = GetChildField(root, name);
+        if (field is null || field.Value is null) return;
+        switch (field.Value.ValueType)
+        {
+            case AssetValueType.Float: field.AsFloat = value; break;
+            case AssetValueType.Double: field.AsDouble = value; break;
+            default: throw new InvalidDataException($"AudioClip field '{name}' is not a floating-point value.");
+        }
+    }
+
+    private static (byte[] Pcm16, int Channels, int SampleRate) DecodeWaveToPcm16(byte[] wave)
+    {
+        if (wave.Length < 12 || Encoding.ASCII.GetString(wave, 0, 4) != "RIFF" ||
+            Encoding.ASCII.GetString(wave, 8, 4) != "WAVE")
+            throw new InvalidDataException("The selected WAV file has no valid RIFF/WAVE header.");
+
+        ushort format = 0, bits = 0, blockAlign = 0;
+        int channels = 0, sampleRate = 0, dataOffset = -1, dataSize = 0;
+        int position = 12;
+        while (position <= wave.Length - 8)
+        {
+            string chunk = Encoding.ASCII.GetString(wave, position, 4);
+            uint length = BitConverter.ToUInt32(wave, position + 4);
+            long end = (long)position + 8 + length;
+            if (end > wave.Length) throw new InvalidDataException("The WAV file contains a truncated chunk.");
+            int start = position + 8;
+            if (chunk == "fmt ")
+            {
+                if (length < 16) throw new InvalidDataException("The WAV format chunk is incomplete.");
+                format = BitConverter.ToUInt16(wave, start);
+                channels = BitConverter.ToUInt16(wave, start + 2);
+                sampleRate = checked((int)BitConverter.ToUInt32(wave, start + 4));
+                blockAlign = BitConverter.ToUInt16(wave, start + 12);
+                bits = BitConverter.ToUInt16(wave, start + 14);
+            }
+            else if (chunk == "data")
+            {
+                dataOffset = start;
+                dataSize = checked((int)length);
+            }
+            position = checked((int)(end + (length & 1)));
+        }
+
+        if (channels is < 1 or > 2) throw new NotSupportedException("AudioClip import currently supports mono or stereo audio.");
+        if (sampleRate < 8000 || sampleRate > 192000) throw new InvalidDataException("The WAV sample rate is outside the supported range.");
+        if (dataOffset < 0 || dataSize <= 0) throw new InvalidDataException("The WAV file has no audio data.");
+        if (blockAlign == 0 || dataSize % blockAlign != 0) throw new InvalidDataException("The WAV data is not aligned to complete sample frames.");
+        if (format != 1 && format != 3) throw new NotSupportedException("Only PCM and IEEE-float WAV files are supported.");
+        if (format == 1 && bits is not (8 or 16 or 24 or 32))
+            throw new NotSupportedException("PCM WAV must use 8, 16, 24, or 32 bits per sample.");
+        if (format == 3 && bits is not (32 or 64))
+            throw new NotSupportedException("IEEE-float WAV must use 32- or 64-bit samples.");
+
+        int bytesPerSample = bits / 8;
+        if (blockAlign != channels * bytesPerSample)
+            throw new InvalidDataException("The WAV block alignment does not match its channel/sample format.");
+        int sampleCount = dataSize / bytesPerSample;
+        byte[] pcm = new byte[checked(sampleCount * 2)];
+        for (int i = 0; i < sampleCount; i++)
+        {
+            int offset = dataOffset + i * bytesPerSample;
+            double value;
+            if (format == 3)
+                value = bits == 32 ? BitConverter.ToSingle(wave, offset) : BitConverter.ToDouble(wave, offset);
+            else
+            {
+                value = bits switch
+                {
+                    8 => (wave[offset] - 128) / 128.0,
+                    16 => BitConverter.ToInt16(wave, offset) / 32768.0,
+                    24 => ReadPcm24(wave, offset) / 8388608.0,
+                    32 => BitConverter.ToInt32(wave, offset) / 2147483648.0,
+                    _ => 0
+                };
+            }
+            if (double.IsNaN(value) || double.IsInfinity(value)) value = 0;
+            value = Math.Clamp(value, -1.0, 1.0);
+            short sample = (short)Math.Clamp((int)Math.Round(value * (value < 0 ? 32768.0 : 32767.0)), short.MinValue, short.MaxValue);
+            pcm[i * 2] = (byte)sample;
+            pcm[i * 2 + 1] = (byte)(sample >> 8);
+        }
+        return (pcm, channels, sampleRate);
+    }
+
+    private static int ReadPcm24(byte[] bytes, int offset)
+    {
+        int value = bytes[offset] | (bytes[offset + 1] << 8) | (bytes[offset + 2] << 16);
+        return (value & 0x800000) != 0 ? value | unchecked((int)0xFF000000) : value;
+    }
+
+    private static (byte[] Pcm16, int Channels, int SampleRate) DecodeOggToPcm16(byte[] ogg)
+    {
+        using var stream = new MemoryStream(ogg, writable: false);
+        using var reader = new VorbisReader(stream, closeOnDispose: false);
+        int channels = reader.Channels;
+        int sampleRate = reader.SampleRate;
+        if (channels is < 1 or > 2) throw new NotSupportedException("AudioClip import currently supports mono or stereo audio.");
+        if (sampleRate < 8000 || sampleRate > 192000) throw new InvalidDataException("The OGG sample rate is outside the supported range.");
+
+        using var pcm = new MemoryStream();
+        float[] samples = new float[16384];
+        int read;
+        while ((read = reader.ReadSamples(samples, 0, samples.Length)) > 0)
+        {
+            byte[] chunk = new byte[read * 2];
+            for (int i = 0; i < read; i++)
+            {
+                double value = float.IsFinite(samples[i]) ? Math.Clamp(samples[i], -1f, 1f) : 0;
+                short sample = (short)Math.Clamp((int)Math.Round(value * (value < 0 ? 32768.0 : 32767.0)), short.MinValue, short.MaxValue);
+                chunk[i * 2] = (byte)sample;
+                chunk[i * 2 + 1] = (byte)(sample >> 8);
+            }
+            pcm.Write(chunk, 0, chunk.Length);
+            if (pcm.Length > 512L * 1024 * 1024)
+                throw new InvalidDataException("Decoded audio exceeds the 512 MB safety limit.");
+        }
+        if (pcm.Length == 0) throw new InvalidDataException("The OGG decoder returned no audio samples.");
+        return (pcm.ToArray(), channels, sampleRate);
+    }
+
+    private static byte[] BuildFsb5Pcm16(byte[] pcm16, int channels, int sampleRate)
+    {
+        if (channels is < 1 or > 2 || pcm16.Length == 0 || pcm16.Length % (channels * 2) != 0)
+            throw new InvalidDataException("PCM audio data is not valid mono/stereo 16-bit audio.");
+        long frames = pcm16.Length / (channels * 2);
+        if (frames > 0x3FFFFFFF) throw new InvalidDataException("The audio clip is too long for a single FSB5 sample.");
+
+        int frequencyCode = sampleRate switch
+        {
+            8000 => 1, 11000 => 2, 12000 => 3, 16000 => 4,
+            22050 => 5, 24000 => 6, 32000 => 7, 44100 => 8,
+            48000 => 9, 96000 => 10,
+            _ => 0
+        };
+        bool hasFrequencyChunk = frequencyCode == 0;
+        using var output = new MemoryStream(checked(60 + (hasFrequencyChunk ? 16 : 8) + pcm16.Length));
+        using var writer = new BinaryWriter(output, Encoding.UTF8, leaveOpen: true);
+        writer.Write(Encoding.ASCII.GetBytes("FSB5"));
+        writer.Write(1);
+        writer.Write(1);
+        writer.Write(hasFrequencyChunk ? 16 : 8);
+        writer.Write(0);
+        writer.Write(pcm16.Length);
+        writer.Write(2);
+        writer.Write(new byte[8]);
+        writer.Write(new byte[16]);
+        writer.Write(new byte[8]);
+
+        ulong sampleHeader = ((ulong)frames << 34) |
+            ((ulong)(channels - 1) << 5) |
+            ((ulong)frequencyCode << 1);
+        if (hasFrequencyChunk) sampleHeader |= 1UL;
+        writer.Write(sampleHeader);
+        if (hasFrequencyChunk)
+        {
+            uint frequencyChunk = (4u << 1) | (2u << 25);
+            writer.Write(frequencyChunk);
+            writer.Write(sampleRate);
+        }
+        writer.Write(pcm16);
+        writer.Flush();
+        return output.ToArray();
+    }
+
+    private async Task ImportTextAssetAsync(AssetFileInfo asset, bool addNew = false)
+    {
+        if (_currentAssets is null || _assetsManager is null || _isBusy) return;
+        var topLevel = TopLevel.GetTopLevel(this);
+        if (topLevel is null) return;
+        var selected = await topLevel.StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
+        {
+            Title = "Choose TextAsset content",
+            AllowMultiple = false,
+            FileTypeFilter = new[]
+            {
+                new FilePickerFileType("Text / JSON / XML") { Patterns = new[] { "*.txt", "*.json", "*.xml", "*.csv", "*.yaml", "*.yml", "*.bytes", "*.*" } }
+            }
+        });
+        if (selected.Count == 0) return;
+
+        var instance = _currentAssets;
+        _isBusy = true;
+        SetLoading(true, "Importing TextAsset...");
+        try
+        {
+            byte[] bytes;
+            await using (var input = await selected[0].OpenReadAsync())
+            using (var memory = new MemoryStream())
+            {
+                await input.CopyToAsync(memory);
+                bytes = memory.ToArray();
+            }
+            if (bytes.Length == 0) throw new InvalidDataException("The selected text file is empty.");
+
+            var field = await Task.Run(() => GetAssetBaseField(instance, asset, _assetsManager)
+                ?? throw new InvalidDataException("TextAsset data could not be read."));
+            var script = GetChildField(field, "m_Script");
+            if (script is null) throw new InvalidDataException("This TextAsset has no m_Script payload.");
+            if (script.TemplateField.ValueType != AssetValueType.ByteArray)
+                throw new NotSupportedException("This TextAsset uses a non-byte-array script layout.");
+            script.AsByteArray = bytes;
+            await SaveAssetReplacementAsync(asset, field.WriteToByteArray(instance.file.Reader.BigEndian), "TextAsset import", addNew);
+        }
+        catch (Exception ex) { _status.Text = "Text import failed:\n" + ex.Message; }
+        finally { _isBusy = false; SetLoading(false); }
+    }
+
+    private async Task ImportFontAssetAsync(AssetFileInfo asset, bool addNew = false)
+    {
+        if (_currentAssets is null || _assetsManager is null || _isBusy) return;
+        var topLevel = TopLevel.GetTopLevel(this);
+        if (topLevel is null) return;
+        var selected = await topLevel.StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
+        {
+            Title = "Choose replacement font",
+            AllowMultiple = false,
+            FileTypeFilter = new[]
+            {
+                new FilePickerFileType("TrueType / OpenType font") { Patterns = new[] { "*.ttf", "*.otf" } }
+            }
+        });
+        if (selected.Count == 0) return;
+
+        var instance = _currentAssets;
+        _isBusy = true;
+        SetLoading(true, "Importing font...");
+        try
+        {
+            byte[] bytes;
+            await using (var input = await selected[0].OpenReadAsync())
+            using (var memory = new MemoryStream())
+            {
+                await input.CopyToAsync(memory);
+                bytes = memory.ToArray();
+            }
+            bool isTtf = bytes.Length >= 4 && bytes[0] == 0 && bytes[1] == 1 && bytes[2] == 0 && bytes[3] == 0;
+            bool isOtf = bytes.Length >= 4 && bytes[0] == 0x4F && bytes[1] == 0x54 && bytes[2] == 0x54 && bytes[3] == 0x4F;
+            if (!isTtf && !isOtf) throw new InvalidDataException("The selected file is not a supported TTF/OTF font.");
+
+            var template = _assetsManager.GetTemplateBaseField(instance, asset)
+                ?? throw new InvalidDataException("Font type information could not be read.");
+            var fontTemplate = template.Children.FirstOrDefault(x => x.Name == "m_FontData");
+            if (fontTemplate is null || fontTemplate.Children.Count == 0)
+                throw new NotSupportedException("This Font uses an external or built-in payload.");
+            fontTemplate.Children[0].ValueType = AssetValueType.ByteArray;
+            AssetTypeValueField field;
+            var reader = instance.file.Reader;
+            lock (reader) field = template.MakeValue(reader, asset.GetAbsoluteByteStart(instance.file), null);
+            var data = GetChildField(field, "m_FontData.Array");
+            if (data is null) throw new InvalidDataException("Font data array is unavailable.");
+            data.AsByteArray = bytes;
+            await SaveAssetReplacementAsync(asset, field.WriteToByteArray(reader.BigEndian), "Font import", addNew);
+        }
+        catch (Exception ex) { _status.Text = "Font import failed:\n" + ex.Message; }
+        finally { _isBusy = false; SetLoading(false); }
+    }
+
+    private async Task ImportSpriteImageAsync(AssetFileInfo spriteAsset, bool addNew = false)
+    {
+        if (_currentAssets is null || _assetsManager is null || _isBusy) return;
+        var topLevel = TopLevel.GetTopLevel(this);
+        if (topLevel is null) return;
+
+        var selected = await topLevel.StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
+        {
+            Title = addNew ? "Choose PNG for new Sprite" : "Choose replacement Sprite PNG",
+            AllowMultiple = false,
+            FileTypeFilter = new[]
+            {
+                new FilePickerFileType("PNG image") { Patterns = new[] { "*.png" } }
+            }
+        });
+        if (selected.Count == 0) return;
+
+        var instance = _currentAssets;
+        var manager = _assetsManager;
+        _isBusy = true;
+        SetLoading(true, addNew ? "Preparing new Sprite and Texture2D..." : "Replacing Sprite atlas rectangle...");
+        try
+        {
+            byte[] encoded;
+            await using (var input = await selected[0].OpenReadAsync())
+            using (var memory = new MemoryStream())
+            {
+                await input.CopyToAsync(memory);
+                encoded = memory.ToArray();
+            }
+            if (encoded.Length == 0) throw new InvalidDataException("The selected PNG is empty.");
+
+            long newTexturePathId = addNew ? GetNextPendingPathId(instance, 2) : 0;
+            long newSpritePathId = addNew ? checked(newTexturePathId + 1) : 0;
+            var result = await Task.Run(() =>
+            {
+                var sprite = GetAssetBaseField(instance, spriteAsset, manager)
+                    ?? throw new InvalidDataException("Sprite data could not be read.");
+                var renderData = GetChildField(sprite, "m_RD");
+                var pointer = GetChildField(renderData, "texture");
+                if (pointer == null || pointer.IsDummy)
+                    pointer = GetChildField(sprite, "m_Texture");
+                long texturePathId = ReadFieldInt64(GetChildField(pointer, "m_PathID"));
+                var textureAsset = instance.file.AssetInfos.FirstOrDefault(x =>
+                    x.PathId == texturePathId &&
+                    x.GetTypeId(instance.file) == (int)AssetClassID.Texture2D);
+                if (textureAsset == null)
+                    throw new NotSupportedException("The Sprite's Texture2D is not in this assets file.");
+
+                var rect = GetChildField(renderData, "textureRect");
+                float rx = ReadFieldFloat(GetChildField(rect, "x"), float.NaN);
+                float ry = ReadFieldFloat(GetChildField(rect, "y"), float.NaN);
+                float rw = ReadFieldFloat(GetChildField(rect, "width"), float.NaN);
+                float rh = ReadFieldFloat(GetChildField(rect, "height"), float.NaN);
+                if (!(rw > 0 && rh > 0))
+                {
+                    rect = GetChildField(sprite, "m_Rect");
+                    rx = ReadFieldFloat(GetChildField(rect, "x"), float.NaN);
+                    ry = ReadFieldFloat(GetChildField(rect, "y"), float.NaN);
+                    rw = ReadFieldFloat(GetChildField(rect, "width"), float.NaN);
+                    rh = ReadFieldFloat(GetChildField(rect, "height"), float.NaN);
+                }
+                if (!(rw >= 1 && rh >= 1) || !float.IsFinite(rx) || !float.IsFinite(ry))
+                    throw new NotSupportedException("This Sprite has no supported atlas rectangle.");
+
+                var settings = GetChildField(renderData, "settingsRaw");
+                long packed = ReadFieldInt64(GetChildField(settings, "packed"));
+                long rotation = ReadFieldInt64(GetChildField(settings, "packingRotation"));
+                if (packed == 1 && rotation != 0)
+                    throw new NotSupportedException("This Sprite is rotated in the atlas. Import was stopped to protect neighboring sprites; unrotated atlas entries are supported.");
+
+                var textureField = ReadTextureFieldForPreview(manager, instance, textureAsset);
+                var texture = TextureFile.ReadTextureFile(textureField);
+                int width = texture.m_Width, height = texture.m_Height;
+                if (width <= 0 || height <= 0 || width > 8192 || height > 8192 ||
+                    (long)width * height > 32_000_000)
+                    throw new InvalidDataException("The target atlas dimensions are outside the safe import limit.");
+
+                byte[] atlasData = texture.pictureData ?? Array.Empty<byte>();
+                var streamData = GetChildField(textureField, "m_StreamData");
+                ulong streamOffset = ReadUnsignedField(GetChildField(streamData, "offset")!);
+                ulong streamSize = ReadUnsignedField(GetChildField(streamData, "size")!);
+                string streamPath = ReadFieldString(GetChildField(streamData, "path"));
+                if (streamSize > 0 && !string.IsNullOrWhiteSpace(streamPath))
+                    atlasData = ReadResourceWithBundleFallback(instance, streamPath, streamOffset, streamSize);
+                int[] atlasPixels = DecodeTexturePixelsToArgb(atlasData,
+                    (TextureFormat)texture.m_TextureFormat, width, height);
+
+                int targetWidth = Math.Max(1, (int)Math.Round(rw));
+                int targetHeight = Math.Max(1, (int)Math.Round(rh));
+                int x = (int)Math.Floor(rx);
+                int y = height - (int)Math.Ceiling(ry + rh);
+                if (x < 0 || y < 0 || x + targetWidth > width || y + targetHeight > height)
+                    throw new InvalidDataException("The Sprite rectangle lies outside its Texture2D atlas.");
+
+                using var source = global::Android.Graphics.BitmapFactory.DecodeByteArray(encoded, 0, encoded.Length)
+                    ?? throw new InvalidDataException("Android could not decode the selected PNG.");
+                if (source.Width <= 0 || source.Height <= 0 ||
+                    source.Width > 8192 || source.Height > 8192 ||
+                    (long)source.Width * source.Height > 32_000_000)
+                    throw new InvalidDataException("The replacement PNG exceeds the safe image size limit.");
+                using var atlas = global::Android.Graphics.Bitmap.CreateBitmap(
+                    width, height, global::Android.Graphics.Bitmap.Config.Argb8888!);
+                atlas.SetPixels(atlasPixels, 0, width, 0, 0, width, height);
+                using var canvas = new global::Android.Graphics.Canvas(atlas);
+                using var paint = new global::Android.Graphics.Paint(
+                    global::Android.Graphics.PaintFlags.FilterBitmap | global::Android.Graphics.PaintFlags.AntiAlias);
+                var destinationRect = new global::Android.Graphics.Rect(x, y, x + targetWidth, y + targetHeight);
+                canvas.DrawBitmap(source, null, destinationRect, paint);
+
+                var argb = new int[checked(width * height)];
+                atlas.GetPixels(argb, 0, width, 0, 0, width, height);
+                var rgba = new byte[checked(argb.Length * 4)];
+                for (int row = 0; row < height; row++)
+                {
+                    int srcRow = (height - 1 - row) * width;
+                    int dstRow = row * width * 4;
+                    for (int col = 0; col < width; col++)
+                    {
+                        int pixel = argb[srcRow + col], p = dstRow + col * 4;
+                        rgba[p] = (byte)(pixel >> 16);
+                        rgba[p + 1] = (byte)(pixel >> 8);
+                        rgba[p + 2] = (byte)pixel;
+                        rgba[p + 3] = (byte)(pixel >> 24);
+                    }
+                }
+
+                var template = manager.GetTemplateBaseField(instance, textureAsset)
+                    ?? throw new InvalidDataException("Texture2D template could not be read.");
+                var imageTemplate = template.Children.FirstOrDefault(x =>
+                    x.Name == "image data" || x.Name == "m_ImageData");
+                if (imageTemplate is null)
+                    throw new InvalidDataException("Texture2D image data field is unavailable.");
+                imageTemplate.ValueType = AssetValueType.ByteArray;
+                var reader = instance.file.Reader;
+                AssetTypeValueField replacementField;
+                lock (reader)
+                    replacementField = template.MakeValue(reader, textureAsset.GetAbsoluteByteStart(instance.file), null);
+                var replacementTexture = TextureFile.ReadTextureFile(replacementField);
+                replacementTexture.m_Width = width;
+                replacementTexture.m_Height = height;
+                replacementTexture.m_TextureFormat = (int)TextureFormat.RGBA32;
+                replacementTexture.m_CompleteImageSize = rgba.Length;
+                replacementTexture.m_MipCount = 1;
+                replacementTexture.m_MipMap = false;
+                replacementTexture.m_StreamingMipmaps = false;
+                replacementTexture.pictureData = rgba;
+                replacementTexture.m_StreamData = new TextureFile.StreamingInfo { offset = 0, size = 0, path = "" };
+                replacementTexture.WriteTo(replacementField);
+                byte[] spriteData = Array.Empty<byte>();
+                if (addNew)
+                {
+                    var pathField = GetChildField(pointer, "m_PathID") ?? throw new InvalidDataException("Sprite texture Path ID is missing.");
+                    if (pathField.Value?.ValueType != AssetValueType.Int64) throw new NotSupportedException("Unsupported Sprite texture Path ID type.");
+                    pathField.AsLong = newTexturePathId;
+                    var fileField = GetChildField(pointer, "m_FileID");
+                    if (fileField?.Value?.ValueType == AssetValueType.Int32) fileField.AsInt = 0;
+                    spriteData = sprite.WriteToByteArray(reader.BigEndian);
+                }
+                return (textureAsset, replacementField.WriteToByteArray(reader.BigEndian), SpriteData: spriteData);
+            });
+
+            if (addNew)
+                await SaveNewAssetPairAsync(result.textureAsset, result.Item2, spriteAsset, result.SpriteData, newTexturePathId, newSpritePathId);
+            else
+            {
+                await SaveAssetReplacementAsync(result.textureAsset, result.Item2, "Sprite atlas import");
+                _status.Text = "Sprite PNG imported into its existing atlas rectangle. Other atlas regions were preserved.";
+            }
+        }
+        catch (Exception ex) { _status.Text = "Sprite import failed:\n" + ex.Message; }
+        finally { _isBusy = false; SetLoading(false); }
+    }
+
+    private async Task ImportCubemapAsync(AssetFileInfo asset, bool addNew = false)
+    {
+        if (_currentAssets is null || _assetsManager is null || _isBusy) return;
+        var topLevel = TopLevel.GetTopLevel(this);
+        if (topLevel is null) return;
+
+        var selected = await topLevel.StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
+        {
+            Title = "Choose cubemap ZIP (six PNG faces)",
+            AllowMultiple = false,
+            FileTypeFilter = new[]
+            {
+                new FilePickerFileType("Cubemap face archive") { Patterns = new[] { "*.zip" } }
+            }
+        });
+        if (selected.Count == 0) return;
+
+        var instance = _currentAssets;
+        _isBusy = true;
+        SetLoading(true, "Importing cubemap faces...");
+        try
+        {
+            byte[] zipBytes;
+            await using (var input = await selected[0].OpenReadAsync())
+            using (var memory = new MemoryStream())
+            {
+                await input.CopyToAsync(memory);
+                zipBytes = memory.ToArray();
+            }
+
+            byte[] serialized = await Task.Run(() =>
+            {
+                string[] faceNames = { "PositiveX.png", "NegativeX.png", "PositiveY.png",
+                    "NegativeY.png", "PositiveZ.png", "NegativeZ.png" };
+                using var zipStream = new MemoryStream(zipBytes, false);
+                using var archive = new ZipArchive(zipStream, ZipArchiveMode.Read, false);
+                var rgbaFaces = new List<byte[]>(6);
+                int faceWidth = -1, faceHeight = -1;
+
+                foreach (string faceName in faceNames)
+                {
+                    var entry = archive.Entries.FirstOrDefault(x =>
+                        string.Equals(Path.GetFileName(x.FullName), faceName, StringComparison.OrdinalIgnoreCase))
+                        ?? throw new InvalidDataException("Cubemap ZIP is missing " + faceName + ".");
+                    using var faceStream = entry.Open();
+                    using var encoded = new MemoryStream();
+                    faceStream.CopyTo(encoded);
+                    byte[] png = encoded.ToArray();
+                    using var bitmap = global::Android.Graphics.BitmapFactory.DecodeByteArray(png, 0, png.Length)
+                        ?? throw new InvalidDataException(faceName + " is not a supported PNG image.");
+
+                    if (bitmap.Width <= 0 || bitmap.Width != bitmap.Height ||
+                        bitmap.Width > 4096 || bitmap.Height > 4096)
+                        throw new InvalidDataException("Cubemap faces must be square PNGs up to 4096x4096.");
+                    if (faceWidth < 0) { faceWidth = bitmap.Width; faceHeight = bitmap.Height; }
+                    if (bitmap.Width != faceWidth || bitmap.Height != faceHeight)
+                        throw new InvalidDataException("All six cubemap faces must have identical dimensions.");
+
+                    int[] argb = new int[checked(faceWidth * faceHeight)];
+                    bitmap.GetPixels(argb, 0, faceWidth, 0, 0, faceWidth, faceHeight);
+                    byte[] rgba = new byte[checked(argb.Length * 4)];
+                    for (int y = 0; y < faceHeight; y++)
+                    {
+                        int sourceRow = (faceHeight - 1 - y) * faceWidth;
+                        int targetRow = y * faceWidth * 4;
+                        for (int x = 0; x < faceWidth; x++)
+                        {
+                            int pixel = argb[sourceRow + x];
+                            int p = targetRow + x * 4;
+                            rgba[p] = (byte)(pixel >> 16);
+                            rgba[p + 1] = (byte)(pixel >> 8);
+                            rgba[p + 2] = (byte)pixel;
+                            rgba[p + 3] = (byte)(pixel >> 24);
+                        }
+                    }
+                    rgbaFaces.Add(rgba);
+                }
+
+                var template = _assetsManager!.GetTemplateBaseField(instance, asset)
+                    ?? throw new InvalidDataException("Cubemap type information could not be read.");
+                var imageTemplate = template.Children.FirstOrDefault(x =>
+                    x.Name == "image data" || x.Name == "m_ImageData");
+                if (imageTemplate is null) throw new InvalidDataException("Cubemap has no image data field.");
+                imageTemplate.ValueType = AssetValueType.ByteArray;
+                var reader = instance.file.Reader;
+                AssetTypeValueField field;
+                lock (reader) field = template.MakeValue(reader, asset.GetAbsoluteByteStart(instance.file), null);
+
+                var cubemap = TextureFile.ReadTextureFile(field);
+                int totalLength = checked(rgbaFaces.Sum(x => x.Length));
+                byte[] allFaces = new byte[totalLength];
+                int position = 0;
+                foreach (var face in rgbaFaces)
+                {
+                    Buffer.BlockCopy(face, 0, allFaces, position, face.Length);
+                    position += face.Length;
+                }
+                cubemap.m_Width = faceWidth;
+                cubemap.m_Height = faceHeight;
+                cubemap.m_TextureFormat = (int)TextureFormat.RGBA32;
+                cubemap.m_CompleteImageSize = allFaces.Length;
+                cubemap.m_MipCount = 1;
+                cubemap.m_MipMap = false;
+                cubemap.m_StreamingMipmaps = false;
+                cubemap.pictureData = allFaces;
+                cubemap.m_StreamData = new TextureFile.StreamingInfo { offset = 0, size = 0, path = "" };
+                cubemap.WriteTo(field);
+                return field.WriteToByteArray(reader.BigEndian);
+            });
+
+            await SaveAssetReplacementAsync(asset, serialized, "Cubemap import", addNew);
+            _status.Text = "Cubemap import prepared. Save the modified Unity file to apply all six faces.";
+        }
+        catch (Exception ex) { _status.Text = "Cubemap import failed:\n" + ex.Message; }
+        finally { _isBusy = false; SetLoading(false); }
+    }
+
+    private async Task ImportMeshObjAsync(AssetFileInfo asset, bool addNew = false)
+    {
+        if (_currentAssets is null || _assetsManager is null || _isBusy) return;
+        var topLevel = TopLevel.GetTopLevel(this);
+        if (topLevel is null) return;
+
+        var selected = await topLevel.StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
+        {
+            Title = "Choose replacement Wavefront OBJ mesh",
+            AllowMultiple = false,
+            FileTypeFilter = new[]
+            {
+                new FilePickerFileType("Wavefront OBJ mesh") { Patterns = new[] { "*.obj" } }
+            }
+        });
+        if (selected.Count == 0) return;
+
+        var instance = _currentAssets;
+        var manager = _assetsManager;
+        _isBusy = true;
+        SetLoading(true, "Importing OBJ mesh...");
+        try
+        {
+            string objText;
+            await using (var input = await selected[0].OpenReadAsync())
+            using (var memory = new MemoryStream())
+            {
+                await input.CopyToAsync(memory);
+                if (memory.Length == 0) throw new InvalidDataException("The selected OBJ file is empty.");
+                if (memory.Length > 128L * 1024 * 1024)
+                    throw new InvalidDataException("The OBJ file exceeds the 128 MB safety limit.");
+                objText = Encoding.UTF8.GetString(memory.ToArray());
+            }
+
+            var result = await Task.Run(() =>
+            {
+                var field = GetAssetBaseField(instance, asset, manager)
+                    ?? throw new InvalidDataException("Mesh asset data could not be read.");
+                string summary = UnityObjMeshImporter.Import(
+                    field,
+                    objText,
+                    instance.file.Reader.BigEndian,
+                    instance.file.Metadata.UnityVersion);
+                byte[] serialized = field.WriteToByteArray(instance.file.Reader.BigEndian);
+
+                // Parse the serialized bytes back through the same TypeTree and
+                // Mesh preview reader before offering the file for saving.
+                var template = manager.GetTemplateBaseField(instance, asset)
+                    ?? throw new InvalidDataException("Mesh TypeTree is unavailable for import verification.");
+                using var verifyStream = new MemoryStream(serialized, writable: false);
+                using var verifyReader = new AssetsFileReader(verifyStream);
+                verifyReader.BigEndian = instance.file.Reader.BigEndian;
+                var verifiedField = template.MakeValue(verifyReader);
+                var verifiedMesh = MeshPreviewDataReader.Read(verifiedField);
+                if (verifiedMesh.Vertices.Length < 3 || verifiedMesh.Indices.Length < 3)
+                    throw new InvalidDataException("The imported Mesh did not pass the serialized-data verification.");
+
+                return (Serialized: serialized, Summary: summary);
+            });
+
+            _status.Text = result.Summary;
+            await SaveAssetReplacementAsync(asset, result.Serialized, "Mesh OBJ import", addNew);
+        }
+        catch (Exception ex)
+        {
+            _status.Text = "Mesh OBJ import failed:\n" + ex.Message;
+        }
+        finally
+        {
+            _isBusy = false;
+            SetLoading(false);
+        }
+    }
+
+    private async Task ImportStructuredJsonAssetAsync(AssetFileInfo asset, string assetTypeName)
+    {
+        if (_currentAssets is null || _assetsManager is null || _isBusy) return;
+        var topLevel = TopLevel.GetTopLevel(this);
+        if (topLevel is null) return;
+
+        var selected = await topLevel.StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
+        {
+            Title = $"Choose {assetTypeName} type-tree JSON",
+            AllowMultiple = false,
+            FileTypeFilter = new[]
+            {
+                new FilePickerFileType("UABEA JSON type-tree dump") { Patterns = new[] { "*.json" } }
+            }
+        });
+        if (selected.Count == 0) return;
+
+        var instance = _currentAssets;
+        _isBusy = true;
+        SetLoading(true, $"Importing {assetTypeName} JSON...");
+        try
+        {
+            string json;
+            await using (var input = await selected[0].OpenReadAsync())
+            using (var memory = new MemoryStream())
+            {
+                await input.CopyToAsync(memory);
+                if (memory.Length == 0) throw new InvalidDataException("The selected JSON file is empty.");
+                if (memory.Length > 128L * 1024 * 1024)
+                    throw new InvalidDataException("The JSON file exceeds the 128 MB safety limit.");
+                json = Encoding.UTF8.GetString(memory.ToArray());
+            }
+
+            var template = _assetsManager.GetTemplateBaseField(instance, asset)
+                ?? throw new InvalidDataException($"{assetTypeName} type information could not be read.");
+
+            byte[] serialized = await Task.Run(() =>
+                AssetImportExport.ImportTypeTreeDump(template, json, instance.file.Reader.BigEndian));
+
+            await SaveAssetReplacementAsync(asset, serialized, $"{assetTypeName} JSON import");
+        }
+        catch (Exception ex)
+        {
+            _status.Text = $"{assetTypeName} JSON import failed:\\n{ex.Message}";
+        }
+        finally
+        {
+            _isBusy = false;
+            SetLoading(false);
+        }
+    }
+
+    private static long GetNextAssetPathId(AssetsFileInstance instance)
+    {
+        long maxPathId = instance.file.Metadata.AssetInfos.Count == 0
+            ? 0
+            : instance.file.Metadata.AssetInfos.Max(x => x.PathId);
+        if (maxPathId == long.MaxValue)
+            throw new InvalidOperationException("No free Path ID is available in this assets file.");
+        return Math.Max(1, maxPathId + 1);
+    }
+
+    private long GetNextPendingPathId(AssetsFileInstance instance, int count = 1)
+    {
+        long candidate = GetNextAssetPathId(instance);
+        while (true)
+        {
+            bool available = true;
+            for (int i = 0; i < count; i++)
+            {
+                long id = checked(candidate + i);
+                if (_pendingAssetChanges.ContainsKey(new AssetID(instance.path, id)) || instance.file.AssetInfos.Any(x => x.PathId == id))
+                {
+                    available = false;
+                    candidate = checked(id + 1);
+                    break;
+                }
+            }
+            if (available) return candidate;
+        }
+    }
+
+    private void AddNewAssetImportButton(string label, Func<Task> action)
+    {
+        var button = new Button
+        {
+            Content = CreateIconLabel(MaterialIconKind.FilePlus, label, TextBrush, 15),
+            Background = SurfaceContainerBrush,
+            Foreground = TextBrush,
+            BorderBrush = OutlineBrush,
+            BorderThickness = new Thickness(1),
+            CornerRadius = new CornerRadius(12),
+            MinHeight = 44,
+            HorizontalAlignment = HorizontalAlignment.Stretch
+        };
+        ToolTip.SetTip(button, "Creates a separate Unity asset with a new Path ID. It does not replace the selected asset.");
+        button.Click += async (_, _) => await action();
+        _items.Children.Add(button);
+    }
+
+    private void RegisterPendingAssetChange(AssetsFileInstance instance, AssetsReplacer replacer)
+    {
+        // Same identity model as UABEA's AssetWorkspace: source file + Path ID.
+        var assetId = new AssetID(instance.path, replacer.GetPathID());
+        _assetWorkspace?.AddReplacer(instance, replacer);
+        _pendingAssetChanges[assetId] = replacer;
+        _pendingAssetInstances[assetId] = instance;
+        _savedAssetChanges.Remove(assetId);
+
+        if (replacer.GetType().Name.Contains("Remover", StringComparison.Ordinal))
+        {
+            _pendingAssetData.Remove(assetId);
+            return;
+        }
+
+        if (_assetWorkspace is not null &&
+            _assetWorkspace.TryGetPreviewData(instance, replacer.GetPathID(), out var workspacePreview))
+            _pendingAssetData[assetId] = workspacePreview;
+        else
+        {
+            using var previewStream = new MemoryStream();
+            using (var previewWriter = new AssetsFileWriter(previewStream))
+                replacer.Write(previewWriter);
+            _pendingAssetData[assetId] = previewStream.ToArray();
+        }
+    }
+
+    private AssetTypeValueField? GetAssetBaseField(AssetsFileInstance instance, AssetFileInfo asset, AssetsManager? manager = null)
+    {
+        var activeManager = manager ?? _assetsManager;
+        if (activeManager is null) return null;
+
+        byte[]? replacementData = null;
+        if (_assetWorkspace?.TryGetPreviewData(instance, asset.PathId, out var workspaceData) == true)
+            replacementData = workspaceData;
+        else
+            _pendingAssetData.TryGetValue(new AssetID(instance.path, asset.PathId), out replacementData);
+
+        if (replacementData is not null)
+        {
+            var template = activeManager.GetTemplateBaseField(instance, asset);
+            if (template is not null)
+            {
+                using var stream = new MemoryStream(replacementData, writable: false);
+                using var reader = new AssetsFileReader(stream);
+                reader.BigEndian = instance.file.Reader.BigEndian;
+                return template.MakeValue(reader);
+            }
+        }
+
+        return activeManager.GetBaseField(instance, asset);
+    }
+
+    private Task SaveNewAssetPairAsync(AssetFileInfo textureTemplate, byte[] textureData, AssetFileInfo spriteTemplate, byte[] spriteData, long texturePathId, long spritePathId)
+    {
+        var instance = _currentAssets ?? throw new InvalidOperationException("No assets file is open.");
+        RegisterPendingAssetChange(instance, new AssetsReplacerFromMemory(texturePathId,
+            textureTemplate.GetTypeId(instance.file), instance.file.GetScriptIndex(textureTemplate), textureData));
+        _hasUnsavedChanges = true;
+        RegisterPendingAssetChange(instance, new AssetsReplacerFromMemory(spritePathId,
+            spriteTemplate.GetTypeId(instance.file), instance.file.GetScriptIndex(spriteTemplate), spriteData));
+        _status.Text = "New Sprite and Texture2D added to the active session. Use Save changes to export them.";
+        UpdateFloatingActions();
+        return Task.CompletedTask;
+    }
+
+    private Task SaveNewAssetDataAsync(AssetFileInfo sourceAsset, byte[] serializedData, string operation)
+    {
+        var instance = _currentAssets ?? throw new InvalidOperationException("No assets file is open.");
+        long newPathId = GetNextPendingPathId(instance);
+        int classId = sourceAsset.GetTypeId(instance.file);
+        ushort scriptId = instance.file.GetScriptIndex(sourceAsset);
+        RegisterPendingAssetChange(instance, new AssetsReplacerFromMemory(newPathId, classId, scriptId, serializedData));
+        _hasUnsavedChanges = true;
+        _status.Text = $"{operation} added to the active session. New Path ID: {newPathId}. Use Save changes to export it.";
+        UpdateFloatingActions();
+        return Task.CompletedTask;
+    }
+
+    private Task SaveAssetReplacementAsync(AssetFileInfo asset, byte[] serializedData, string operation, bool addNew = false)
+    {
+        if (addNew) return SaveNewAssetDataAsync(asset, serializedData, operation);
+        var instance = _currentAssets ?? throw new InvalidOperationException("No assets file is open.");
+        int classId = asset.GetTypeId(instance.file);
+        ushort scriptId = instance.file.GetScriptIndex(asset);
+        RegisterPendingAssetChange(instance, new AssetsReplacerFromMemory(asset.PathId, classId, scriptId, serializedData));
+        _hasUnsavedChanges = true;
+        _status.Text = $"{operation} applied to asset {asset.PathId} in the active session. Use Save changes to export it.";
+        UpdateFloatingActions();
+        return Task.CompletedTask;
+    }
+
+    private bool QueueAssetDeletion(AssetFileInfo asset)
+    {
+        try
+        {
+            var assembly = typeof(AssetsReplacer).Assembly;
+            var removerType = assembly.GetTypes().FirstOrDefault(t => t.Name == "AssetsRemover")
+                ?? throw new NotSupportedException("This AssetsTools.NET build does not expose AssetsRemover.");
+            var constructor = removerType.GetConstructors().FirstOrDefault(ctor =>
+            {
+                var p = ctor.GetParameters();
+                return p.Length == 2 && p[0].ParameterType == typeof(int) && p[1].ParameterType == typeof(long);
+            }) ?? throw new MissingMethodException("AssetsRemover(int, long) constructor was not found.");
+            var remover = constructor.Invoke(new object[] { 0, asset.PathId }) as AssetsReplacer
+                ?? throw new InvalidOperationException("Could not create an asset remover.");
+            RegisterPendingAssetChange(_currentAssets ?? throw new InvalidOperationException("No assets file is open."), remover);
+            _pendingDeleteIds.Add(asset.PathId);
+            _hasUnsavedChanges = true;
+            _status.Text = $"Asset {asset.PathId} marked for deletion. Select Save changes to apply it.";
+            CloseAssetDetailsLayer();
+            _currentPage = BrowserPage.Assets;
+            UpdateNavigation();
+            RefreshCurrentList();
+            UpdateFloatingActions();
+            return true;
+        }
+        catch (Exception ex)
+        {
+            _status.Text = "Could not queue asset deletion: " + ex.Message;
+            return false;
+        }
+    }
+
+    private List<AssetsReplacer> GetPendingAssetReplacers(AssetsFileInstance instance)
+    {
+        return _assetWorkspace?.GetReplacersForFile(instance) ?? _pendingAssetChanges
+            .Where(pair => _pendingAssetInstances.TryGetValue(pair.Key, out var owner) &&
+                ReferenceEquals(owner, instance))
+            .Select(pair => pair.Value).ToList();
+    }
+
+    private List<AssetID> GetPendingAssetIds(AssetsFileInstance instance)
+    {
+        return _assetWorkspace?.GetAssetIdsForFile(instance) ?? _pendingAssetChanges.Keys
+            .Where(id => _pendingAssetInstances.TryGetValue(id, out var owner) &&
+                ReferenceEquals(owner, instance)).ToList();
+    }
+
+    private async Task SavePendingAssetsAsync()
+    {
+        if (_currentAssets is null || !_hasUnsavedChanges || _isBusy) return;
+        var top = TopLevel.GetTopLevel(this);
+        if (top is null) return;
+
+        var activeInstance = _currentAssets;
+        var bundle = _currentBundle;
+        bool saveWholeBundle = false;
+        if (bundle is not null)
+        {
+            string? choice = await ShowBundleSaveChoiceAsync();
+            if (choice is null) return;
+            saveWholeBundle = choice == "bundle";
+        }
+
+        // UABEA serializes each changed assets file first, then its bundle
+        // workspace replaces the corresponding serialized entries.
+        var changedFiles = saveWholeBundle
+            ? _pendingAssetInstances.Values.Distinct().ToList()
+            : new List<AssetsFileInstance> { activeInstance };
+        if (changedFiles.Count == 0) return;
+        if (!saveWholeBundle && GetPendingAssetIds(activeInstance).Count == 0)
+        {
+            _status.Text = "The currently opened .assets file has no pending changes. Save the entire Unity bundle to include changes made in other bundle entries.";
+            return;
+        }
+
+        string originalName = Path.GetFileName(saveWholeBundle
+            ? _currentFileName
+            : activeInstance.name ?? "sharedassets.assets");
+        if (string.IsNullOrWhiteSpace(originalName))
+            originalName = saveWholeBundle ? "modified.unity3d" : "sharedassets.assets";
+        string extension = Path.GetExtension(originalName);
+        if (string.IsNullOrWhiteSpace(extension))
+            extension = saveWholeBundle ? ".unity3d" : ".assets";
+        string suggestedName = Path.GetFileNameWithoutExtension(originalName) + "-modified" + extension;
+
+        var destination = await top.StorageProvider.SaveFilePickerAsync(new FilePickerSaveOptions
+        {
+            Title = saveWholeBundle ? "Save modified Unity bundle copy" : "Save modified assets file copy",
+            SuggestedFileName = suggestedName,
+            FileTypeChoices = saveWholeBundle
+                ? new[] { new FilePickerFileType("Unity bundle") { Patterns = new[] { "*.unity3d", "*.bundle", "*.assetbundle" } } }
+                : new[] { new FilePickerFileType("Unity assets file") { Patterns = new[] { "*.assets", "*.asset" } } }
+        });
+        if (destination is null) return;
+
+        string temp = Path.Combine(Path.GetTempPath(), "uabea-save-" + Guid.NewGuid().ToString("N") +
+            (saveWholeBundle ? ".unity3d" : ".assets"));
+        var savedAssetIds = changedFiles.SelectMany(GetPendingAssetIds).ToList();
+        try
+        {
+            _isBusy = true;
+            SetLoading(true, saveWholeBundle
+                ? "Preparing changed assets and rebuilding the Unity bundle..."
+                : "Writing the modified assets file...");
+
+            await Task.Run(() =>
+            {
+                if (saveWholeBundle)
+                {
+                    if (bundle is null)
+                        throw new InvalidOperationException("The Unity bundle is no longer available.");
+
+                    foreach (var changedFile in changedFiles)
+                    {
+                        var replacers = GetPendingAssetReplacers(changedFile);
+                        if (replacers.Count == 0) continue;
+
+                        using var changedAssetsStream = new MemoryStream();
+                        using (var assetsWriter = new AssetsFileWriter(changedAssetsStream))
+                            changedFile.file.Write(assetsWriter, 0, replacers);
+
+                        string entryName = ResolveBundleAssetsEntryName(bundle, changedFile);
+                        changedAssetsStream.Position = 0;
+                        _bundleWorkspace.AddOrReplaceFile(changedAssetsStream, entryName, true);
+                    }
+
+                    var bundleReplacers = _bundleWorkspace.GetReplacers();
+                    if (bundleReplacers.Count == 0)
+                        throw new InvalidOperationException("No modified serialized entries were found in this bundle.");
+
+                    WriteBundleCopyWithOriginalCompression(
+                        bundle, bundleReplacers, temp, _currentBundleCompression);
+                }
+                else
+                {
+                    var replacers = GetPendingAssetReplacers(activeInstance);
+                    if (replacers.Count == 0)
+                        throw new InvalidOperationException("The opened assets file has no pending changes.");
+
+                    using var output = File.Create(temp);
+                    using var writer = new AssetsFileWriter(output);
+                    activeInstance.file.Write(writer, 0, replacers);
+                }
+            });
+
+            await Task.Run(() => ValidateSavedOutput(temp, saveWholeBundle, savedAssetIds));
+
+            await using var target = await destination.OpenWriteAsync();
+            await using var source = File.OpenRead(temp);
+            await source.CopyToAsync(target);
+            await target.FlushAsync();
+
+            foreach (var assetId in savedAssetIds)
+                _savedAssetChanges.Add(assetId);
+
+            _hasUnsavedChanges = _pendingAssetChanges.Keys.Any(id => !_savedAssetChanges.Contains(id));
+            _status.Text = saveWholeBundle
+                ? $"Saved modified Unity bundle copy: {destination.Name}\nSerialized each changed assets entry with UABEA's AssetsFile.Write flow, then applied the entries through the bundle writer. The original file was not changed."
+                : $"Saved modified assets file copy: {destination.Name}\nApplied {savedAssetIds.Count} pending changes from the opened assets file. Other changed bundle entries, if any, remain pending. The original file was not changed.";
+            UpdateFloatingActions();
+        }
+        catch (Exception ex)
+        {
+            _status.Text = "Save failed: " + ex.Message;
+        }
+        finally
+        {
+            try { File.Delete(temp); } catch { }
+            _isBusy = false;
+            SetLoading(false);
+        }
+    }
+
+    private static void ValidateSavedOutput(string path, bool isBundle, IReadOnlyCollection<AssetID> savedAssetIds)
+    {
+        var verifier = new AssetsManager();
+        try
+        {
+            if (isBundle)
+            {
+                var verifiedBundle = verifier.LoadBundleFile(path, false);
+                if (verifiedBundle.file.BlockAndDirInfo.DirectoryInfos.Length == 0)
+                    throw new InvalidDataException("The saved Unity bundle contains no readable directory entries.");
+                return;
+            }
+
+            var verifiedAssets = verifier.LoadAssetsFile(path, false);
+            var availableIds = verifiedAssets.file.AssetInfos.Select(x => x.PathId).ToHashSet();
+            foreach (var assetId in savedAssetIds)
+                if (!availableIds.Contains(assetId.pathID))
+                    throw new InvalidDataException($"Saved .assets file is missing modified asset Path ID {assetId.pathID}.");
+
+            verifier.LoadClassPackage(EnsureClassDataFile());
+            verifier.LoadClassDatabaseFromPackage(verifiedAssets.file.Metadata.UnityVersion);
+            foreach (var assetId in savedAssetIds)
+            {
+                var asset = verifiedAssets.file.AssetInfos.FirstOrDefault(x => x.PathId == assetId.pathID)
+                    ?? throw new InvalidDataException($"Could not locate modified asset Path ID {assetId.pathID} after saving.");
+                if (asset.GetTypeId(verifiedAssets.file) == (int)AssetClassID.Texture2D &&
+                    verifier.GetBaseField(verifiedAssets, asset) is null)
+                    throw new InvalidDataException($"Modified Texture2D Path ID {assetId.pathID} could not be deserialized after saving.");
+            }
+        }
+        finally
+        {
+            verifier.UnloadAllAssetsFiles(true);
+            verifier.UnloadAllBundleFiles();
+        }
+    }
+
+    private Task<string?> ShowBundleSaveChoiceAsync()
+    {
+        if (_saveChoiceCompletion is not null)
+            return _saveChoiceCompletion.Task;
+
+        _saveChoiceCompletion = new TaskCompletionSource<string?>();
+        var content = new StackPanel { Spacing = 12 };
+        content.Children.Add(new TextBlock
+        {
+            Text = "Choose what to save",
+            FontSize = 19,
+            FontWeight = FontWeight.SemiBold,
+            Foreground = TextBrush,
+            TextWrapping = TextWrapping.Wrap
+        });
+        content.Children.Add(new TextBlock
+        {
+            Text = "This assets file was opened from a Unity bundle.",
+            FontSize = 14,
+            Foreground = MutedBrush,
+            TextWrapping = TextWrapping.Wrap
+        });
+
+        var bundleButton = new Button
+        {
+            Content = "Save entire Unity bundle",
+            MinHeight = 48,
+            HorizontalAlignment = HorizontalAlignment.Stretch
+        };
+        bundleButton.Click += (_, _) => CompleteBundleSaveChoice("bundle");
+        var assetsButton = new Button
+        {
+            Content = "Save opened .assets file only",
+            MinHeight = 48,
+            HorizontalAlignment = HorizontalAlignment.Stretch
+        };
+        assetsButton.Click += (_, _) => CompleteBundleSaveChoice("assets");
+        var cancelButton = new Button
+        {
+            Content = "Cancel",
+            MinHeight = 42,
+            HorizontalAlignment = HorizontalAlignment.Stretch
+        };
+        cancelButton.Click += (_, _) => CompleteBundleSaveChoice(null);
+        content.Children.Add(bundleButton);
+        content.Children.Add(assetsButton);
+        content.Children.Add(cancelButton);
+
+        var card = new Border
+        {
+            Background = SurfaceBrush,
+            BorderBrush = OutlineBrush,
+            BorderThickness = new Thickness(1),
+            CornerRadius = new CornerRadius(20),
+            Padding = new Thickness(20),
+            MaxWidth = 380,
+            HorizontalAlignment = HorizontalAlignment.Center,
+            VerticalAlignment = VerticalAlignment.Center,
+            Child = content
+        };
+        var overlay = new Grid
+        {
+            Background = Brush.Parse("#B8000000"),
+            HorizontalAlignment = HorizontalAlignment.Stretch,
+            VerticalAlignment = VerticalAlignment.Stretch
+        };
+        overlay.Children.Add(card);
+        _saveChoiceOverlay = new Border
+        {
+            Background = Brushes.Transparent,
+            HorizontalAlignment = HorizontalAlignment.Stretch,
+            VerticalAlignment = VerticalAlignment.Stretch,
+            Child = overlay
+        };
+        _pageLayers.Children.Add(_saveChoiceOverlay);
+        return _saveChoiceCompletion.Task;
+    }
+
+    private void CompleteBundleSaveChoice(string? choice)
+    {
+        if (_saveChoiceOverlay is not null)
+        {
+            _pageLayers.Children.Remove(_saveChoiceOverlay);
+            _saveChoiceOverlay = null;
+        }
+        var completion = _saveChoiceCompletion;
+        _saveChoiceCompletion = null;
+        completion?.TrySetResult(choice);
+    }
+
+    private static string ResolveBundleAssetsEntryName(
+        BundleFileInstance bundle, AssetsFileInstance instance)
+    {
+        string instanceName = (instance.name ?? "").Replace('\\', '/').TrimStart('/');
+        string baseName = Path.GetFileName(instanceName);
+        var entries = bundle.file.BlockAndDirInfo.DirectoryInfos
+            .Where(entry => (entry.Flags & 0x04) != 0)
+            .Where(entry =>
+            {
+                string entryName = (entry.Name ?? "").Replace('\\', '/').TrimStart('/');
+                return string.Equals(entryName, instanceName, StringComparison.OrdinalIgnoreCase) ||
+                    string.Equals(Path.GetFileName(entryName), baseName, StringComparison.OrdinalIgnoreCase);
+            })
+            .ToList();
+
+        if (entries.Count != 1)
+            throw new InvalidDataException(entries.Count == 0
+                ? $"The serialized bundle entry for '{instance.name}' could not be identified."
+                : $"More than one bundle entry matches '{instance.name}'. Replacement was stopped to avoid modifying the wrong entry.");
+
+        return entries[0].Name;
+    }
+
+    private static string NormalizeExportExtension(string extension)
+    {
+        if (string.IsNullOrWhiteSpace(extension))
+            throw new InvalidDataException("The export format did not provide a file extension.");
+
+        string normalized = extension.Trim();
+        if (!normalized.StartsWith(".", StringComparison.Ordinal))
+            normalized = "." + normalized;
+        if (normalized.Length < 2 || normalized.Any(ch =>
+            ch == '/' || ch == '\\' || ch == ':' || ch == '*' || ch == '?' ||
+            ch == '"' || ch == '<' || ch == '>' || ch == '|'))
+            throw new InvalidDataException("The export format returned an invalid file extension.");
+        return normalized;
+    }
+
+    private AssetExportPayload BuildAssetExportPayload(
+        AssetsManager manager, AssetsFileInstance instance, AssetFileInfo asset, int typeId)
+    {
+        if (typeId == (int)AssetClassID.Texture2D)
+        {
+            var field = ReadTextureFieldForPreview(manager, instance, asset);
+            var texture = TextureFile.ReadTextureFile(field);
+            byte[] data = texture.pictureData ?? Array.Empty<byte>();
+            var streamData = GetChildField(field, "m_StreamData");
+            ulong offset = ReadUnsignedField(GetChildField(streamData, "offset")!);
+            ulong size = ReadUnsignedField(GetChildField(streamData, "size")!);
+            string path = ReadFieldString(GetChildField(streamData, "path"));
+            if (size > 0 && !string.IsNullOrWhiteSpace(path))
+            {
+                try { data = ReadResourceWithBundleFallback(instance, path, offset, size); }
+                catch (FileNotFoundException ex) { throw new FileNotFoundException(ex.Message, path, ex); }
+            }
+            int[] pixels = DecodeTexturePixelsToArgb(data, (TextureFormat)texture.m_TextureFormat,
+                texture.m_Width, texture.m_Height);
+            return new AssetExportPayload(EncodePixelsAsPng(pixels, texture.m_Width, texture.m_Height), ".png", false);
+        }
+
+        if (typeId == (int)AssetClassID.Sprite)
+        {
+            return new AssetExportPayload(ExportSpritePng(manager, instance, asset), ".png", false);
+        }
+
+        if (typeId == (int)AssetClassID.AudioClip)
+        {
+            var field = GetAssetBaseField(instance, asset, manager)
+                ?? throw new InvalidDataException("AudioClip data could not be read.");
+            string source = ReadFieldString(field["m_Resource.m_Source"]);
+            ulong offset = ReadUnsignedField(field["m_Resource.m_Offset"]);
+            ulong size = ReadUnsignedField(field["m_Resource.m_Size"]);
+            if (string.IsNullOrWhiteSpace(source) || size == 0 || size > int.MaxValue)
+                throw new InvalidDataException("This AudioClip has no supported external FMOD stream.");
+            byte[] fsbData;
+            if (instance.parentBundle != null)
+            {
+                // Match the working AudioClip preview path: try the bundle first,
+                // then use the matching external/session resource when the bundle
+                // does not contain the stream. Do not prompt to import a resource
+                // that the preview path can already resolve.
+                try
+                {
+                    fsbData = ReadBundleResource(instance.parentBundle, source, offset, size);
+                }
+                catch (FileNotFoundException)
+                {
+                    fsbData = ReadExternalResource(instance, source, offset, size);
+                }
+            }
+            else
+            {
+                fsbData = ReadExternalResource(instance, source, offset, size);
+            }
+            if (!FsbLoader.TryLoadFsbFromByteArray(fsbData, out FmodSoundBank? bank) ||
+                bank == null || bank.Samples == null || bank.Samples.Count == 0)
+                throw new InvalidDataException("The AudioClip FMOD sound bank could not be decoded.");
+            bank.Samples[0].RebuildAsStandardFileFormat(out var sampleData, out var sampleExtension);
+            if (sampleData == null || sampleData.Length == 0 || string.IsNullOrWhiteSpace(sampleExtension))
+                throw new InvalidDataException("The audio decoder returned an empty or unsupported sample.");
+            string extension = sampleExtension.Trim().TrimStart('.').ToLowerInvariant();
+            if (extension == "wav") FixPreviewWav(ref sampleData);
+            return new AssetExportPayload(sampleData, "." + extension, false);
+        }
+
+        if (typeId == (int)AssetClassID.Font)
+        {
+            var template = manager.GetTemplateBaseField(instance, asset)
+                ?? throw new InvalidDataException("Font type information could not be read.");
+            var fontDataTemplate = template.Children.FirstOrDefault(x => x.Name == "m_FontData");
+            if (fontDataTemplate == null || fontDataTemplate.Children.Count == 0)
+                throw new InvalidDataException("This Font has no embedded m_FontData.");
+            fontDataTemplate.Children[0].ValueType = AssetValueType.ByteArray;
+            AssetTypeValueField field;
+            var reader = instance.file.Reader;
+            lock (reader)
+                field = template.MakeValue(reader, asset.GetAbsoluteByteStart(instance.file), null);
+            byte[] bytes = field["m_FontData.Array"]?.AsByteArray ?? Array.Empty<byte>();
+            if (bytes.Length == 0)
+                throw new InvalidDataException("This Font uses external or built-in font data and cannot be exported as TTF/OTF.");
+            string extension = bytes.Length >= 4 && bytes[0] == 0x4F && bytes[1] == 0x54 &&
+                bytes[2] == 0x54 && bytes[3] == 0x4F ? ".otf" : ".ttf";
+            return new AssetExportPayload(bytes, extension, false);
+        }
+
+        if (typeId == (int)AssetClassID.TextAsset)
+        {
+            var field = GetAssetBaseField(instance, asset, manager)
+                ?? throw new InvalidDataException("TextAsset data could not be read.");
+            byte[] bytes = field["m_Script"]?.AsByteArray ?? Array.Empty<byte>();
+            return new AssetExportPayload(bytes, ".txt", false);
+        }
+
+        if (typeId == (int)AssetClassID.Mesh)
+        {
+            var field = GetAssetBaseField(instance, asset, manager)
+                ?? throw new InvalidDataException("Mesh data could not be read.");
+            MeshStreamInfo stream = MeshPreviewDataReader.ReadStreamInfo(field);
+            byte[]? streamedData = null;
+            if (stream.Size > 0 && !string.IsNullOrWhiteSpace(stream.Path))
+            {
+                try { streamedData = ReadResourceWithBundleFallback(instance, stream.Path, stream.Offset, stream.Size); }
+                catch (FileNotFoundException ex) { throw new FileNotFoundException(ex.Message, stream.Path, ex); }
+            }
+            var mesh = MeshPreviewDataReader.Read(field, streamedData);
+            var obj = new StringBuilder(Math.Max(256, mesh.Vertices.Length * 48));
+            obj.AppendLine("# Exported by UABE Avalonia");
+            foreach (var vertex in mesh.Vertices)
+                obj.Append("v ").Append(vertex.X.ToString("R", CultureInfo.InvariantCulture)).Append(' ')
+                    .Append(vertex.Y.ToString("R", CultureInfo.InvariantCulture)).Append(' ')
+                    .Append(vertex.Z.ToString("R", CultureInfo.InvariantCulture)).AppendLine();
+            if (mesh.UVs != null && mesh.UVs.Length == mesh.Vertices.Length)
+                foreach (var uv in mesh.UVs)
+                    obj.Append("vt ").Append(uv.X.ToString("R", CultureInfo.InvariantCulture)).Append(' ')
+                        .Append(uv.Y.ToString("R", CultureInfo.InvariantCulture)).AppendLine();
+            for (int i = 0; i + 2 < mesh.Indices.Length; i += 3)
+            {
+                int a = mesh.Indices[i] + 1, b = mesh.Indices[i + 1] + 1, c = mesh.Indices[i + 2] + 1;
+                if (a <= 0 || b <= 0 || c <= 0 ||
+                    a > mesh.Vertices.Length || b > mesh.Vertices.Length || c > mesh.Vertices.Length)
+                    continue;
+                if (mesh.UVs != null && mesh.UVs.Length == mesh.Vertices.Length)
+                    obj.Append("f ").Append(a).Append('/').Append(a).Append(' ')
+                        .Append(b).Append('/').Append(b).Append(' ').Append(c).Append('/').Append(c).AppendLine();
+                else
+                    obj.Append("f ").Append(a).Append(' ').Append(b).Append(' ').Append(c).AppendLine();
+            }
+            return new AssetExportPayload(Encoding.UTF8.GetBytes(obj.ToString()), ".obj", false);
+        }
+
+        if (typeId == (int)AssetClassID.Cubemap)
+        {
+            var field = ReadTextureFieldForPreview(manager, instance, asset);
+            int width = (int)ReadFieldInt64(GetChildField(field, "m_Width"));
+            int height = (int)ReadFieldInt64(GetChildField(field, "m_Height"));
+            var format = (TextureFormat)ReadFieldInt64(GetChildField(field, "m_TextureFormat"));
+            var imageField = GetChildField(field, "m_ImageData") ?? GetChildField(field, "image data");
+            byte[] imageData = imageField?.AsByteArray ?? Array.Empty<byte>();
+            var streamData = GetChildField(field, "m_StreamData");
+            ulong offset = ReadUnsignedField(GetChildField(streamData, "offset")!);
+            ulong size = ReadUnsignedField(GetChildField(streamData, "size")!);
+            string path = ReadFieldString(GetChildField(streamData, "path"));
+            if (size > 0 && !string.IsNullOrWhiteSpace(path))
+            {
+                try { imageData = ReadResourceWithBundleFallback(instance, path, offset, size); }
+                catch (FileNotFoundException ex) { throw new FileNotFoundException(ex.Message, path, ex); }
+            }
+            if (width <= 0 || height <= 0 || width > 4096 || height > 4096 ||
+                imageData.Length == 0 || imageData.Length % 6 != 0)
+                throw new InvalidDataException("The Cubemap payload cannot be safely split into six faces.");
+            int faceSize = imageData.Length / 6;
+            string[] names = { "PositiveX", "NegativeX", "PositiveY", "NegativeY", "PositiveZ", "NegativeZ" };
+            using var zipMemory = new MemoryStream();
+            using (var archive = new ZipArchive(zipMemory, ZipArchiveMode.Create, true))
+            {
+                for (int face = 0; face < 6; face++)
+                {
+                    var faceData = new byte[faceSize];
+                    Buffer.BlockCopy(imageData, face * faceSize, faceData, 0, faceSize);
+                    int[] pixels = DecodeTexturePixelsToArgb(faceData, format, width, height);
+                    byte[] png = EncodePixelsAsPng(pixels, width, height);
+                    var entry = archive.CreateEntry(names[face] + ".png", CompressionLevel.Optimal);
+                    using var entryStream = entry.Open();
+                    entryStream.Write(png, 0, png.Length);
+                }
+            }
+            return new AssetExportPayload(zipMemory.ToArray(), ".zip", false);
+        }
+
+        // Preserve every other Unity object as its original serialized payload.
+        return new AssetExportPayload(null, ".assetdata", true);
+    }
+
+    private byte[] ExportSpritePng(AssetsManager manager, AssetsFileInstance instance, AssetFileInfo spriteAsset)
+    {
+        var sprite = GetAssetBaseField(instance, spriteAsset, manager)
+            ?? throw new InvalidDataException("Sprite data could not be read.");
+        var renderData = GetChildField(sprite, "m_RD");
+        var texturePointer = GetChildField(renderData, "texture");
+        if (texturePointer == null || texturePointer.IsDummy)
+            texturePointer = GetChildField(sprite, "m_Texture");
+        long texturePathId = ReadFieldInt64(GetChildField(texturePointer, "m_PathID"));
+        var textureAsset = instance.file.AssetInfos.FirstOrDefault(x =>
+            x.PathId == texturePathId && x.GetTypeId(instance.file) == (int)AssetClassID.Texture2D);
+        if (textureAsset == null)
+            throw new NotSupportedException("The Sprite's Texture2D is not in the currently opened assets file.");
+        var textureField = ReadTextureFieldForPreview(manager, instance, textureAsset);
+        var texture = TextureFile.ReadTextureFile(textureField);
+        byte[] data = texture.pictureData ?? Array.Empty<byte>();
+        var streamData = GetChildField(textureField, "m_StreamData");
+        ulong offset = ReadUnsignedField(GetChildField(streamData, "offset")!);
+        ulong size = ReadUnsignedField(GetChildField(streamData, "size")!);
+        string path = ReadFieldString(GetChildField(streamData, "path"));
+        if (size > 0 && !string.IsNullOrWhiteSpace(path))
+        {
+            try { data = ReadResourceWithBundleFallback(instance, path, offset, size); }
+            catch (FileNotFoundException ex) { throw new FileNotFoundException(ex.Message, path, ex); }
+        }
+        int width = texture.m_Width, height = texture.m_Height;
+        int[] pixels = DecodeTexturePixelsToArgb(data, (TextureFormat)texture.m_TextureFormat, width, height);
+
+        var rect = GetChildField(renderData, "textureRect");
+        float rx = ReadFieldFloat(GetChildField(rect, "x"), float.NaN);
+        float ry = ReadFieldFloat(GetChildField(rect, "y"), float.NaN);
+        float rw = ReadFieldFloat(GetChildField(rect, "width"), float.NaN);
+        float rh = ReadFieldFloat(GetChildField(rect, "height"), float.NaN);
+        if (!(rw > 0 && rh > 0) && TryReadSpriteUvRect(renderData, width, height,
+            out float uvX, out float uvY, out float uvWidth, out float uvHeight))
+        {
+            rx = uvX; ry = uvY; rw = uvWidth; rh = uvHeight;
+        }
+        else if (!(rw > 0 && rh > 0))
+        {
+            rect = GetChildField(sprite, "m_Rect");
+            rx = ReadFieldFloat(GetChildField(rect, "x"));
+            ry = ReadFieldFloat(GetChildField(rect, "y"));
+            rw = ReadFieldFloat(GetChildField(rect, "width"));
+            rh = ReadFieldFloat(GetChildField(rect, "height"));
+        }
+
+        int cropX = 0, cropY = 0, cropW = width, cropH = height;
+        if (rw > 0 && rh > 0)
+        {
+            int rectX = (int)Math.Floor(rx);
+            int rectY = (int)Math.Floor(ry);
+            int right = Math.Min((int)Math.Ceiling(rx + rw), width);
+            int bottom = Math.Min((int)Math.Ceiling(ry + rh), height);
+            cropX = Math.Clamp(rectX, 0, width - 1);
+            cropY = Math.Clamp(height - bottom, 0, height - 1);
+            cropW = Math.Clamp(right - rectX, 1, width - cropX);
+            cropH = Math.Clamp(bottom - rectY, 1, height - cropY);
+        }
+
+        using var decoded = global::Android.Graphics.Bitmap.CreateBitmap(
+            width, height, global::Android.Graphics.Bitmap.Config.Argb8888!);
+        decoded.SetPixels(pixels, 0, width, 0, 0, width, height);
+        using var cropped = global::Android.Graphics.Bitmap.CreateBitmap(decoded, cropX, cropY, cropW, cropH);
+        global::Android.Graphics.Bitmap finalSprite = cropped;
+        global::Android.Graphics.Bitmap? packedSprite = null;
+        var settings = GetChildField(renderData, "settingsRaw");
+        long packed = ReadFieldInt64(GetChildField(settings, "packed"));
+        long rotation = ReadFieldInt64(GetChildField(settings, "packingRotation"));
+        if (packed == 1 && rotation is >= 1 and <= 4)
+        {
+            using var matrix = new global::Android.Graphics.Matrix();
+            switch (rotation)
+            {
+                case 1: matrix.SetScale(-1f, 1f); matrix.PostTranslate(cropW, 0f); break;
+                case 2: matrix.SetScale(1f, -1f); matrix.PostTranslate(0f, cropH); break;
+                case 3: matrix.SetRotate(180f, cropW / 2f, cropH / 2f); break;
+                case 4: matrix.SetRotate(-90f, cropW / 2f, cropH / 2f); break;
+            }
+            packedSprite = global::Android.Graphics.Bitmap.CreateBitmap(cropped, 0, 0, cropW, cropH, matrix, true);
+            finalSprite = packedSprite;
+        }
+        using var output = new MemoryStream();
+        finalSprite.Compress(global::Android.Graphics.Bitmap.CompressFormat.Png!, 100, output);
+        packedSprite?.Dispose();
+        return output.ToArray();
+    }
+
+    private static byte[] EncodePixelsAsPng(int[] pixels, int width, int height)
+    {
+        if (width <= 0 || height <= 0 || pixels.Length != checked(width * height))
+            throw new InvalidDataException("Decoded image dimensions do not match the pixel data.");
+        using var bitmap = global::Android.Graphics.Bitmap.CreateBitmap(
+            width, height, global::Android.Graphics.Bitmap.Config.Argb8888!);
+        bitmap.SetPixels(pixels, 0, width, 0, 0, width, height);
+        using var output = new MemoryStream();
+        if (!bitmap.Compress(global::Android.Graphics.Bitmap.CompressFormat.Png!, 100, output))
+            throw new InvalidDataException("Android could not encode the PNG image.");
+        return output.ToArray();
+    }
+
+    private static string SanitizeExportName(string value)
+    {
+        if (string.IsNullOrWhiteSpace(value)) return "Asset";
+        var invalid = Path.GetInvalidFileNameChars();
+        var chars = value.Select(ch => invalid.Contains(ch) || ch == '/' || ch == '\\' ? '_' : ch).ToArray();
+        string result = new string(chars).Trim().Trim('.');
+        return string.IsNullOrWhiteSpace(result) ? "Asset" : result;
+    }
+
+    private async Task OpenBundleEntryAsync(string entryName)
+    {
+        if (_currentBundle is null || _assetsManager is null) return;
+        var bundle = _currentBundle;
+        var manager = _assetsManager;
+        SetLoading(true, $"Opening {entryName}...");
+        try
+        {
+            var result = await Task.Run(() =>
+            {
+                var entries = bundle.file.BlockAndDirInfo.DirectoryInfos;
+                var index = Array.FindIndex(entries,
+                    x => string.Equals(x.Name, entryName, StringComparison.Ordinal));
+                if (index < 0) throw new InvalidDataException("Bundle entry not found.");
+                var entry = entries[index];
+
+                if ((entry.Flags & 0x04) != 0)
+                {
+                    var assets = manager.LoadAssetsFileFromBundle(bundle, index, false);
+                    var version = assets.file.Metadata.UnityVersion;
+                    if (string.IsNullOrWhiteSpace(version) || version == "0.0.0")
+                        version = bundle.file.Header.EngineVersion;
+                    LoadClassDatabase(manager, version);
+
+                    var rows = BuildAssetRows(manager, assets);
+                    return (Assets: assets, Rows: rows, IsSerialized: true,
+                        Name: entry.Name, Kind: GetEntryKind(entry.Name),
+                        Size: entry.DecompressedSize, Offset: entry.Offset);
+                }
+
+                return (Assets: (AssetsFileInstance?)null, Rows: new List<AssetRow>(),
+                    IsSerialized: false, Name: entry.Name, Kind: GetEntryKind(entry.Name),
+                    Size: entry.DecompressedSize, Offset: entry.Offset);
+            });
+
+            if (result.IsSerialized && result.Assets is not null)
+            {
+                _currentAssets = result.Assets;
+                _assetRows = result.Rows;
+                _currentPage = BrowserPage.Assets;
+                _currentRows = result.Rows.Select(row => new RowData(row.Name,
+                    $"{row.TypeName} • {FormatSize(row.Info.ByteSize)}",
+                    GetAssetIcon(row.TypeName), () => ShowAssetDetails(row.Info))).ToList();
+                _status.Text = $"Assets file: {result.Assets.name}\nAssets: {_currentRows.Count}";
+                _searchBox.IsVisible = true;
+                _filterButton.IsVisible = true;
+                _filterBox.IsVisible = false;
+                SetFilterOptions(result.Rows.Select(row => row.TypeName));
+                _searchBox.Watermark = "Search by asset name or type...";
+                _searchBox.Text = "";
+                _visibleRows = 0;
+                RefreshCurrentList();
+            }
+            else
+            {
+                _currentPage = BrowserPage.EntryDetails;
+                _searchBox.IsVisible = false;
+                _filterButton.IsVisible = false;
+                _filterBox.IsVisible = false;
+                _items.Children.Clear();
+                AddDetail("Name", result.Name);
+                AddDetail("Kind", result.Kind);
+                AddDetail("Size", FormatSize(result.Size));
+                AddDetail("Offset", result.Offset.ToString("N0") + " bytes");
+                AddDetail("Serialized", "No");
+                AddDetail("Note", "Raw bundle resource. Its internal data is not decoded in this view.");
+                _status.Text = $"Bundle entry: {result.Name}";
+                _loadMoreButton.IsVisible = false;
+            }
+            UpdateNavigation();
+        }
+        catch (Exception ex)
+        {
+            _status.Text = $"Could not read bundle entry:\n{ex.Message}";
+        }
+        finally { SetLoading(false); }
+    }
+
+    private async void ShowAssetDetails(AssetFileInfo asset)
+    {
+        if (_selectionMode) return;
+        if (_currentAssets is null || _assetsManager is null) return;
+        StopAudioPlayback();
+        var instance = _currentAssets;
+        var manager = _assetsManager;
+        _currentPage = BrowserPage.AssetDetails;
+        UpdateFloatingActions();
+        _searchBox.IsEnabled = true;
+        _searchBox.IsVisible = false;
+        _filterBox.IsVisible = false;
+        _filterButton.IsVisible = false;
+        BeginAssetDetailsLayer();
+        _items.Children.Clear();
+        _loadMoreButton.IsVisible = false;
+        UpdateNavigation();
+
+        var typeId = asset.GetTypeId(instance.file);
+        var typeName = Enum.GetName(typeof(AssetClassID), typeId) ?? $"Type {typeId}";
+        _status.Text = $"Reading asset details...\n{typeName}";
+        SetLoading(true);
+
+        string name;
+        try
+        {
+            name = await Task.Run(() => TryReadAssetName(manager, instance, asset, typeName));
+        }
+        catch
+        {
+            name = "Unnamed asset";
+        }
+        finally
+        {
+            SetLoading(false);
+        }
+
+        if (_currentAssets != instance || _currentPage != BrowserPage.AssetDetails)
+            return;
+
+        _status.Text = $"Asset • {name}";
+        AddDetail("Name", name);
+        AddDetail("Type", typeName);
+        AddDetail("Path ID", asset.PathId.ToString());
+        AddDetail("Type ID", typeId.ToString());
+        AddDetail("Data size", FormatSize(asset.ByteSize));
+        AddDetail("Relative data offset", asset.ByteStart.ToString("N0") + " bytes");
+        AddDetail("Absolute file offset",
+            asset.GetAbsoluteByteStart(instance.file).ToString("N0") + " bytes");
+        AddDetail("Source file", instance.name);
+
+        var extractButton = CreateDetailActionButton(MaterialIconKind.Export, "Extract", PrimaryBrush, OnPrimaryBrush);
+        extractButton.Click += (_, _) => ShowAssetFormatMenu(asset, false, extractButton);
+        _items.Children.Add(extractButton);
+        var replaceButton = CreateDetailActionButton(MaterialIconKind.FileUpload, "Replace", SurfaceHighBrush, TextBrush);
+        replaceButton.Click += (_, _) => ShowAssetFormatMenu(asset, true, replaceButton);
+        _items.Children.Add(replaceButton);
+        var deleteButton = CreateDetailActionButton(MaterialIconKind.Delete, "Delete", Brush.Parse("#51252B"), TextBrush);
+        deleteButton.Click += (_, _) => QueueAssetDeletion(asset);
+        _items.Children.Add(deleteButton);
+
+        if (typeId == (int)AssetClassID.TextAsset)
+        {
+            await ShowTextAssetPreviewAsync(manager, instance, asset);
+        }
+        else if (typeId == (int)AssetClassID.Texture2D)
+        {
+            await ShowTexturePreviewAsync(manager, instance, asset);
+        }
+        else if (typeId == (int)AssetClassID.Sprite)
+        {
+            await ShowSpritePreviewAsync(manager, instance, asset);
+        }
+        else if (typeId == (int)AssetClassID.Material)
+        {
+            await ShowMaterialPreviewAsync(manager, instance, asset);
+        }
+        else if (typeId == (int)AssetClassID.AudioClip)
+        {
+            await ShowAudioClipPreviewAsync(manager, instance, asset);
+        }
+        else if (typeId == (int)AssetClassID.Font)
+        {
+            await ShowFontPreviewAsync(manager, instance, asset);
+        }
+        else if (typeId == (int)AssetClassID.Mesh)
+        {
+            await ShowMeshPreviewAsync(manager, instance, asset);
+        }
+        else if (typeName.Contains("Cubemap", StringComparison.OrdinalIgnoreCase))
+        {
+            await ShowCubemapPreviewAsync(manager, instance, asset);
+        }
+        else if (typeName.Contains("GameObject", StringComparison.OrdinalIgnoreCase))
+        {
+            await ShowGameObjectPreviewAsync(manager, instance, asset);
+        }
+    }
+
+    private async Task ShowCubemapPreviewAsync(
+        AssetsManager manager, AssetsFileInstance instance, AssetFileInfo asset)
+    {
+        var loadingCard = AddPreviewLoadingCard("360° Cubemap preview", MaterialIconKind.Image);
+        int[][]? faces = null;
+        Avalonia.Media.Imaging.Bitmap[] faceBitmaps = Array.Empty<Avalonia.Media.Imaging.Bitmap>();
+        string? error = null;
+        string? resourceSource = null;
+        bool needsExternalResource = false;
+        int width = 0, height = 0;
+        string formatName = "Unknown";
+
+        try
+        {
+            var decoded = await Task.Run(() =>
+            {
+                var field = ReadTextureFieldForPreview(manager, instance, asset);
+                if (field == null)
+                    throw new InvalidDataException("Cubemap data could not be read.");
+
+                int w = (int)ReadFieldInt64(GetChildField(field, "m_Width"));
+                int h = (int)ReadFieldInt64(GetChildField(field, "m_Height"));
+                int formatValue = (int)ReadFieldInt64(GetChildField(field, "m_TextureFormat"));
+                var format = (TextureFormat)formatValue;
+                if (w <= 0 || h <= 0 || w > 4096 || h > 4096)
+                    throw new InvalidDataException("Cubemap dimensions are invalid or unsupported.");
+
+                var imageField = GetChildField(field, "m_ImageData") ??
+                    GetChildField(field, "image data");
+                if (imageField == null)
+                    throw new InvalidDataException("This Cubemap does not contain readable image data.");
+                byte[] imageData = imageField.AsByteArray ?? Array.Empty<byte>();
+                var streamData = GetChildField(field, "m_StreamData");
+                ulong streamOffset = ReadUnsignedField(GetChildField(streamData, "offset")!);
+                ulong streamSize = ReadUnsignedField(GetChildField(streamData, "size")!);
+                string streamPath = ReadFieldString(GetChildField(streamData, "path"));
+                if (streamSize > 0 && !string.IsNullOrWhiteSpace(streamPath))
+                {
+                    try
+                    {
+                        imageData = ReadResourceWithBundleFallback(instance, streamPath, streamOffset, streamSize);
+                    }
+                    catch (FileNotFoundException)
+                    {
+                        throw new FileNotFoundException("The Cubemap's matching external texture stream is missing.", streamPath);
+                    }
+                }
+
+                if (imageData.Length < 6 || imageData.Length % 6 != 0)
+                    throw new InvalidDataException("The Cubemap payload cannot be split into six equal face payloads. This serialized layout is not supported yet.");
+
+                int faceSize = imageData.Length / 6;
+                var decodedFaces = new int[6][];
+                for (int faceIndex = 0; faceIndex < 6; faceIndex++)
+                {
+                    var faceData = new byte[faceSize];
+                    Buffer.BlockCopy(imageData, faceIndex * faceSize, faceData, 0, faceSize);
+                    decodedFaces[faceIndex] = DecodeTexturePixelsToArgb(faceData, format, w, h);
+                }
+                return (Faces: decodedFaces, Width: w, Height: h, Format: format.ToString(), StreamPath: streamPath);
+            });
+
+            faces = decoded.Faces;
+            width = decoded.Width;
+            height = decoded.Height;
+            formatName = decoded.Format;
+            resourceSource = decoded.StreamPath;
+            faceBitmaps = await Task.Run(() =>
+            {
+                var result = new Avalonia.Media.Imaging.Bitmap[6];
+                for (int i = 0; i < 6; i++)
+                {
+                    using var bitmap = global::Android.Graphics.Bitmap.CreateBitmap(
+                        width, height, global::Android.Graphics.Bitmap.Config.Argb8888!);
+                    bitmap.SetPixels(faces[i], 0, width, 0, 0, width, height);
+                    using var png = new MemoryStream();
+                    bitmap.Compress(global::Android.Graphics.Bitmap.CompressFormat.Png!, 100, png);
+                    png.Position = 0;
+                    result[i] = new Avalonia.Media.Imaging.Bitmap(png);
+                }
+                return result;
+            });
+        }
+        catch (FileNotFoundException ex)
+        {
+            error = ex.Message;
+            needsExternalResource = !string.IsNullOrWhiteSpace(ex.FileName);
+            resourceSource = ex.FileName;
+        }
+        catch (Exception ex)
+        {
+            error = $"{ex.GetType().Name}: {ex.Message}";
+        }
+
+        if (_currentAssets != instance || _currentPage != BrowserPage.AssetDetails)
+        {
+            RemovePreviewLoadingCard(loadingCard);
+            foreach (var bitmap in faceBitmaps) bitmap.Dispose();
+            return;
+        }
+
+        RemovePreviewLoadingCard(loadingCard);
+        if (faces == null && needsExternalResource && !string.IsNullOrWhiteSpace(resourceSource))
+        {
+            AddResourceRequestCard("360° Cubemap preview", resourceSource,
+                "This Cubemap needs an external image stream. The file is requested only after you press the button.",
+                MaterialIconKind.Image,
+                () => ChooseSessionResourceAsync(resourceSource, instance),
+                () => ShowCubemapPreviewAsync(manager, instance, asset));
+            return;
+        }
+
+        if (faces == null || faceBitmaps.Length != 6)
+        {
+            _items.Children.Add(CreatePreviewCard("360° Cubemap preview",
+                new TextBlock
+                {
+                    Text = "Preview unavailable: " + (error ?? "The six Cubemap faces could not be decoded."),
+                    Foreground = TextBrush,
+                    TextWrapping = TextWrapping.Wrap
+                }, MaterialIconKind.Image));
+            return;
+        }
+
+        var inlineViewer = new CubemapPreviewControl(faces, width, height)
+        {
+            HorizontalAlignment = HorizontalAlignment.Stretch,
+            Height = 280
+        };
+        inlineViewer.DetachedFromVisualTree += (_, _) =>
+        {
+            inlineViewer.Dispose();
+            foreach (var bitmap in faceBitmaps) bitmap.Dispose();
+        };
+        var openFullscreen = new Button
+        {
+            Content = CreateIcon(MaterialIconKind.ArrowExpand, 18, TextBrush),
+            Background = SurfaceHighBrush,
+            Foreground = TextBrush,
+            CornerRadius = new CornerRadius(10),
+            Width = 42,
+            Height = 40,
+            Padding = new Thickness(0),
+            HorizontalAlignment = HorizontalAlignment.Right
+        };
+        openFullscreen.Click += (_, _) =>
+        {
+            CubemapPreviewControl? largeViewer = null;
+            try
+            {
+                largeViewer = new CubemapPreviewControl(faces, width, height)
+                {
+                    HorizontalAlignment = HorizontalAlignment.Stretch,
+                    VerticalAlignment = VerticalAlignment.Stretch,
+                    MinHeight = 0,
+                    Height = double.NaN
+                };
+
+                var overlay = new Border
+                {
+                    Background = BackgroundBrush,
+                    Padding = new Thickness(10),
+                    HorizontalAlignment = HorizontalAlignment.Stretch,
+                    VerticalAlignment = VerticalAlignment.Stretch
+                };
+                var close = new Button
+                {
+                    Content = "Close",
+                    Background = SurfaceHighBrush,
+                    Foreground = TextBrush,
+                    CornerRadius = new CornerRadius(10),
+                    MinHeight = 42,
+                    MinWidth = 76
+                };
+                close.Click += (_, _) => CloseFullscreenOverlay();
+
+                var facePanel = new Grid
+                {
+                    ColumnDefinitions = new ColumnDefinitions("*,*,*"),
+                    RowDefinitions = new RowDefinitions("Auto,Auto")
+                };
+                string[] faceNames = { "+X Right", "-X Left", "+Y Top", "-Y Bottom", "+Z Front", "-Z Back" };
+                for (int i = 0; i < 6; i++)
+                {
+                    int faceIndex = i;
+                    var cellContent = new StackPanel { Spacing = 3, Margin = new Thickness(2) };
+                    cellContent.Children.Add(new Image { Source = faceBitmaps[i], Stretch = Stretch.Uniform, MaxHeight = 76, HorizontalAlignment = HorizontalAlignment.Stretch });
+                    cellContent.Children.Add(new TextBlock { Text = faceNames[i], FontSize = 10, Foreground = MutedBrush, HorizontalAlignment = HorizontalAlignment.Center });
+                    var cell = new Button { Content = cellContent, Background = SurfaceHighBrush, Foreground = TextBrush, Padding = new Thickness(3), CornerRadius = new CornerRadius(10), MinHeight = 96 };
+                    cell.Click += (_, _) => largeViewer.SetViewForFace(faceIndex);
+                    Grid.SetColumn(cell, i % 3);
+                    Grid.SetRow(cell, i / 3);
+                    facePanel.Children.Add(cell);
+                }
+
+                var brightnessLabel = new TextBlock
+                {
+                    Text = "Exposure · 100%",
+                    Foreground = TextBrush,
+                    VerticalAlignment = VerticalAlignment.Center
+                };
+                var brightness = new Slider
+                {
+                    Minimum = 0.15,
+                    Maximum = 2.5,
+                    Value = 1,
+                    MinWidth = 130
+                };
+                brightness.PropertyChanged += (_, args) =>
+                {
+                    if (args.Property == RangeBase.ValueProperty && largeViewer != null)
+                    {
+                        largeViewer.Brightness = brightness.Value;
+                        brightnessLabel.Text = $"Exposure · {(int)(brightness.Value * 100)}%";
+                    }
+                };
+                var zoomLabel = new TextBlock
+                {
+                    Text = "Zoom · 100%",
+                    Foreground = TextBrush,
+                    VerticalAlignment = VerticalAlignment.Center
+                };
+                var zoom = new Slider
+                {
+                    Minimum = 0.55,
+                    Maximum = 2.8,
+                    Value = 1,
+                    MinWidth = 130
+                };
+                zoom.PropertyChanged += (_, args) =>
+                {
+                    if (args.Property == RangeBase.ValueProperty && largeViewer != null)
+                    {
+                        largeViewer.Zoom = zoom.Value;
+                        zoomLabel.Text = $"Zoom · {(int)(zoom.Value * 100)}%";
+                    }
+                };
+                var reset = new Button
+                {
+                    Content = "Reset view",
+                    Background = SurfaceHighBrush,
+                    Foreground = TextBrush,
+                    CornerRadius = new CornerRadius(10),
+                    MinHeight = 42
+                };
+                reset.Click += (_, _) =>
+                {
+                    largeViewer.ResetView();
+                    brightness.Value = 1;
+                    zoom.Value = 1;
+                };
+
+                var header = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto") };
+                header.Children.Add(new TextBlock
+                {
+                    Text = $"Cubemap · {width} × {height} · {formatName}",
+                    Foreground = TextBrush,
+                    FontSize = 14,
+                    VerticalAlignment = VerticalAlignment.Center
+                });
+                Grid.SetColumn(close, 1);
+                header.Children.Add(close);
+
+                var controls = new StackPanel { Spacing = 8 };
+                var exposureRow = new Grid { ColumnDefinitions = new ColumnDefinitions("Auto,*") };
+                exposureRow.Children.Add(brightnessLabel);
+                Grid.SetColumn(brightness, 1);
+                exposureRow.Children.Add(brightness);
+                var zoomRow = new Grid { ColumnDefinitions = new ColumnDefinitions("Auto,*") };
+                zoomRow.Children.Add(zoomLabel);
+                Grid.SetColumn(zoom, 1);
+                zoomRow.Children.Add(zoom);
+                controls.Children.Add(exposureRow);
+                controls.Children.Add(zoomRow);
+                controls.Children.Add(reset);
+                controls.Children.Add(facePanel);
+
+                var layout = new Grid { RowDefinitions = new RowDefinitions("Auto,*,Auto") };
+                layout.Children.Add(header);
+                Grid.SetRow(largeViewer, 1);
+                layout.Children.Add(largeViewer);
+                Grid.SetRow(controls, 2);
+                layout.Children.Add(controls);
+                overlay.Child = layout;
+                ShowFullscreenOverlay(overlay, () => largeViewer.Dispose());
+            }
+            catch (Exception ex)
+            {
+                largeViewer?.Dispose();
+                _items.Children.Add(CreatePreviewCard("Cubemap fullscreen",
+                    new TextBlock { Text = "Could not open fullscreen viewer: " + ex.Message, Foreground = TextBrush }));
+            }
+        };
+
+        var top = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto") };
+        top.Children.Add(new TextBlock
+        {
+            Text = $"360° environment · {width} × {height} per face · {formatName}",
+            Foreground = MutedBrush,
+            FontSize = 11,
+            VerticalAlignment = VerticalAlignment.Center
+        });
+        Grid.SetColumn(openFullscreen, 1);
+        top.Children.Add(openFullscreen);
+
+        var content = new StackPanel { Spacing = 8 };
+        content.Children.Add(top);
+        content.Children.Add(inlineViewer);
+        content.Children.Add(new TextBlock
+        {
+            Text = "Drag to look around · Pinch to zoom · Fullscreen includes lighting and all six faces",
+            Foreground = MutedBrush,
+            FontSize = 11,
+            TextWrapping = TextWrapping.Wrap
+        });
+        _items.Children.Add(CreatePreviewCard("Cubemap • 360° viewer", content, MaterialIconKind.Image));
+    }
+
+    private async Task ShowGameObjectPreviewAsync(
+        AssetsManager manager, AssetsFileInstance instance, AssetFileInfo asset)
+    {
+        var loadingCard = AddPreviewLoadingCard("GameObject hierarchy", MaterialIconKind.CubeOutline);
+        var rows = new List<(int Depth, string Text, bool IsComponent)>();
+        string? error = null;
+
+        try
+        {
+            await Task.Run(() =>
+            {
+                var assetsByPath = instance.file.AssetInfos.ToDictionary(x => x.PathId);
+                var visited = new HashSet<long>();
+
+                AssetTypeValueField? ReadAsset(long pathId)
+                {
+                    if (!assetsByPath.TryGetValue(pathId, out var info))
+                        return null;
+                    return GetAssetBaseField(instance, info, manager);
+                }
+
+                void AddGameObject(long gameObjectPathId, int depth)
+                {
+                    if (depth > 80 || !visited.Add(gameObjectPathId))
+                        return;
+                    var gameObject = ReadAsset(gameObjectPathId);
+                    if (gameObject == null)
+                    {
+                        rows.Add((depth, $"Missing GameObject reference • Path ID {gameObjectPathId}", false));
+                        return;
+                    }
+
+                    string objectName = ReadFieldString(GetChildField(gameObject, "m_Name"));
+                    if (string.IsNullOrWhiteSpace(objectName))
+                        objectName = $"GameObject {gameObjectPathId}";
+                    rows.Add((depth, objectName, false));
+
+                    long transformPathId = 0;
+                    var components = GetChildField(GetChildField(gameObject, "m_Component"), "Array");
+                    if (components != null)
+                    {
+                        foreach (var componentEntry in components.Children)
+                        {
+                            if (componentEntry.Children.Count == 0) continue;
+                            var pointer = componentEntry[componentEntry.Children.Count - 1];
+                            long componentPathId = ReadFieldInt64(GetChildField(pointer, "m_PathID"));
+                            if (componentPathId == 0) continue;
+                            if (!assetsByPath.TryGetValue(componentPathId, out var componentInfo))
+                            {
+                                rows.Add((depth + 1, $"Missing component • Path ID {componentPathId}", true));
+                                continue;
+                            }
+
+                            int componentTypeId = componentInfo.GetTypeId(instance.file);
+                            string componentType = Enum.GetName(typeof(AssetClassID), componentTypeId) ??
+                                $"Class {componentTypeId}";
+                            rows.Add((depth + 1, componentType, true));
+                            if (componentTypeId == (int)AssetClassID.Transform ||
+                                componentTypeId == (int)AssetClassID.RectTransform)
+                                transformPathId = componentPathId;
+                        }
+                    }
+
+                    if (transformPathId == 0) return;
+                    var transform = ReadAsset(transformPathId);
+                    var children = GetChildField(GetChildField(transform, "m_Children"), "Array");
+                    if (children == null) return;
+                    foreach (var childPointer in children.Children)
+                    {
+                        long childTransformId = ReadFieldInt64(GetChildField(childPointer, "m_PathID"));
+                        if (childTransformId == 0) continue;
+                        var childTransform = ReadAsset(childTransformId);
+                        long childGameObjectId = ReadFieldInt64(
+                            GetChildField(GetChildField(childTransform, "m_GameObject"), "m_PathID"));
+                        if (childGameObjectId != 0)
+                            AddGameObject(childGameObjectId, depth + 1);
+                    }
+                }
+
+                AddGameObject(asset.PathId, 0);
+            });
+        }
+        catch (Exception ex)
+        {
+            error = ex.Message;
+        }
+
+        if (_currentAssets != instance || _currentPage != BrowserPage.AssetDetails)
+        {
+            RemovePreviewLoadingCard(loadingCard);
+            return;
+        }
+
+        RemovePreviewLoadingCard(loadingCard);
+        var content = new StackPanel { Spacing = 4 };
+        if (rows.Count > 0)
+        {
+            foreach (var row in rows)
+            {
+                content.Children.Add(new Border
+                {
+                    Background = row.IsComponent ? SurfaceBrush : SurfaceContainerBrush,
+                    CornerRadius = new CornerRadius(8),
+                    Padding = new Thickness(9, 7),
+                    Margin = new Thickness(row.Depth * 12, 1, 0, 1),
+                    Child = new TextBlock
+                    {
+                        Text = row.Text,
+                        Foreground = row.IsComponent ? MutedBrush : TextBrush,
+                        FontSize = row.IsComponent ? 12 : 14,
+                        FontWeight = row.IsComponent ? FontWeight.Normal : FontWeight.SemiBold,
+                        TextWrapping = TextWrapping.Wrap
+                    }
+                });
+            }
+            content.Children.Insert(0, new TextBlock
+            {
+                Text = $"Hierarchy • {rows.Count} entries • current assets file only",
+                Foreground = MutedBrush,
+                FontSize = 11
+            });
+        }
+        else
+        {
+            content.Children.Add(new TextBlock
+            {
+                Text = "Preview unavailable: " + (error ?? "No GameObject hierarchy or component references were found."),
+                Foreground = TextBrush,
+                TextWrapping = TextWrapping.Wrap
+            });
+        }
+
+        _items.Children.Add(CreatePreviewCard("GameObject / Prefab hierarchy", content, MaterialIconKind.CubeOutline));
+    }
+
+    private async Task ShowTexturePreviewAsync(
+        AssetsManager manager, AssetsFileInstance instance, AssetFileInfo asset)
+    {
+        var loadingCard = AddPreviewLoadingCard("Image preview", MaterialIconKind.Image);
+        Avalonia.Media.Imaging.Bitmap? previewBitmap = null;
+        string? error = null;
+        int previewWidth = 0;
+        int previewHeight = 0;
+        string? textureResourceSource = null;
+        bool needsExternalResource = false;
+
+        try
+        {
+            var imageResult = await Task.Run(() =>
+            {
+                // Match UABEA's TextureHelper.GetByteArrayTexture exactly:
+                // the Unity type tree can expose image data as an ordinary array,
+                // but TextureFile requires it to be read as a ByteArray. Sprite
+                // preview already uses this path; Texture2D must use it too.
+                var field = ReadTextureFieldForPreview(manager, instance, asset);
+                if (field == null)
+                    throw new InvalidDataException("Texture data could not be read.");
+                var texture = TextureFile.ReadTextureFile(field);
+                if (texture.m_Width <= 0 || texture.m_Height <= 0 ||
+                    texture.m_Width > 8192 || texture.m_Height > 8192)
+                    throw new InvalidDataException("Unsupported or invalid image dimensions.");
+
+                byte[] data = texture.pictureData ?? Array.Empty<byte>();
+                var streamData = GetChildField(field, "m_StreamData");
+                ulong streamOffset = ReadUnsignedField(GetChildField(streamData, "offset")!);
+                ulong streamSize = ReadUnsignedField(GetChildField(streamData, "size")!);
+                var streamPathField = GetChildField(streamData, "path");
+                string streamPath = streamPathField == null || streamPathField.IsDummy
+                    ? texture.m_StreamData.path ?? ""
+                    : streamPathField.AsString;
+                textureResourceSource = streamPath;
+                if (streamSize > 0 && !string.IsNullOrWhiteSpace(streamPath))
+                {
+                    try
+                    {
+                        data = ReadResourceWithBundleFallback(instance, streamPath, streamOffset, streamSize);
+                    }
+                    catch (FileNotFoundException)
+                    {
+                        needsExternalResource = true;
+                        throw;
+                    }
+                }
+
+                if (data.Length == 0)
+                    throw new InvalidDataException("This texture contains no image data.");
+
+                int width = texture.m_Width;
+                int height = texture.m_Height;
+                int[] pixels = DecodeTexturePixelsToArgb(
+                    data, (TextureFormat)texture.m_TextureFormat, width, height);
+
+                using var bitmap = global::Android.Graphics.Bitmap.CreateBitmap(
+                    width, height, global::Android.Graphics.Bitmap.Config.Argb8888!);
+                bitmap.SetPixels(pixels, 0, width, 0, 0, width, height);
+                using var output = new MemoryStream();
+                bitmap.Compress(global::Android.Graphics.Bitmap.CompressFormat.Png!, 100, output);
+                return (Png: output.ToArray(), Width: width, Height: height);
+            });
+
+            previewWidth = imageResult.Width;
+            previewHeight = imageResult.Height;
+            using var imageStream = new MemoryStream(imageResult.Png);
+            previewBitmap = new Avalonia.Media.Imaging.Bitmap(imageStream);
+        }
+        catch (Exception ex)
+        {
+            error = ex.Message;
+        }
+        finally { }
+
+        if (_currentAssets != instance || _currentPage != BrowserPage.AssetDetails)
+        {
+            RemovePreviewLoadingCard(loadingCard);
+            previewBitmap?.Dispose();
+            return;
+        }
+
+        RemovePreviewLoadingCard(loadingCard);
+        if (previewBitmap != null)
+        {
+            var image = new Image { Source = previewBitmap, Stretch = Stretch.Uniform, MaxHeight = 360 };
+            image.Tapped += (_, _) => OpenImageViewer(previewBitmap);
+            _items.Children.Add(CreatePreviewCard("Image preview", new StackPanel
+            {
+                Spacing = 5,
+                Children =
+                {
+                    new TextBlock { Text = $"{previewWidth}×{previewHeight} px", FontSize = 12, Foreground = TextBrush },
+                    image
+                }
+            }, MaterialIconKind.Image));
+        }
+        else if (needsExternalResource && !string.IsNullOrWhiteSpace(textureResourceSource))
+        {
+            AddResourceRequestCard("Image preview", textureResourceSource,
+                "This texture is stored in an external Unity resource. Select it only when you want to view the image.",
+                MaterialIconKind.Image,
+                () => ChooseSessionResourceAsync(textureResourceSource, instance),
+                () => ShowTexturePreviewAsync(manager, instance, asset));
+        }
+        else
+        {
+            _items.Children.Add(CreatePreviewCard("Image preview", new TextBlock
+            {
+                Text = "Preview unavailable: " + error,
+                Foreground = TextBrush,
+                TextWrapping = TextWrapping.Wrap
+            }, MaterialIconKind.Image));
+        }
+    }
+
+    private async Task ShowSpritePreviewAsync(
+        AssetsManager manager, AssetsFileInstance instance, AssetFileInfo spriteAsset)
+    {
+        var loadingCard = AddPreviewLoadingCard("Sprite preview", MaterialIconKind.Image);
+        Avalonia.Media.Imaging.Bitmap? previewBitmap = null;
+        string? error = null;
+        string? resourceSource = null;
+        bool needsExternalResource = false;
+        int sourceWidth = 0, sourceHeight = 0;
+        int spriteWidth = 0, spriteHeight = 0;
+
+        try
+        {
+            var result = await Task.Run(() =>
+            {
+                var sprite = GetAssetBaseField(instance, spriteAsset, manager);
+                if (sprite == null)
+                    throw new InvalidDataException("Sprite data could not be read.");
+
+                var renderData = GetChildField(sprite, "m_RD");
+                var texturePointer = GetChildField(renderData, "texture");
+                if (texturePointer == null || texturePointer.IsDummy)
+                    texturePointer = GetChildField(sprite, "m_Texture");
+                long texturePathId = ReadFieldInt64(GetChildField(texturePointer, "m_PathID"));
+                if (texturePathId == 0)
+                    throw new InvalidDataException("This Sprite does not reference a readable Texture2D.");
+
+                var textureAsset = instance.file.AssetInfos.FirstOrDefault(x => x.PathId == texturePathId);
+                if (textureAsset == null || textureAsset.GetTypeId(instance.file) != (int)AssetClassID.Texture2D)
+                    throw new NotSupportedException("The Sprite texture is not in the currently opened assets file. Open the matching texture assets file first.");
+
+                var textureField = ReadTextureFieldForPreview(manager, instance, textureAsset);
+                if (textureField == null)
+                    throw new InvalidDataException("The Sprite Texture2D could not be read.");
+
+                var texture = TextureFile.ReadTextureFile(textureField);
+                if (texture.m_Width <= 0 || texture.m_Height <= 0 ||
+                    texture.m_Width > 8192 || texture.m_Height > 8192)
+                    throw new InvalidDataException("The Sprite texture dimensions are invalid or unsupported.");
+
+                byte[] data = texture.pictureData ?? Array.Empty<byte>();
+                ulong streamOffset = ReadUnsignedField(GetChildField(GetChildField(textureField, "m_StreamData"), "offset")!);
+                ulong streamSize = ReadUnsignedField(GetChildField(GetChildField(textureField, "m_StreamData"), "size")!);
+                var streamField = GetChildField(GetChildField(textureField, "m_StreamData"), "path");
+                string streamPath = streamField == null || streamField.IsDummy ? texture.m_StreamData.path ?? "" : streamField.AsString;
+                resourceSource = streamPath;
+                if (streamSize > 0)
+                {
+                    try
+                    {
+                        data = ReadResourceWithBundleFallback(instance, streamPath, streamOffset, streamSize);
+                    }
+                    catch (FileNotFoundException)
+                    {
+                        needsExternalResource = true;
+                        throw;
+                    }
+                }
+
+                if (data.Length == 0)
+                    throw new InvalidDataException("The Sprite texture contains no image data.");
+
+                int width = texture.m_Width, height = texture.m_Height;
+                int[] pixels = DecodeTexturePixelsToArgb(
+                    data, (TextureFormat)texture.m_TextureFormat, width, height);
+
+                // For packed sprites, SpriteRenderData.textureRect is the atlas
+                // rectangle. If it is absent, derive the bounds from serialized UVs
+                // before falling back to the logical m_Rect.
+                var rect = GetChildField(renderData, "textureRect");
+                float rx = ReadFieldFloat(GetChildField(rect, "x"), float.NaN);
+                float ry = ReadFieldFloat(GetChildField(rect, "y"), float.NaN);
+                float rw = ReadFieldFloat(GetChildField(rect, "width"), float.NaN);
+                float rh = ReadFieldFloat(GetChildField(rect, "height"), float.NaN);
+                if (!(rw > 0 && rh > 0) &&
+                    TryReadSpriteUvRect(renderData, width, height,
+                        out float uvX, out float uvY, out float uvWidth, out float uvHeight))
+                {
+                    rx = uvX; ry = uvY; rw = uvWidth; rh = uvHeight;
+                }
+                else if (!(rw > 0 && rh > 0))
+                {
+                    rect = GetChildField(sprite, "m_Rect");
+                    rx = ReadFieldFloat(GetChildField(rect, "x"));
+                    ry = ReadFieldFloat(GetChildField(rect, "y"));
+                    rw = ReadFieldFloat(GetChildField(rect, "width"));
+                    rh = ReadFieldFloat(GetChildField(rect, "height"));
+                }
+
+                // Port the crop/scale/packing sequence from AssetStudio's
+                // SpriteHelper.CutImage. Unity stores textureRect in bottom-left
+                // coordinates, while the decoded Android bitmap is top-left.
+                var settings = GetChildField(renderData, "settingsRaw");
+                long packed = ReadFieldInt64(GetChildField(settings, "packed"));
+                long packingRotation = ReadFieldInt64(GetChildField(settings, "packingRotation"));
+                float downscale = ReadFieldFloat(
+                    GetChildField(renderData, "downscaleMultiplier"), 1f);
+                int scaledWidth = width;
+                int scaledHeight = height;
+                if (downscale > 0f && float.IsFinite(downscale) && Math.Abs(downscale - 1f) > 0.0001f)
+                {
+                    scaledWidth = Math.Max(1, (int)(width / downscale));
+                    scaledHeight = Math.Max(1, (int)(height / downscale));
+                }
+
+                int cropX = 0, cropY = 0, cropW = scaledWidth, cropH = scaledHeight;
+                if (rw > 0 && rh > 0)
+                {
+                    int rectX = (int)Math.Floor(rx);
+                    int rectY = (int)Math.Floor(ry);
+                    int rectRight = Math.Min((int)Math.Ceiling(rx + rw), scaledWidth);
+                    int rectBottom = Math.Min((int)Math.Ceiling(ry + rh), scaledHeight);
+                    cropX = Math.Clamp(rectX, 0, scaledWidth - 1);
+                    cropY = Math.Clamp(scaledHeight - rectBottom, 0, scaledHeight - 1);
+                    cropW = Math.Clamp(rectRight - rectX, 1, scaledWidth - cropX);
+                    cropH = Math.Clamp(rectBottom - rectY, 1, scaledHeight - cropY);
+                }
+
+                using var decodedBitmap = global::Android.Graphics.Bitmap.CreateBitmap(
+                    width, height, global::Android.Graphics.Bitmap.Config.Argb8888!);
+                decodedBitmap.SetPixels(pixels, 0, width, 0, 0, width, height);
+                using var scaledBitmap = scaledWidth != width || scaledHeight != height
+                    ? global::Android.Graphics.Bitmap.CreateScaledBitmap(
+                        decodedBitmap, scaledWidth, scaledHeight, true)
+                    : null;
+                var cropSource = scaledBitmap ?? decodedBitmap;
+                using var cropped = global::Android.Graphics.Bitmap.CreateBitmap(
+                    cropSource, cropX, cropY, cropW, cropH);
+
+                global::Android.Graphics.Bitmap finalSprite = cropped;
+                global::Android.Graphics.Bitmap? packedSprite = null;
+                if (packed == 1)
+                {
+                    using var matrix = new global::Android.Graphics.Matrix();
+                    switch (packingRotation)
+                    {
+                        case 1: // FlipHorizontal
+                            matrix.SetScale(-1f, 1f);
+                            matrix.PostTranslate(cropW, 0f);
+                            break;
+                        case 2: // FlipVertical
+                            matrix.SetScale(1f, -1f);
+                            matrix.PostTranslate(0f, cropH);
+                            break;
+                        case 3: // Rotate180
+                            matrix.SetRotate(180f, cropW / 2f, cropH / 2f);
+                            break;
+                        case 4: // AssetStudio rotates packed 90-degree sprites by 270 degrees
+                            matrix.SetRotate(-90f, cropW / 2f, cropH / 2f);
+                            break;
+                    }
+                    if (packingRotation is >= 1 and <= 4)
+                    {
+                        packedSprite = global::Android.Graphics.Bitmap.CreateBitmap(
+                            cropped, 0, 0, cropW, cropH, matrix, true);
+                        finalSprite = packedSprite;
+                    }
+                }
+
+                using var output = new MemoryStream();
+                finalSprite.Compress(global::Android.Graphics.Bitmap.CompressFormat.Png!, 100, output);
+                int finalWidth = finalSprite.Width;
+                int finalHeight = finalSprite.Height;
+                packedSprite?.Dispose();
+                return (Png: output.ToArray(), TextureWidth: width, TextureHeight: height,
+                    SpriteWidth: finalWidth, SpriteHeight: finalHeight);
+            });
+
+            sourceWidth = result.TextureWidth;
+            sourceHeight = result.TextureHeight;
+            spriteWidth = result.SpriteWidth;
+            spriteHeight = result.SpriteHeight;
+            using var stream = new MemoryStream(result.Png);
+            previewBitmap = new Avalonia.Media.Imaging.Bitmap(stream);
+        }
+        catch (Exception ex) { error = ex.Message; }
+
+        if (_currentAssets != instance || _currentPage != BrowserPage.AssetDetails)
+        {
+            RemovePreviewLoadingCard(loadingCard);
+            previewBitmap?.Dispose();
+            return;
+        }
+
+        RemovePreviewLoadingCard(loadingCard);
+        if (previewBitmap != null)
+        {
+            var image = new Image { Source = previewBitmap, Stretch = Stretch.Uniform, MaxHeight = 360 };
+            image.Tapped += (_, _) => OpenImageViewer(previewBitmap);
+            _items.Children.Add(CreatePreviewCard("Sprite preview", new StackPanel
+            {
+                Spacing = 6,
+                Children =
+                {
+                    new TextBlock { Text = $"{spriteWidth}×{spriteHeight} px • Texture {sourceWidth}×{sourceHeight} px", FontSize = 12, Foreground = TextBrush },
+                    image
+                }
+            }, MaterialIconKind.Image));
+        }
+        else if (needsExternalResource && !string.IsNullOrWhiteSpace(resourceSource))
+        {
+            AddResourceRequestCard("Sprite preview", resourceSource,
+                "This Sprite uses an external texture stream. Select the matching file only when you want to preview it.",
+                MaterialIconKind.Image,
+                () => ChooseSessionResourceAsync(resourceSource, instance),
+                () => ShowSpritePreviewAsync(manager, instance, spriteAsset));
+        }
+        else
+        {
+            _items.Children.Add(CreatePreviewCard("Sprite preview", new TextBlock
+            {
+                Text = "Preview unavailable: " + error,
+                Foreground = TextBrush, TextWrapping = TextWrapping.Wrap
+            }, MaterialIconKind.Image));
+        }
+    }
+
+    private static bool TryReadSpriteUvRect(
+        AssetTypeValueField? renderData, int textureWidth, int textureHeight,
+        out float x, out float y, out float width, out float height)
+    {
+        x = y = width = height = 0;
+        var uvs = GetChildField(renderData, "uvs");
+        var array = GetChildField(uvs, "Array");
+        var values = array?.Children ?? uvs?.Children;
+        if (values == null || values.Count < 3)
+            return false;
+
+        float minU = float.PositiveInfinity;
+        float minV = float.PositiveInfinity;
+        float maxU = float.NegativeInfinity;
+        float maxV = float.NegativeInfinity;
+        foreach (var vertex in values)
+        {
+            float u = ReadFieldFloat(GetChildField(vertex, "x"), float.NaN);
+            float v = ReadFieldFloat(GetChildField(vertex, "y"), float.NaN);
+            if (!float.IsFinite(u) || !float.IsFinite(v))
+                continue;
+            minU = Math.Min(minU, u);
+            minV = Math.Min(minV, v);
+            maxU = Math.Max(maxU, u);
+            maxV = Math.Max(maxV, v);
+        }
+
+        if (!float.IsFinite(minU) || !float.IsFinite(minV) ||
+            !float.IsFinite(maxU) || !float.IsFinite(maxV) ||
+            maxU <= minU || maxV <= minV)
+            return false;
+
+        // Sprite UVs are normalized and use Unity's bottom-left origin.
+        x = minU * textureWidth;
+        y = minV * textureHeight;
+        width = (maxU - minU) * textureWidth;
+        height = (maxV - minV) * textureHeight;
+        return x >= 0 && y >= 0 && x + width <= textureWidth + 1 &&
+            y + height <= textureHeight + 1;
+    }
+
+    private AssetTypeValueField ReadTextureFieldForPreview(
+        AssetsManager manager, AssetsFileInstance instance, AssetFileInfo asset)
+    {
+        // TextureFile expects image data as a byte array, including when the
+        // active session contains a replacement that has not been saved yet.
+        var template = manager.GetTemplateBaseField(instance, asset);
+        if (template == null)
+            throw new InvalidDataException("Texture type information could not be read.");
+
+        var imageData = template.Children.FirstOrDefault(x =>
+            x.Name == "image data" || x.Name == "m_ImageData");
+        if (imageData != null)
+            imageData.ValueType = AssetValueType.ByteArray;
+
+        var platformBlob = template.Children.FirstOrDefault(x => x.Name == "m_PlatformBlob");
+        if (platformBlob != null && platformBlob.Children.Count > 0)
+            platformBlob.Children[0].ValueType = AssetValueType.ByteArray;
+
+        if (_pendingAssetData.TryGetValue(new AssetID(instance.path, asset.PathId), out var replacementData))
+        {
+            using var stream = new MemoryStream(replacementData, writable: false);
+            using var replacementReader = new AssetsFileReader(stream);
+            replacementReader.BigEndian = instance.file.Reader.BigEndian;
+            return template.MakeValue(replacementReader);
+        }
+
+        var reader = instance.file.Reader;
+        lock (reader)
+        {
+            long absolutePosition = asset.GetAbsoluteByteStart(instance.file);
+            return template.MakeValue(reader, absolutePosition, null);
+        }
+    }
+
+    private static int[] DecodeTexturePixelsToArgb(
+        byte[] encodedData, TextureFormat format, int width, int height)
+    {
+        if (width <= 0 || height <= 0 || width > 8192 || height > 8192)
+            throw new InvalidDataException("Texture dimensions are invalid or unsupported.");
+
+        int pixelCount = checked(width * height);
+        // Prefer AssetStudio's native decoder for block-compressed formats
+        // (ETC/ETC2, ASTC, PVRTC, BCn and ATC). DecodeManaged is only a fallback
+        // for formats that AssetStudio's native decoder does not implement.
+        byte[]? decoded = AssetStudioTextureDecoder.TryDecode(
+            encodedData, format, width, height);
+        decoded ??= TextureFile.DecodeManaged(encodedData, format, width, height);
+        int requiredBytes = checked(pixelCount * 4);
+        if (decoded == null || decoded.Length < requiredBytes)
+            throw new NotSupportedException(
+                $"Texture format '{format}' is not supported or its pixel data is incomplete.");
+
+        // AssetsTools/AssetRipper's managed decoder returns BGRA byte pixels.
+        // Android Bitmap.SetPixels consumes packed ARGB integers. Convert once
+        // here so Texture2D and Sprite previews cannot diverge in channel order.
+        var pixels = new int[pixelCount];
+        for (int y = 0; y < height; y++)
+        {
+            int sourceY = height - 1 - y; // Unity texture rows are bottom-up.
+            int sourceRow = sourceY * width;
+            int targetRow = y * width;
+            for (int x = 0; x < width; x++)
+            {
+                int offset = (sourceRow + x) * 4;
+                int blue = decoded[offset];
+                int green = decoded[offset + 1];
+                int red = decoded[offset + 2];
+                int alpha = decoded[offset + 3];
+                pixels[targetRow + x] =
+                    (alpha << 24) | (red << 16) | (green << 8) | blue;
+            }
+        }
+        return pixels;
+    }
+
+    private long FindMaterialForMesh(AssetsManager manager, AssetsFileInstance instance, long meshPathId)
+    {
+        long gameObjectPathId = 0;
+        foreach (var info in instance.file.AssetInfos)
+        {
+            if (!string.Equals(Enum.GetName(typeof(AssetClassID), info.GetTypeId(instance.file)), "MeshFilter", StringComparison.Ordinal)) continue;
+            try
+            {
+                var filter = GetAssetBaseField(instance, info, manager);
+                long linkedMesh = ReadFieldInt64(GetChildField(GetChildField(filter, "m_Mesh"), "m_PathID"));
+                if (linkedMesh != meshPathId) continue;
+                gameObjectPathId = ReadFieldInt64(GetChildField(GetChildField(filter, "m_GameObject"), "m_PathID"));
+                if (gameObjectPathId != 0) break;
+            }
+            catch { }
+        }
+        if (gameObjectPathId == 0) return 0;
+        foreach (var info in instance.file.AssetInfos)
+        {
+            if (!string.Equals(Enum.GetName(typeof(AssetClassID), info.GetTypeId(instance.file)), "MeshRenderer", StringComparison.Ordinal)) continue;
+            try
+            {
+                var renderer = GetAssetBaseField(instance, info, manager);
+                long rendererGameObject = ReadFieldInt64(GetChildField(GetChildField(renderer, "m_GameObject"), "m_PathID"));
+                if (rendererGameObject != gameObjectPathId) continue;
+                var materials = GetChildField(GetChildField(renderer, "m_Materials"), "Array");
+                if (materials == null || materials.IsDummy) continue;
+                foreach (var material in materials.Children)
+                {
+                    long materialId = ReadFieldInt64(GetChildField(material, "m_PathID"));
+                    if (materialId != 0) return materialId;
+                }
+            }
+            catch { }
+        }
+        return 0;
+    }
+
+    private long FindFirstMaterialTexturePathId(AssetsManager manager, AssetsFileInstance instance, long materialPathId)
+    {
+        if (materialPathId == 0) return 0;
+        var materialAsset = instance.file.AssetInfos.FirstOrDefault(info => info.PathId == materialPathId);
+        if (materialAsset == null) return 0;
+        var material = GetAssetBaseField(instance, materialAsset, manager);
+        var saved = GetChildField(material, "m_SavedProperties");
+        var textures = GetChildField(GetChildField(saved, "m_TexEnvs"), "Array");
+        if (textures == null || textures.IsDummy) return 0;
+        foreach (var item in textures.Children)
+        {
+            var env = GetChildField(item, "second");
+            long textureId = ReadFieldInt64(GetChildField(GetChildField(env, "m_Texture"), "m_PathID"));
+            if (textureId != 0) return textureId;
+        }
+        return 0;
+    }
+
+    private (int[] Pixels, int Width, int Height, string ResourcePath) ReadMaterialTexturePixels(
+        AssetsManager manager, AssetsFileInstance instance, long texturePathId)
+    {
+        var textureAsset = instance.file.AssetInfos.FirstOrDefault(info =>
+            info.PathId == texturePathId && info.GetTypeId(instance.file) == (int)AssetClassID.Texture2D);
+        if (textureAsset == null) throw new InvalidDataException("The referenced Texture2D is not in the current assets file.");
+        var textureField = ReadTextureFieldForPreview(manager, instance, textureAsset);
+        var textureFile = TextureFile.ReadTextureFile(textureField);
+        int width = textureFile.m_Width, height = textureFile.m_Height;
+        if (width <= 0 || height <= 0 || width > 8192 || height > 8192)
+            throw new InvalidDataException("Material texture dimensions are invalid.");
+        byte[] bytes = textureFile.pictureData ?? Array.Empty<byte>();
+        var stream = GetChildField(textureField, "m_StreamData");
+        ulong offset = ReadUnsignedField(GetChildField(stream, "offset"));
+        ulong size = ReadUnsignedField(GetChildField(stream, "size"));
+        string path = ReadFieldString(GetChildField(stream, "path"));
+        if (size > 0 && !string.IsNullOrWhiteSpace(path))
+            bytes = ReadResourceWithBundleFallback(instance, path, offset, size);
+        if (bytes.Length == 0) throw new InvalidDataException("The referenced Texture2D contains no image data.");
+        return (DecodeTexturePixelsToArgb(bytes, (TextureFormat)textureFile.m_TextureFormat, width, height), width, height, path);
+    }
+    private async Task ShowMaterialPreviewAsync(
+        AssetsManager manager, AssetsFileInstance instance, AssetFileInfo asset)
+    {
+        var loadingCard = AddPreviewLoadingCard("Material preview", MaterialIconKind.PaletteOutline);
+        string? error = null;
+        string materialName = "Material";
+        string shaderName = "Unknown shader";
+        string colorName = "";
+        Color materialColor = Colors.White;
+        var properties = new List<string>();
+        long materialTexturePathId = 0;
+        string materialTextureProperty = "";
+
+        try
+        {
+            var data = await Task.Run(() =>
+            {
+                var field = GetAssetBaseField(instance, asset, manager);
+                if (field == null)
+                    throw new InvalidDataException("Material data could not be read.");
+
+                string name = ReadFieldString(GetChildField(field, "m_Name"));
+                var shader = GetChildField(field, "m_Shader");
+                long shaderPathId = ReadFieldInt64(GetChildField(shader, "m_PathID"));
+                string shaderLabel = shaderPathId == 0 ? "Built-in / missing shader reference" : $"Shader asset Path ID: {shaderPathId}";
+                if (shaderPathId != 0)
+                {
+                    var shaderAsset = instance.file.AssetInfos.FirstOrDefault(info => info.PathId == shaderPathId);
+                    if (shaderAsset != null)
+                    {
+                        try
+                        {
+                            var shaderField = GetAssetBaseField(instance, shaderAsset, manager);
+                            string actualShaderName = ReadFieldString(GetChildField(shaderField, "m_Name"));
+                            if (!string.IsNullOrWhiteSpace(actualShaderName)) shaderLabel = $"{actualShaderName} • Path ID {shaderPathId}";
+                        }
+                        catch { }
+                    }
+                }
+                string shaderKeywords = ReadFieldString(GetChildField(field, "m_ShaderKeywords"));
+                if (!string.IsNullOrWhiteSpace(shaderKeywords)) properties.Add("Shader keywords: " + shaderKeywords);
+                long renderQueue = ReadFieldInt64(GetChildField(field, "m_CustomRenderQueue"));
+                if (renderQueue >= 0) properties.Add("Custom render queue: " + renderQueue);
+
+                var saved = GetChildField(field, "m_SavedProperties");
+                var colors = GetChildField(GetChildField(saved, "m_Colors"), "Array");
+                string selectedColorName = "";
+                float red = 1, green = 1, blue = 1, alpha = 1;
+                if (colors != null && !colors.IsDummy)
+                {
+                    foreach (var item in colors.Children)
+                    {
+                        var keyField = GetChildField(item, "first");
+                        var valueField = GetChildField(item, "second");
+                        string key = ReadFieldString(keyField);
+                        if (string.IsNullOrWhiteSpace(key)) continue;
+                        float r = ReadFieldFloat(GetChildField(valueField, "r"));
+                        float g = ReadFieldFloat(GetChildField(valueField, "g"));
+                        float b = ReadFieldFloat(GetChildField(valueField, "b"));
+                        float a = ReadFieldFloat(GetChildField(valueField, "a"), 1);
+                        properties.Add($"{FormatShaderPropertyLabel(key)}: ({r:0.###}, {g:0.###}, {b:0.###}, {a:0.###})");
+                        if (key is "_Color" or "_BaseColor" || selectedColorName.Length == 0)
+                        {
+                            selectedColorName = key;
+                            red = r; green = g; blue = b; alpha = a;
+                        }
+                    }
+                }
+
+                var floats = GetChildField(GetChildField(saved, "m_Floats"), "Array");
+                if (floats != null && !floats.IsDummy)
+                foreach (var item in floats.Children)
+                {
+                    string key = ReadFieldString(GetChildField(item, "first"));
+                    var value = GetChildField(item, "second");
+                    if (!string.IsNullOrWhiteSpace(key))
+                        properties.Add($"{FormatShaderPropertyLabel(key)}: {ReadFieldFloat(value):0.###}");
+                }
+
+                var ints = GetChildField(GetChildField(saved, "m_Ints"), "Array");
+                if (ints != null && !ints.IsDummy)
+                foreach (var item in ints.Children)
+                {
+                    string key = ReadFieldString(GetChildField(item, "first"));
+                    var value = GetChildField(item, "second");
+                    if (!string.IsNullOrWhiteSpace(key))
+                        properties.Add($"{FormatShaderPropertyLabel(key)}: {ReadFieldInt64(value)}");
+                }
+
+                var textures = GetChildField(GetChildField(saved, "m_TexEnvs"), "Array");
+                if (textures != null && !textures.IsDummy)
+                foreach (var item in textures.Children)
+                {
+                    string key = ReadFieldString(GetChildField(item, "first"));
+                    var env = GetChildField(item, "second");
+                    long textureId = ReadFieldInt64(GetChildField(GetChildField(env, "m_Texture"), "m_PathID"));
+                    if (!string.IsNullOrWhiteSpace(key))
+                        properties.Add($"{FormatShaderPropertyLabel(key)}: {(textureId == 0 ? "No texture" : $"Texture Path ID {textureId}")}");
+                    if (textureId != 0 && (materialTexturePathId == 0 || key is "_MainTex" or "_BaseMap" or "_BaseColorMap" or "_BaseColorTexture"))
+                    { materialTexturePathId = textureId; materialTextureProperty = key; }
+                }
+
+                return (Name: string.IsNullOrWhiteSpace(name) ? "Material" : name,
+                    Shader: shaderLabel, ColorName: selectedColorName,
+                    R: red, G: green, B: blue, A: alpha, TexturePathId: materialTexturePathId, TextureProperty: materialTextureProperty);
+            });
+
+            materialName = data.Name;
+            shaderName = data.Shader;
+            colorName = data.ColorName;
+            materialTexturePathId = data.TexturePathId;
+            materialTextureProperty = data.TextureProperty;
+            materialColor = Color.FromArgb(
+                (byte)Math.Clamp((int)Math.Round(data.A * 255), 0, 255),
+                (byte)Math.Clamp((int)Math.Round(data.R * 255), 0, 255),
+                (byte)Math.Clamp((int)Math.Round(data.G * 255), 0, 255),
+                (byte)Math.Clamp((int)Math.Round(data.B * 255), 0, 255));
+        }
+        catch (Exception ex) { error = ex.Message; }
+
+        if (_currentAssets != instance || _currentPage != BrowserPage.AssetDetails)
+        {
+            RemovePreviewLoadingCard(loadingCard);
+            return;
+        }
+
+        RemovePreviewLoadingCard(loadingCard);
+        if (error != null)
+        {
+            _items.Children.Add(CreatePreviewCard("Material preview", new TextBlock
+            {
+                Text = "Preview unavailable: " + error,
+                Foreground = TextBrush, TextWrapping = TextWrapping.Wrap
+            }, MaterialIconKind.PaletteOutline));
+            return;
+        }
+
+        var sphereMesh = CreateMaterialSphereMesh(48, 32);
+        var sphere = new MeshPreviewControl(sphereMesh.Vertices, sphereMesh.Indices,
+            interactive: true, surfaceColor: materialColor, uvs: sphereMesh.UVs)
+        { Width = 280, Height = 280, HorizontalAlignment = HorizontalAlignment.Center, MinHeight = 240 };
+        var content = new StackPanel { Spacing = 8 };
+        content.Children.Add(sphere);
+        content.Children.Add(new TextBlock { Text = "Drag to rotate • Pinch to zoom", FontSize = 11, Foreground = MutedBrush, HorizontalAlignment = HorizontalAlignment.Center });
+        content.Children.Add(new TextBlock { Text = $"Shader: {shaderName}", Foreground = TextBrush, TextWrapping = TextWrapping.Wrap });
+
+        if (materialTexturePathId != 0)
+        {
+            var textureAsset = instance.file.AssetInfos.FirstOrDefault(info =>
+                info.PathId == materialTexturePathId && info.GetTypeId(instance.file) == (int)AssetClassID.Texture2D);
+            if (textureAsset != null)
+            {
+                try
+                {
+                    var decoded = await Task.Run(() => ReadMaterialTexturePixels(manager, instance, materialTexturePathId));
+                    sphere.SetTexture(decoded.Pixels, decoded.Width, decoded.Height);
+                    content.Children.Add(new TextBlock
+                    {
+                        Text = $"Texture: {materialTextureProperty} • {decoded.Width}×{decoded.Height}",
+                        Foreground = MutedBrush, FontSize = 11
+                    });
+                }
+                catch (FileNotFoundException ex) when (!string.IsNullOrWhiteSpace(ex.FileName))
+                {
+                    AddResourceRequestCard("Material texture", ex.FileName!,
+                        "This Material texture needs an external stream. Select the matching resource file to finish the preview.",
+                        MaterialIconKind.Image,
+                        () => ChooseSessionResourceAsync(ex.FileName!, instance),
+                        () => ShowMaterialPreviewAsync(manager, instance, asset));
+                    return;
+                }
+                catch (Exception ex)
+                {
+                    content.Children.Add(new TextBlock
+                    {
+                        Text = "Texture could not be loaded: " + ex.Message,
+                        Foreground = MutedBrush, TextWrapping = TextWrapping.Wrap
+                    });
+                }
+            }
+            else
+            {
+                content.Children.Add(new TextBlock
+                {
+                    Text = $"Texture Path ID {materialTexturePathId} is not present in the currently opened assets file.",
+                    Foreground = MutedBrush, TextWrapping = TextWrapping.Wrap
+                });
+            }
+        }
+        if (!string.IsNullOrEmpty(colorName)) content.Children.Add(new TextBlock { Text = $"Base color: {colorName}", Foreground = MutedBrush, FontSize = 12 });
+        content.Children.Add(new TextBlock { Text = $"Shader properties ({properties.Count})", Foreground = TextBrush, FontWeight = FontWeight.SemiBold });
+        foreach (string property in properties.Take(120)) content.Children.Add(new TextBlock { Text = property, Foreground = MutedBrush, FontSize = 12, TextWrapping = TextWrapping.Wrap });
+        if (properties.Count > 120) content.Children.Add(new TextBlock { Text = $"{properties.Count - 120} additional properties not shown.", Foreground = MutedBrush, FontSize = 11 });
+        _items.Children.Add(CreatePreviewCard(materialName, content, MaterialIconKind.PaletteOutline));
+    }
+
+    private static string FormatShaderPropertyLabel(string shaderPropertyName)
+    {
+        if (string.IsNullOrWhiteSpace(shaderPropertyName))
+            return shaderPropertyName;
+
+        // This is presentation-only. The original serialized key remains untouched
+        // and is still used for all Unity property lookups and future writes.
+        string name = shaderPropertyName.Trim().TrimStart('_');
+        if (name.Length == 0)
+            return shaderPropertyName;
+
+        var result = new System.Text.StringBuilder(name.Length + 8);
+        for (int i = 0; i < name.Length; i++)
+        {
+            char current = name[i];
+            if (current == '_' || current == '-' || current == ' ')
+            {
+                if (result.Length > 0 && result[result.Length - 1] != ' ')
+                    result.Append(' ');
+                continue;
+            }
+
+            if (i > 0 && char.IsUpper(current))
+            {
+                char previous = name[i - 1];
+                bool previousIsLowerOrDigit = char.IsLower(previous) || char.IsDigit(previous);
+                bool acronymEnds = char.IsUpper(previous) &&
+                    i + 1 < name.Length && char.IsLower(name[i + 1]);
+                if ((previousIsLowerOrDigit || acronymEnds) &&
+                    result.Length > 0 && result[result.Length - 1] != ' ')
+                    result.Append(' ');
+            }
+
+            result.Append(current);
+        }
+
+        string cleaned = result.ToString().Trim();
+        return cleaned.Length == 0 ? shaderPropertyName : cleaned;
+    }
+
+    private static MeshPreviewData CreateMaterialSphereMesh(int segments, int rings)
+    {
+        segments = Math.Clamp(segments, 12, 96);
+        rings = Math.Clamp(rings, 8, 64);
+        var vertices = new System.Numerics.Vector3[(rings + 1) * (segments + 1)];
+        var uvs = new System.Numerics.Vector2[vertices.Length];
+        for (int y = 0; y <= rings; y++)
+        {
+            float v = y / (float)rings;
+            float latitude = (v - 0.5f) * MathF.PI;
+            float ringRadius = MathF.Cos(latitude);
+            float py = MathF.Sin(latitude);
+            for (int x = 0; x <= segments; x++)
+            {
+                float u = x / (float)segments;
+                float longitude = u * MathF.PI * 2f;
+                uvs[y * (segments + 1) + x] = new System.Numerics.Vector2(u, 1f - v);
+                vertices[y * (segments + 1) + x] = new System.Numerics.Vector3(
+                    ringRadius * MathF.Cos(longitude),
+                    py,
+                    ringRadius * MathF.Sin(longitude));
+            }
+        }
+        var indices = new int[segments * rings * 6];
+        int index = 0;
+        for (int y = 0; y < rings; y++)
+        {
+            for (int x = 0; x < segments; x++)
+            {
+                int a = y * (segments + 1) + x;
+                int b = a + segments + 1;
+                indices[index++] = a;
+                indices[index++] = b;
+                indices[index++] = a + 1;
+                indices[index++] = a + 1;
+                indices[index++] = b;
+                indices[index++] = b + 1;
+            }
+        }
+        return new MeshPreviewData(vertices, indices, uvs);
+    }
+
+    private static AssetTypeValueField? GetChildField(AssetTypeValueField? parent, string name)
+    {
+        if (parent == null || parent.IsDummy) return null;
+        var child = parent[name];
+        return child == null || child.IsDummy ? null : child;
+    }
+
+    private static long ReadFieldInt64(AssetTypeValueField? field)
+    {
+        if (field == null || field.IsDummy || field.Value == null) return 0;
+        return field.Value.ValueType switch
+        {
+            AssetValueType.UInt8 => field.AsByte,
+            AssetValueType.UInt16 => field.AsUShort,
+            AssetValueType.UInt32 => field.AsUInt,
+            AssetValueType.UInt64 => unchecked((long)field.AsULong),
+            AssetValueType.Int8 => field.AsSByte,
+            AssetValueType.Int16 => field.AsShort,
+            AssetValueType.Int32 => field.AsInt,
+            AssetValueType.Int64 => field.AsLong,
+            _ => 0
+        };
+    }
+
+    private static float ReadFieldFloat(AssetTypeValueField? field, float fallback = 0)
+    {
+        if (field == null || field.IsDummy || field.Value == null) return fallback;
+        return field.Value.ValueType switch
+        {
+            AssetValueType.Float => field.AsFloat,
+            AssetValueType.Double => (float)field.AsDouble,
+            AssetValueType.Int8 => field.AsSByte,
+            AssetValueType.UInt8 => field.AsByte,
+            AssetValueType.Int16 => field.AsShort,
+            AssetValueType.UInt16 => field.AsUShort,
+            AssetValueType.Int32 => field.AsInt,
+            AssetValueType.UInt32 => field.AsUInt,
+            _ => fallback
+        };
+    }
+
+    private static string ReadFieldString(AssetTypeValueField? field) =>
+        field == null || field.IsDummy || field.Value == null ? "" : field.AsString;
+
+    private async Task ShowAudioClipPreviewAsync(
+        AssetsManager manager, AssetsFileInstance instance, AssetFileInfo asset)
+    {
+        var loadingCard = AddPreviewLoadingCard("Audio preview", MaterialIconKind.MusicNote);
+        string? tempAudioPath = null;
+        string? error = null;
+        string? audioName = null;
+        string? audioResourceSource = null;
+        bool needsExternalResource = false;
+        try
+        {
+            var audioFile = await Task.Run(() =>
+            {
+                var field = GetAssetBaseField(instance, asset, manager);
+                if (field == null)
+                    throw new InvalidDataException("AudioClip data could not be read.");
+
+                audioName = field["m_Name"]?.AsString;
+                // Match UABEA's AudioClip plugin field access. The Unity type tree
+                // exposes these streamed-resource members as flattened field names.
+                var sourceField = field["m_Resource.m_Source"];
+                string source = sourceField.IsDummy ? "" : sourceField.AsString;
+                audioResourceSource = source;
+                ulong offset = ReadUnsignedField(field["m_Resource.m_Offset"]);
+                ulong size = ReadUnsignedField(field["m_Resource.m_Size"]);
+                if (string.IsNullOrWhiteSpace(source) || size == 0 || size > int.MaxValue)
+                    throw new InvalidDataException("This AudioClip has no external FMOD resource. Embedded audio data is not supported by this preview yet.");
+
+                // Follow UABEA's AudioClip plugin lookup order: try the parent
+                // bundle first, then fall back to the external resource beside the
+                // extracted assets file. Some bundles store AudioClip payloads as
+                // sibling .resource/.resS files rather than directory entries.
+                byte[] fsbData;
+                if (instance.parentBundle != null)
+                {
+                    try
+                    {
+                        fsbData = ReadBundleResource(instance.parentBundle, source, offset, size);
+                    }
+                    catch (FileNotFoundException)
+                    {
+                        fsbData = ReadExternalResource(instance, source, offset, size);
+                    }
+                }
+                else
+                {
+                    fsbData = ReadExternalResource(instance, source, offset, size);
+                }
+
+                if (fsbData.Length == 0)
+                    throw new InvalidDataException("The AudioClip resource is empty.");
+                if (!FsbLoader.TryLoadFsbFromByteArray(fsbData, out FmodSoundBank bank) ||
+                    bank.Samples == null || bank.Samples.Count == 0)
+                    throw new InvalidDataException("This AudioClip's FMOD sound bank could not be decoded.");
+
+                bank.Samples[0].RebuildAsStandardFileFormat(out byte[] sampleData, out string sampleExtension);
+                if (sampleData == null || sampleData.Length == 0)
+                    throw new InvalidDataException("The audio decoder returned an empty sample.");
+
+                sampleExtension = (sampleExtension ?? "").Trim().TrimStart('.').ToLowerInvariant();
+                if (sampleExtension == "wav")
+                    FixPreviewWav(ref sampleData);
+                if (sampleExtension is not ("wav" or "ogg" or "mp3" or "aac" or "m4a"))
+                    throw new NotSupportedException("This AudioClip uses a format that Android cannot preview directly (" +
+                        (string.IsNullOrEmpty(sampleExtension) ? "unknown" : sampleExtension) + ").");
+
+                return (Data: sampleData, Extension: sampleExtension);
+            });
+
+            tempAudioPath = Path.Combine(Path.GetTempPath(),
+                "uabea-audio-" + Guid.NewGuid().ToString("N") + "." + audioFile.Extension);
+            await File.WriteAllBytesAsync(tempAudioPath, audioFile.Data);
+        }
+        catch (Exception ex)
+        {
+            error = ex.Message;
+            // Any unresolved or ambiguous resource selection needs the same
+            // picker flow, not only a literal "file not found" error.
+            needsExternalResource = ex is FileNotFoundException;
+        }
+        finally { }
+
+        if (_currentAssets != instance || _currentPage != BrowserPage.AssetDetails)
+        {
+            RemovePreviewLoadingCard(loadingCard);
+            if (!string.IsNullOrEmpty(tempAudioPath))
+            {
+                try { File.Delete(tempAudioPath); } catch { }
+            }
+            return;
+        }
+
+        RemovePreviewLoadingCard(loadingCard);
+        if (string.IsNullOrEmpty(tempAudioPath))
+        {
+            // If the sidecar resource is missing, ask for it immediately on the
+            // first preview attempt instead of presenting an error first.
+            if (needsExternalResource && !string.IsNullOrWhiteSpace(audioResourceSource))
+            {
+                AddResourceRequestCard("Audio preview", audioResourceSource,
+                    "This AudioClip is stored in an external FMOD resource. Select the matching file only when you want to listen to it.",
+                    MaterialIconKind.MusicNote,
+                    () => ChooseSessionResourceAsync(audioResourceSource, instance),
+                    () => ShowAudioClipPreviewAsync(manager, instance, asset));
+                return;
+            }
+            var errorContent = new StackPanel { Spacing = 10 };
+            errorContent.Children.Add(new TextBlock
+            {
+                Text = "Preview unavailable: " + error,
+                Foreground = TextBrush,
+                TextWrapping = TextWrapping.Wrap
+            });
+            _items.Children.Add(CreatePreviewCard("Audio preview", errorContent, MaterialIconKind.MusicNote));
+            return;
+        }
+
+        _audioTempPath = tempAudioPath;
+        BuildAudioPlayerCard(tempAudioPath, audioName ?? "AudioClip");
+    }
+
+    private byte[] ReadResourceWithBundleFallback(AssetsFileInstance instance, string path, ulong offset, ulong size)
+    {
+        if (instance.parentBundle != null)
+        {
+            try { return ReadBundleResource(instance.parentBundle, path, offset, size); }
+            catch (FileNotFoundException) { }
+        }
+        return ReadExternalResource(instance, path, offset, size);
+    }
+    private async Task<bool> ChooseSessionResourceAsync(string source, AssetsFileInstance instance)
+    {
+        var topLevel = TopLevel.GetTopLevel(this);
+        if (topLevel is null)
+            return false;
+
+        string expectedName = Path.GetFileName(NormalizeResourcePath(source));
+        string expectedExtension = Path.GetExtension(expectedName);
+        string[] resourcePatterns = expectedExtension.Equals(".resS", StringComparison.OrdinalIgnoreCase)
+            ? new[] { "*.resS", "*.ress" }
+            : expectedExtension.Equals(".resource", StringComparison.OrdinalIgnoreCase)
+                ? new[] { "*.resource" }
+                : expectedExtension.Equals(".resources", StringComparison.OrdinalIgnoreCase)
+                    ? new[] { "*.resources" }
+                    : new[] { "*.resource", "*.resources", "*.resS", "*.ress" };
+
+        var selected = await topLevel.StorageProvider.OpenFilePickerAsync(
+            new FilePickerOpenOptions
+            {
+                Title = string.IsNullOrWhiteSpace(expectedExtension)
+                    ? "Select the matching Unity resource file"
+                    : $"Select the matching {expectedExtension} file",
+                AllowMultiple = false,
+                FileTypeFilter = new[]
+                {
+                    new FilePickerFileType("Matching Unity resource files")
+                    {
+                        Patterns = resourcePatterns
+                    }
+                }
+            });
+
+        if (selected.Count == 0)
+            return false;
+
+        string root = GetExternalResourceDirectory(instance);
+        Directory.CreateDirectory(root);
+        if (string.IsNullOrWhiteSpace(expectedName))
+            expectedName = selected[0].Name;
+        string destination = Path.Combine(root, expectedName);
+
+        try
+        {
+            await using var input = await selected[0].OpenReadAsync();
+            await using var output = File.Create(destination);
+            await input.CopyToAsync(output);
+            _sessionResourcePaths.RemoveAll(path =>
+                string.Equals(Path.GetFileName(path), expectedName, StringComparison.OrdinalIgnoreCase));
+            _sessionResourcePaths.Add(destination);
+            _sessionResourceWasExplicitlySelected = true;
+            return true;
+        }
+        catch (Exception ex)
+        {
+            _items.Children.Add(CreatePreviewCard("Resource file", new TextBlock
+            {
+                Text = "Could not copy the selected resource: " + ex.Message,
+                Foreground = TextBrush,
+                TextWrapping = TextWrapping.Wrap
+            }, MaterialIconKind.MusicNote));
+            return false;
+        }
+    }
+
+    private async Task<bool> ChooseAudioResourceAsync(
+        string source, AssetsFileInstance instance, AssetFileInfo asset)
+    {
+        if (!await ChooseSessionResourceAsync(source, instance))
+            return false;
+
+        await ShowAudioClipPreviewAsync(_assetsManager!, instance, asset);
+        return true;
+    }
+
+    private void BuildAudioPlayerCard(string audioPath, string audioName)
+    {
+        var playButton = new Button
+        {
+            Content = "▶ Play",
+            MinHeight = 44,
+            Background = PrimaryBrush,
+            Foreground = OnPrimaryBrush,
+            CornerRadius = new CornerRadius(13),
+            FontWeight = FontWeight.SemiBold
+        };
+        var loopCheck = new Avalonia.Controls.CheckBox
+        {
+            Content = "Loop",
+            Foreground = TextBrush,
+            VerticalAlignment = VerticalAlignment.Center
+        };
+        var volumeLabel = new TextBlock
+        {
+            Text = "Volume 100%",
+            FontSize = 12,
+            Foreground = MutedBrush,
+            VerticalAlignment = VerticalAlignment.Center
+        };
+        var volumeSlider = new Slider
+        {
+            Minimum = 0,
+            Maximum = 1,
+            Value = 1,
+            MinWidth = 120
+        };
+        var positionSlider = new Slider
+        {
+            Minimum = 0,
+            Maximum = 1,
+            Value = 0,
+            MinWidth = 160
+        };
+        var timeLabel = new TextBlock
+        {
+            Text = "00:00 / 00:00",
+            FontSize = 12,
+            Foreground = MutedBrush,
+            HorizontalAlignment = HorizontalAlignment.Center
+        };
+        var playerStatus = new TextBlock
+        {
+            Text = "Ready to play",
+            FontSize = 12,
+            Foreground = MutedBrush
+        };
+
+        global::Android.Media.MediaPlayer? player = null;
+        bool updatingPosition = false;
+        bool isPrepared = false;
+
+        void UpdateTime()
+        {
+            if (player == null || !isPrepared) return;
+            int duration = Math.Max(0, player.Duration);
+            int current = Math.Clamp(player.CurrentPosition, 0, Math.Max(1, duration));
+            updatingPosition = true;
+            positionSlider.Maximum = Math.Max(1, duration);
+            positionSlider.Value = current;
+            updatingPosition = false;
+            timeLabel.Text = $"{FormatAudioTime(current)} / {FormatAudioTime(duration)}";
+        }
+
+        try
+        {
+            player = new global::Android.Media.MediaPlayer();
+            player.SetDataSource(audioPath);
+            player.Prepare();
+            isPrepared = true;
+            _audioPlayer = player;
+            player.Looping = loopCheck.IsChecked == true;
+            player.SetVolume(1f, 1f);
+            UpdateTime();
+            playerStatus.Text = "Ready";
+        }
+        catch (Exception ex)
+        {
+            player?.Release();
+            player?.Dispose();
+            _audioPlayer = null;
+            playerStatus.Text = "Could not initialize audio: " + ex.Message;
+            playButton.IsEnabled = false;
+        }
+
+        playButton.Click += (_, _) =>
+        {
+            if (player == null || !isPrepared) return;
+            try
+            {
+                if (player.IsPlaying)
+                {
+                    player.Pause();
+                    playButton.Content = "▶ Play";
+                    playerStatus.Text = "Paused";
+                }
+                else
+                {
+                    if (player.CurrentPosition >= player.Duration)
+                        player.SeekTo(0);
+                    player.Start();
+                    playButton.Content = "Ⅱ Pause";
+                    playerStatus.Text = "Playing";
+                }
+                UpdateTime();
+            }
+            catch (Exception ex)
+            {
+                playerStatus.Text = "Playback error: " + ex.Message;
+            }
+        };
+
+        loopCheck.IsCheckedChanged += (_, _) =>
+        {
+            if (player != null)
+                player.Looping = loopCheck.IsChecked == true;
+        };
+
+        volumeSlider.PropertyChanged += (_, args) =>
+        {
+            if (args.Property == RangeBase.ValueProperty)
+            {
+                float volume = (float)Math.Clamp(volumeSlider.Value, 0, 1);
+                volumeLabel.Text = $"Volume {(int)Math.Round(volume * 100)}%";
+                player?.SetVolume(volume, volume);
+            }
+        };
+
+        positionSlider.PropertyChanged += (_, args) =>
+        {
+            if (args.Property == RangeBase.ValueProperty && !updatingPosition && player != null && isPrepared)
+            {
+                int target = (int)Math.Clamp(positionSlider.Value, 0, Math.Max(0, player.Duration));
+                try { player.SeekTo(target); } catch { }
+                timeLabel.Text = $"{FormatAudioTime(target)} / {FormatAudioTime(Math.Max(0, player.Duration))}";
+            }
+        };
+
+        if (player != null)
+        {
+            player.Completion += (_, _) =>
+            {
+                playButton.Content = "▶ Play";
+                playerStatus.Text = loopCheck.IsChecked == true ? "Looping" : "Finished";
+                UpdateTime();
+            };
+            _audioProgressTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(250) };
+            _audioProgressTimer.Tick += (_, _) =>
+            {
+                if (player.IsPlaying)
+                    UpdateTime();
+            };
+            _audioProgressTimer.Start();
+        }
+
+        var playerContent = new StackPanel
+        {
+            Spacing = 10,
+            Children =
+            {
+                playerStatus,
+                playButton,
+                positionSlider,
+                timeLabel,
+                new StackPanel
+                {
+                    Orientation = Orientation.Horizontal,
+                    Spacing = 8,
+                    Children = { loopCheck }
+                },
+                new TextBlock { Text = "Volume", FontSize = 12, Foreground = MutedBrush },
+                volumeSlider,
+                volumeLabel
+            }
+        };
+        _items.Children.Add(CreatePreviewCard(audioName, playerContent, MaterialIconKind.MusicNote));
+    }
+
+    private void StopAudioPlayback()
+    {
+        try { _audioProgressTimer?.Stop(); } catch { }
+        _audioProgressTimer = null;
+        try
+        {
+            if (_audioPlayer != null)
+            {
+                if (_audioPlayer.IsPlaying) _audioPlayer.Stop();
+                _audioPlayer.Release();
+                _audioPlayer.Dispose();
+            }
+        }
+        catch { }
+        _audioPlayer = null;
+        if (!string.IsNullOrEmpty(_audioTempPath))
+        {
+            try { File.Delete(_audioTempPath); } catch { }
+            _audioTempPath = null;
+        }
+    }
+
+    private static string FormatAudioTime(int milliseconds)
+    {
+        int seconds = Math.Max(0, milliseconds / 1000);
+        return $"{seconds / 60:00}:{seconds % 60:00}";
+    }
+
+    private static void FixPreviewWav(ref byte[] wavData)
+    {
+        if (wavData.Length < 44 ||
+            System.Text.Encoding.ASCII.GetString(wavData, 0, 4) != "RIFF" ||
+            System.Text.Encoding.ASCII.GetString(wavData, 8, 4) != "WAVE")
+            return;
+
+        int originalLength = wavData.Length;
+        for (int i = 36; i < originalLength - 2; i++)
+            wavData[i] = wavData[i + 2];
+        Array.Resize(ref wavData, originalLength - 2);
+        BitConverter.GetBytes(wavData.Length - 8).CopyTo(wavData, 4);
+        BitConverter.GetBytes(16).CopyTo(wavData, 16);
+        BitConverter.GetBytes(wavData.Length - 44).CopyTo(wavData, 40);
+    }
+
+    private async Task ShowMeshPreviewAsync(
+        AssetsManager manager, AssetsFileInstance instance, AssetFileInfo asset)
+    {
+        var loadingCard = AddPreviewLoadingCard("3D Mesh preview", MaterialIconKind.Image);
+        MeshPreviewData? meshData = null;
+        long meshMaterialPathId = 0;
+        long meshTexturePathId = 0;
+        string? error = null;
+        bool needsExternalResource = false;
+        string streamSource = "";
+
+        try
+        {
+            meshData = await Task.Run(() =>
+            {
+                var field = GetAssetBaseField(instance, asset, manager);
+                if (field == null)
+                    throw new InvalidDataException("Mesh data could not be read.");
+
+                MeshStreamInfo stream = MeshPreviewDataReader.ReadStreamInfo(field);
+                streamSource = stream.Path;
+                byte[]? streamedData = null;
+
+                if (stream.Size > 0 && !string.IsNullOrWhiteSpace(stream.Path))
+                {
+                    try
+                    {
+                        streamedData = ReadResourceWithBundleFallback(instance, stream.Path, stream.Offset, stream.Size);
+                    }
+                    catch (FileNotFoundException)
+                    {
+                        needsExternalResource = true;
+                        throw;
+                    }
+                    catch (InvalidDataException)
+                    {
+                        // Do not silently fall back to incomplete inline data when Unity
+                        // declares an external vertex stream. Ask for the matching resource.
+                        needsExternalResource = true;
+                        throw;
+                    }
+                    catch (ArgumentOutOfRangeException)
+                    {
+                        // Corrupt/truncated stream data must never be interpreted as a
+                        // valid Mesh. Let the resource-selection flow retry with the
+                        // session resource or ask the user to import the matching file.
+                        needsExternalResource = true;
+                        throw new InvalidDataException("The Mesh stream data is incomplete. Select its matching .resource or .resS file.");
+                    }
+                }
+
+                return MeshPreviewDataReader.Read(field, streamedData);
+            });
+        }
+        catch (Exception ex)
+        {
+            error = $"{ex.GetType().Name}: {ex.Message}\n{ex.StackTrace}";
+            if (ex is ArgumentOutOfRangeException &&
+                instance.parentBundle == null &&
+                !string.IsNullOrWhiteSpace(streamSource))
+            {
+                // A truncated/mismatched index payload is not a preview. Retry
+                // through the session resource picker instead of displaying a
+                // misleading error or drawing incomplete geometry.
+                needsExternalResource = true;
+            }
+        }
+
+        if (_currentAssets != instance || _currentPage != BrowserPage.AssetDetails)
+        {
+            RemovePreviewLoadingCard(loadingCard);
+            return;
+        }
+
+        RemovePreviewLoadingCard(loadingCard);
+
+        if (meshData != null)
+        {
+            try
+            {
+                meshMaterialPathId = await Task.Run(() => FindMaterialForMesh(manager, instance, asset.PathId));
+                meshTexturePathId = await Task.Run(() => FindFirstMaterialTexturePathId(manager, instance, meshMaterialPathId));
+            }
+            catch { meshMaterialPathId = meshTexturePathId = 0; }
+        }
+
+        if (meshData == null && needsExternalResource && !string.IsNullOrWhiteSpace(streamSource))
+        {
+            AddResourceRequestCard("3D Mesh preview", streamSource,
+                "This Mesh stores vertex or index data externally. Select the matching file only when you want to view the model.",
+                MaterialIconKind.Image,
+                () => ChooseSessionResourceAsync(streamSource, instance),
+                () => ShowMeshPreviewAsync(manager, instance, asset));
+            return;
+        }
+
+        if (meshData == null)
+        {
+            _items.Children.Add(CreatePreviewCard("3D Mesh preview", new TextBlock
+            {
+                Text = "Preview unavailable: " + error,
+                Foreground = TextBrush,
+                TextWrapping = TextWrapping.Wrap
+            }, MaterialIconKind.Image));
+            return;
+        }
+
+        // Inline preview is intentionally passive; camera controls exist only in fullscreen.
+        var viewer = new MeshPreviewControl(meshData.Vertices, meshData.Indices, interactive: false, uvs: meshData.UVs)
+        {
+            HorizontalAlignment = HorizontalAlignment.Stretch
+        };
+
+        MeshPreviewControl? fullscreenViewer = null;
+        int[]? linkedTexturePixels = null;
+        int linkedTextureWidth = 0, linkedTextureHeight = 0;
+        bool linkedTextureApplied = false;
+        if (meshTexturePathId != 0)
+        {
+            if (meshData.UVs == null || meshData.UVs.Length != meshData.Vertices.Length)
+            {
+                _items.Children.Add(new TextBlock
+                {
+                    Text = "The linked Material texture was found, but this Mesh has no supported UV0 channel.",
+                    Foreground = MutedBrush, TextWrapping = TextWrapping.Wrap
+                });
+            }
+            else
+            {
+                try
+                {
+                    var decoded = await Task.Run(() => ReadMaterialTexturePixels(manager, instance, meshTexturePathId));
+                    linkedTexturePixels = decoded.Pixels;
+                    linkedTextureWidth = decoded.Width;
+                    linkedTextureHeight = decoded.Height;
+                    viewer.SetTexture(linkedTexturePixels, linkedTextureWidth, linkedTextureHeight);
+                    linkedTextureApplied = true;
+                }
+                catch (FileNotFoundException ex) when (!string.IsNullOrWhiteSpace(ex.FileName))
+                {
+                    AddResourceRequestCard("Mesh Material texture", ex.FileName!,
+                        "The linked Material texture needs an external stream. Select the matching resource file to finish the preview.",
+                        MaterialIconKind.Image,
+                        () => ChooseSessionResourceAsync(ex.FileName!, instance),
+                        () => ShowMeshPreviewAsync(manager, instance, asset));
+                    return;
+                }
+                catch (Exception ex)
+                {
+                    _items.Children.Add(new TextBlock
+                    {
+                        Text = "Linked Material texture could not be loaded: " + ex.Message,
+                        Foreground = MutedBrush, TextWrapping = TextWrapping.Wrap
+                    });
+                }
+            }
+        }
+        var fullscreenButton = new Button
+        {
+            Content = CreateIcon(MaterialIconKind.ArrowExpand, 18, TextBrush),
+            Background = SurfaceHighBrush,
+            Foreground = TextBrush,
+            CornerRadius = new CornerRadius(10),
+            Width = 42,
+            Height = 40,
+            Padding = new Thickness(0),
+            HorizontalAlignment = HorizontalAlignment.Right,
+        };
+        fullscreenButton.Click += (_, _) =>
+        {
+            try
+            {
+                var largeViewer = new MeshPreviewControl(meshData.Vertices, meshData.Indices, interactive: true, uvs: meshData.UVs)
+                {
+                    HorizontalAlignment = HorizontalAlignment.Stretch,
+                    VerticalAlignment = VerticalAlignment.Stretch,
+                    MinHeight = 0,
+                    Height = double.NaN
+                };
+
+                fullscreenViewer = largeViewer;
+                if (linkedTextureApplied && linkedTexturePixels != null) largeViewer.SetTexture(linkedTexturePixels, linkedTextureWidth, linkedTextureHeight);
+
+                var overlay = new Border
+                {
+                    Background = BackgroundBrush,
+                    Padding = new Thickness(12),
+                    HorizontalAlignment = HorizontalAlignment.Stretch,
+                    VerticalAlignment = VerticalAlignment.Stretch
+                };
+
+                var closeButton = new Button
+                {
+                    Content = "Close",
+                    Background = SurfaceHighBrush,
+                    Foreground = TextBrush,
+                    CornerRadius = new CornerRadius(10),
+                    MinHeight = 42,
+                    MinWidth = 76
+                };
+                var resetLarge = new Button
+                {
+                    Content = "Reset camera",
+                    Background = SurfaceHighBrush,
+                    Foreground = TextBrush,
+                    CornerRadius = new CornerRadius(10),
+                    MinHeight = 42
+                };
+                var wireframeLarge = new Button
+                {
+                    Content = "Wireframe",
+                    Background = SurfaceHighBrush,
+                    Foreground = TextBrush,
+                    CornerRadius = new CornerRadius(10),
+                    MinHeight = 42
+                };
+
+                closeButton.Click += (_, _) => CloseFullscreenOverlay();
+                resetLarge.Click += (_, _) => largeViewer.ResetView();
+                wireframeLarge.Click += (_, _) => largeViewer.ToggleWireframe();
+
+                var layout = new Grid
+                {
+                    RowDefinitions = new RowDefinitions("Auto,*,Auto")
+                };
+                var header = new Grid
+                {
+                    ColumnDefinitions = new ColumnDefinitions("*,Auto"),
+                    Children =
+                    {
+                        new TextBlock
+                        {
+                            Text = $"3D Mesh preview • {meshData.Vertices.Length:N0} vertices • {meshData.Indices.Length / 3:N0} triangles",
+                            Foreground = MutedBrush,
+                            VerticalAlignment = VerticalAlignment.Center,
+                            TextWrapping = TextWrapping.Wrap
+                        },
+                        closeButton
+                    }
+                };
+                Grid.SetColumn(closeButton, 1);
+                layout.Children.Add(header);
+                layout.Children.Add(largeViewer);
+                Grid.SetRow(largeViewer, 1);
+
+                var footer = new StackPanel
+                {
+                    Orientation = Orientation.Vertical,
+                    HorizontalAlignment = HorizontalAlignment.Center,
+                    Spacing = 8,
+                    Children =
+                    {
+                        new StackPanel
+                        {
+                            Orientation = Orientation.Horizontal,
+                            HorizontalAlignment = HorizontalAlignment.Center,
+                            Spacing = 8,
+                            Children = { resetLarge, wireframeLarge }
+                        },
+                        new TextBlock
+                        {
+                            Text = "Drag to rotate • Pinch to zoom • Two-finger drag to orbit",
+                            Foreground = MutedBrush,
+                            FontSize = 11,
+                            HorizontalAlignment = HorizontalAlignment.Center
+                        }
+                    }
+                };
+                layout.Children.Add(footer);
+                Grid.SetRow(footer, 2);
+
+                overlay.Child = layout;
+                ShowFullscreenOverlay(overlay, () =>
+                {
+                    largeViewer.Dispose();
+                    if (ReferenceEquals(fullscreenViewer, largeViewer)) fullscreenViewer = null;
+                });
+            }
+            catch (Exception ex)
+            {
+                _status.Text = "Could not open full-screen Mesh preview: " + ex.Message;
+            }
+        };
+
+        var topBar = new Grid
+        {
+            ColumnDefinitions = new ColumnDefinitions("*,Auto"),
+            Children =
+            {
+                new TextBlock
+                {
+                    Text = $"{meshData.Vertices.Length:N0} vertices • {meshData.Indices.Length / 3:N0} triangles",
+                    FontSize = 12,
+                    Foreground = MutedBrush,
+                    VerticalAlignment = VerticalAlignment.Center
+                },
+                fullscreenButton
+            }
+        };
+
+        var content = new StackPanel
+        {
+            Spacing = 8,
+            Children =
+            {
+                topBar,
+                viewer,
+                new TextBlock
+                {
+                    Text = "Open full-screen to rotate and zoom the model",
+                    FontSize = 11,
+                    Foreground = MutedBrush,
+                    HorizontalAlignment = HorizontalAlignment.Center
+                }
+            }
+        };
+
+        _items.Children.Add(CreatePreviewCard("3D Mesh preview", content, MaterialIconKind.Image));
+    }
+
+    private async Task ShowFontPreviewAsync(
+        AssetsManager manager, AssetsFileInstance instance, AssetFileInfo asset)
+    {
+        var loadingCard = AddPreviewLoadingCard("Font preview", MaterialIconKind.FormatFont);
+        Avalonia.Media.Imaging.Bitmap? previewBitmap = null;
+        string? fontName = null;
+        string? error = null;
+        string? tempFontPath = null;
+
+        try
+        {
+            byte[] fontBytes = await Task.Run(() =>
+            {
+                // Unity stores Font.m_FontData as a generic array in some class
+                // databases. Reinterpret its element as ByteArray before deserializing,
+                // matching UABEA's FontPlugin implementation.
+                // Follow UABEA FontPlugin: change the m_FontData array element
+                // type on the template, then deserialize with that SAME template.
+                // Calling manager.GetBaseField afterwards would create a fresh
+                // template and lose the ByteArray override on uncached managers.
+                var template = manager.GetTemplateBaseField(instance, asset);
+                if (template == null)
+                    throw new InvalidDataException("Font type information could not be read.");
+
+                var fontDataTemplate = template.Children.FirstOrDefault(x => x.Name == "m_FontData");
+                if (fontDataTemplate == null || fontDataTemplate.Children.Count == 0)
+                    throw new InvalidDataException("This Unity Font has no m_FontData field.");
+
+                fontDataTemplate.Children[0].ValueType = AssetValueType.ByteArray;
+
+                AssetTypeValueField field;
+                var reader = instance.file.Reader;
+                lock (reader)
+                {
+                    long absolutePosition = asset.GetAbsoluteByteStart(instance.file);
+                    field = template.MakeValue(reader, absolutePosition, null);
+                }
+
+                fontName = field["m_Name"]?.AsString;
+                return field["m_FontData.Array"]?.AsByteArray ?? Array.Empty<byte>();
+            });
+
+            if (fontBytes.Length == 0)
+                throw new InvalidDataException("This font uses an external or built-in font and has no embedded TTF/OTF data.");
+
+            tempFontPath = Path.Combine(Path.GetTempPath(), "uabea-preview-" + Guid.NewGuid().ToString("N") +
+                (fontBytes.Length > 4 && fontBytes[0] == 0x4F && fontBytes[1] == 0x54 ? ".otf" : ".ttf"));
+            await File.WriteAllBytesAsync(tempFontPath, fontBytes);
+
+            using var typeface = global::Android.Graphics.Typeface.CreateFromFile(tempFontPath);
+            using var bitmap = global::Android.Graphics.Bitmap.CreateBitmap(900, 360, global::Android.Graphics.Bitmap.Config.Argb8888!);
+            using (var canvas = new global::Android.Graphics.Canvas(bitmap))
+            using (var paint = new global::Android.Graphics.Paint(global::Android.Graphics.PaintFlags.AntiAlias))
+            {
+                canvas.DrawColor(global::Android.Graphics.Color.Rgb(23, 23, 23));
+                paint.Color = global::Android.Graphics.Color.White;
+                paint.SetTypeface(typeface);
+                paint.TextSize = 62;
+                canvas.DrawText("Aa Bb Cc 123", 28, 105, paint);
+                paint.TextSize = 34;
+                canvas.DrawText("The quick brown fox jumps over the lazy dog.", 28, 180, paint);
+                canvas.DrawText("0123456789  !? @#&", 28, 245, paint);
+                paint.TextSize = 22;
+                canvas.DrawText(fontName ?? "Unity Font", 28, 315, paint);
+            }
+
+            using var pngStream = new MemoryStream();
+            bitmap.Compress(global::Android.Graphics.Bitmap.CompressFormat.Png!, 100, pngStream);
+            pngStream.Position = 0;
+            previewBitmap = new Avalonia.Media.Imaging.Bitmap(pngStream);
+        }
+        catch (Exception ex)
+        {
+            error = ex.Message;
+        }
+        finally
+        {
+            if (!string.IsNullOrEmpty(tempFontPath))
+            {
+                try { File.Delete(tempFontPath); } catch { }
+            }
+        }
+
+        if (_currentAssets != instance || _currentPage != BrowserPage.AssetDetails)
+        {
+            RemovePreviewLoadingCard(loadingCard);
+            previewBitmap?.Dispose();
+            return;
+        }
+
+        RemovePreviewLoadingCard(loadingCard);
+        Control content = previewBitmap != null
+            ? new Image { Source = previewBitmap, Stretch = Stretch.Uniform, MaxHeight = 220 }
+            : new TextBlock { Text = "Preview unavailable: " + error, Foreground = TextBrush, TextWrapping = TextWrapping.Wrap };
+        _items.Children.Add(CreatePreviewCard("Font preview • " + (fontName ?? "Unnamed font"), content, MaterialIconKind.FormatFont));
+    }
+
+    private async Task ShowTextAssetPreviewAsync(
+        AssetsManager manager, AssetsFileInstance instance, AssetFileInfo asset)
+    {
+        var loadingCard = AddPreviewLoadingCard("Text preview", MaterialIconKind.FileDocumentOutline);
+        string preview;
+        string previewInfo = "";
+
+        try
+        {
+            var result = await Task.Run(() =>
+            {
+                var field = GetAssetBaseField(instance, asset, manager);
+                var bytes = field["m_Script"].AsByteArray ?? Array.Empty<byte>();
+                const int maxTextBytes = 1024 * 1024;
+                const int maxHexBytes = 4096;
+                int length = Math.Min(bytes.Length, maxTextBytes);
+                var sampleLength = Math.Min(length, 4096);
+                int controlCount = 0;
+                for (int i = 0; i < sampleLength; i++)
+                {
+                    byte value = bytes[i];
+                    if (value == 0 || (value < 32 && value != 9 && value != 10 && value != 13))
+                        controlCount++;
+                }
+
+                bool binary = sampleLength > 0 &&
+                    (bytes.Take(sampleLength).Contains((byte)0) ||
+                     controlCount > Math.Max(4, sampleLength / 20));
+
+                if (binary)
+                {
+                    int hexLength = Math.Min(bytes.Length, maxHexBytes);
+                    var hex = new StringBuilder(hexLength * 4);
+                    for (int offset = 0; offset < hexLength; offset += 16)
+                    {
+                        int count = Math.Min(16, hexLength - offset);
+                        hex.Append(offset.ToString("X8")).Append("  ");
+                        for (int i = 0; i < 16; i++)
+                        {
+                            if (i < count)
+                                hex.Append(bytes[offset + i].ToString("X2")).Append(' ');
+                            else
+                                hex.Append("   ");
+                            if (i == 7) hex.Append(' ');
+                        }
+                        hex.Append(" |");
+                        for (int i = 0; i < count; i++)
+                        {
+                            byte value = bytes[offset + i];
+                            hex.Append(value >= 32 && value <= 126 ? (char)value : '.');
+                        }
+                        hex.AppendLine("|");
+                    }
+
+                    if (bytes.Length > hexLength)
+                        hex.AppendLine().Append($"[Hex preview limited to the first {hexLength:N0} bytes.]");
+                    return (Content: hex.ToString(), Info: $"{bytes.Length:N0} bytes • Binary data • Hex view");
+                }
+
+                string text;
+                string encodingName;
+                if (length >= 2 && bytes[0] == 0xFF && bytes[1] == 0xFE)
+                {
+                    text = Encoding.Unicode.GetString(bytes, 2, length - 2);
+                    encodingName = "UTF-16 LE";
+                }
+                else if (length >= 2 && bytes[0] == 0xFE && bytes[1] == 0xFF)
+                {
+                    text = Encoding.BigEndianUnicode.GetString(bytes, 2, length - 2);
+                    encodingName = "UTF-16 BE";
+                }
+                else if (length >= 3 && bytes[0] == 0xEF && bytes[1] == 0xBB && bytes[2] == 0xBF)
+                {
+                    text = Encoding.UTF8.GetString(bytes, 3, length - 3);
+                    encodingName = "UTF-8 with BOM";
+                }
+                else
+                {
+                    text = Encoding.UTF8.GetString(bytes, 0, length);
+                    encodingName = "UTF-8";
+                    if (text.Contains('\uFFFD'))
+                    {
+                        text = Encoding.Latin1.GetString(bytes, 0, length);
+                        encodingName = "Latin-1 fallback";
+                    }
+                }
+
+                if (bytes.Length > maxTextBytes)
+                    text += $"\\n\\n[Text preview limited to the first {maxTextBytes:N0} bytes. Export the asset to view the complete content.]";
+                return (Content: text, Info: $"{bytes.Length:N0} bytes • {encodingName}");
+            });
+
+            preview = result.Content;
+            previewInfo = result.Info;
+        }
+        catch (Exception ex)
+        {
+            preview = $"Could not read TextAsset content: {ex.Message}";
+        }
+
+        if (_currentAssets != instance || _currentPage != BrowserPage.AssetDetails)
+        {
+            RemovePreviewLoadingCard(loadingCard);
+            return;
+        }
+
+        RemovePreviewLoadingCard(loadingCard);
+        var textContent = new StackPanel { Spacing = 6 };
+        if (!string.IsNullOrEmpty(previewInfo))
+        {
+            textContent.Children.Add(new TextBlock
+            {
+                Text = previewInfo,
+                FontSize = 11,
+                Foreground = MutedBrush
+            });
+        }
+        textContent.Children.Add(new ScrollViewer
+        {
+            MaxHeight = 520,
+            VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+            HorizontalScrollBarVisibility = ScrollBarVisibility.Auto,
+            Content = new TextBlock
+            {
+                Text = string.IsNullOrEmpty(preview) ? "(This TextAsset is empty.)" : preview,
+                FontFamily = new FontFamily("monospace"),
+                FontSize = 13,
+                Foreground = TextBrush,
+                TextWrapping = TextWrapping.NoWrap
+            }
+        });
+        _items.Children.Add(CreatePreviewCard("TextAsset preview", textContent, MaterialIconKind.FileDocumentOutline));
+    }
+
+    private void BeginAssetDetailsLayer()
+    {
+        if (_assetDetailsOverlay != null) CloseAssetDetailsLayer();
+        _items = new StackPanel { Spacing = 9 };
+        var detailBack = new Button
+        {
+            Content = CreateIconLabel(MaterialIconKind.ChevronLeft, "Back to assets", TextBrush, 15),
+            Background = SurfaceHighBrush, Foreground = TextBrush,
+            CornerRadius = new CornerRadius(12), MinHeight = 44,
+            HorizontalAlignment = HorizontalAlignment.Stretch
+        };
+        detailBack.Click += (_, _) => GoBack();
+        var detailRoot = new StackPanel
+        {
+            Spacing = 12, Margin = new Thickness(14, 14, 14, 22),
+            Children =
+            {
+                detailBack,
+                new TextBlock { Text = "Asset details", FontSize = 19,
+                    FontWeight = FontWeight.SemiBold, Foreground = TextBrush,
+                    Margin = new Thickness(2, 2, 2, 4) },
+                _items
+            }
+        };
+        _assetDetailsOverlay = new Border
+        {
+            Background = BackgroundBrush,
+            HorizontalAlignment = HorizontalAlignment.Stretch,
+            VerticalAlignment = VerticalAlignment.Stretch,
+            Child = new ScrollViewer
+            {
+                Content = detailRoot,
+                VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+                HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled
+            }
+        };
+        _pageLayers.Children.Add(_assetDetailsOverlay);
+        FadeIn(_assetDetailsOverlay);
+    }
+
+    private void CloseAssetDetailsLayer()
+    {
+        if (_assetDetailsOverlay != null)
+        {
+            _pageLayers.Children.Remove(_assetDetailsOverlay);
+            _assetDetailsOverlay = null;
+        }
+        _items = _assetsListItems;
+    }
+
+    private void ShowFullscreenOverlay(Border overlay, Action cleanup)
+    {
+        CloseFullscreenOverlay();
+        _fullscreenOverlay = overlay;
+        _fullscreenCleanup = cleanup;
+        _pageLayers.Children.Add(overlay);
+        FadeIn(overlay);
+    }
+
+    private bool CloseFullscreenOverlay()
+    {
+        if (_fullscreenOverlay == null) return false;
+        var overlay = _fullscreenOverlay;
+        var cleanup = _fullscreenCleanup;
+        _fullscreenOverlay = null;
+        _fullscreenCleanup = null;
+        _pageLayers.Children.Remove(overlay);
+        cleanup?.Invoke();
+        return true;
+    }
+
+    private async void GoBack()
+    {
+        if (CloseFullscreenOverlay()) return;
+        if (_imageViewerOverlay.IsVisible) { CloseImageViewer(); return; }
+        if (_currentPage == BrowserPage.Home || _isBusy) return;
+
+        if (_currentPage == BrowserPage.AssetDetails)
+        {
+            StopAudioPlayback();
+            CloseAssetDetailsLayer();
+            _currentPage = BrowserPage.Assets;
+            _searchBox.IsVisible = true;
+            _filterButton.IsVisible = true;
+            _filterBox.IsVisible = false;
+            _loadMoreButton.IsVisible = _visibleRows < _currentRows.Count;
+            UpdateNavigation();
+            UpdateFloatingActions();
+            return;
+        }
+
+        SetLoading(true, "Going back...");
+        await Task.Yield();
+        switch (_currentPage)
+        {
+            case BrowserPage.Assets when _currentBundle is not null:
+            case BrowserPage.EntryDetails when _currentBundle is not null:
+                ShowBundleContents();
+                break;
+            default:
+                _currentPage = BrowserPage.Home;
+                _searchBox.IsVisible = false;
+                _filterButton.IsVisible = false;
+                _filterBox.IsVisible = false;
+                _items.Children.Clear();
+                _displayedRows.Clear();
+                _listHeader.Children.Clear();
+                _listPlaceholder.IsVisible = true;
+                _assetListBox.IsVisible = false;
+                _currentRows.Clear();
+                _assetRows.Clear();
+                _loadMoreButton.IsVisible = false;
+                _status.Text = "Open a Unity AssetBundle or serialized assets file.";
+                UpdateNavigation();
+                break;
+        }
+        UpdateFloatingActions();
+        SetLoading(false);
+    }
+
+    private void ShowBundleContents()
+    {
+        if (_currentBundle is null) return;
+        _currentPage = BrowserPage.Bundle;
+        _assetListBox.IsVisible = true;
+        _searchBox.IsVisible = true;
+        _filterButton.IsVisible = true;
+        _filterBox.IsVisible = false;
+        SetFilterOptions(_currentBundle.file.BlockAndDirInfo.DirectoryInfos
+            .Where(entry => (entry.Flags & 0x02) == 0).Select(entry => GetEntryKind(entry.Name)));
+        _searchBox.Watermark = "Search bundle entries...";
+        _status.Text = $"Bundle: {_currentFileName}\nEntries: {_currentRows.Count}";
+        UpdateFloatingActions();
+        UpdateNavigation();
+        RefreshCurrentList();
+    }
+
+    private void ShowAssetsContents()
+    {
+        ExitSelectionMode();
+        if (_currentAssets is null) return;
+        _currentPage = BrowserPage.Assets;
+        UpdateFloatingActions();
+        _assetListBox.IsVisible = true;
+        _searchBox.IsVisible = true;
+        _filterButton.IsVisible = true;
+        _filterBox.IsVisible = false;
+        SetFilterOptions(_assetRows.Select(row => row.TypeName));
+        _searchBox.Watermark = "Search by asset name or type...";
+        UpdateFloatingActions();
+        _status.Text = $"Assets file: {_currentAssets.name}\nAssets: {_currentAssets.file.AssetInfos.Count}";
+        UpdateNavigation();
+        RefreshCurrentList();
+    }
+
+    private void SetLoading(bool loading, string? message = null)
+    {
+        _loadingIndicator.IsVisible = loading;
+        _loadingOverlay.IsVisible = loading;
+        if (loading || _previewSpinnerRotations.Count > 0)
+        {
+            if (!_spinnerTimer.IsEnabled) _spinnerTimer.Start();
+        }
+        else
+        {
+            _spinnerTimer.Stop();
+            _spinnerRotation.Angle = 0;
+        }
+        if (message is not null) _status.Text = message;
+    }
+
+    private void UpdateNavigation() => _backButton.IsVisible = _currentPage != BrowserPage.Home;
+
+    private static string NormalizeResourcePath(string path)
+    {
+        path = path.Replace('\\', '/');
+        if (path.StartsWith("archive:/", StringComparison.OrdinalIgnoreCase))
+            path = path.Substring("archive:/".Length);
+        while (path.StartsWith("/", StringComparison.Ordinal)) path = path.Substring(1);
+        return path;
+    }
+
+    private static ulong ReadUnsignedField(AssetTypeValueField field)
+    {
+        if (field == null || field.IsDummy || field.Value == null)
+            return 0;
+
+        return field.Value.ValueType switch
+        {
+            AssetValueType.UInt8 => field.AsByte,
+            AssetValueType.UInt16 => field.AsUShort,
+            AssetValueType.UInt32 => field.AsUInt,
+            AssetValueType.UInt64 => field.AsULong,
+            AssetValueType.Int8 => checked((ulong)field.AsSByte),
+            AssetValueType.Int16 => checked((ulong)field.AsShort),
+            AssetValueType.Int32 => checked((ulong)field.AsInt),
+            AssetValueType.Int64 => checked((ulong)field.AsLong),
+            _ => throw new InvalidDataException($"Unexpected numeric field type: {field.Value.ValueType}.")
+        };
+    }
+
+    private static byte[] ReadBundleResource(BundleFileInstance bundleInstance, string source, ulong offset, ulong size)
+    {
+        if (size == 0 || size > int.MaxValue)
+            throw new InvalidDataException("The AudioClip resource size is invalid.");
+
+        var entries = bundleInstance.file.BlockAndDirInfo.DirectoryInfos;
+        string wanted = NormalizeResourcePath(source);
+        string basename = Path.GetFileName(wanted);
+
+        // UABEA stores the AudioClip resource path as archive:/<entry>. On Android
+        // some bundles expose a different directory prefix, so compare both the
+        // normalized full path and the basename, case-insensitively.
+        var exact = entries.Where(x =>
+            string.Equals(NormalizeResourcePath(x.Name), wanted, StringComparison.OrdinalIgnoreCase)).ToList();
+        var suffix = entries.Where(x =>
+            NormalizeResourcePath(x.Name).EndsWith("/" + wanted, StringComparison.OrdinalIgnoreCase)).ToList();
+        var matches = exact.Count > 0 ? exact : suffix;
+        if (matches.Count == 0 && !string.IsNullOrWhiteSpace(basename))
+        {
+            matches = entries.Where(x =>
+                string.Equals(Path.GetFileName(NormalizeResourcePath(x.Name)), basename,
+                    StringComparison.OrdinalIgnoreCase)).ToList();
+        }
+
+        // Some Unity bundles have a stale/virtual m_Source name while keeping
+        // the actual stream as the only non-serialized resource entry. Only use
+        // this fallback when the requested byte range fits exactly one resource.
+        if (matches.Count == 0)
+        {
+            var possible = entries.Where(x =>
+            {
+                string name = x.Name ?? "";
+                bool serialized = (x.Flags & 0x04) != 0;
+                bool resourceLike = name.EndsWith(".resS", StringComparison.OrdinalIgnoreCase) ||
+                    name.EndsWith(".resource", StringComparison.OrdinalIgnoreCase) ||
+                    name.EndsWith(".resources", StringComparison.OrdinalIgnoreCase) ||
+                    name.EndsWith(".ress", StringComparison.OrdinalIgnoreCase);
+                return !serialized && resourceLike &&
+                    offset <= (ulong)x.DecompressedSize &&
+                    size <= (ulong)x.DecompressedSize - offset;
+            }).ToList();
+
+            if (possible.Count == 1)
+                matches = possible;
+        }
+
+        if (matches.Count != 1)
+            throw new FileNotFoundException(matches.Count == 0
+                ? $"AudioClip resource '{source}' was not found in the AssetBundle. Bundle entries: {entries.Length}."
+                : $"AudioClip resource '{source}' matches multiple AssetBundle entries.");
+
+        var entry = matches[0];
+        if (offset > (ulong)entry.DecompressedSize || size > (ulong)entry.DecompressedSize - offset)
+            throw new InvalidDataException($"AudioClip byte range ({offset}, {size}) exceeds bundle entry '{entry.Name}' ({entry.DecompressedSize} bytes).");
+
+        // Use a bounded stream instead of mutating the shared bundle reader's
+        // cursor. This is the same stream strategy used by bundle-entry export.
+        var reader = bundleInstance.file.DataReader;
+        lock (reader)
+        {
+            using var segment = new SegmentStream(reader.BaseStream, entry.Offset + (long)offset, (long)size);
+            using var output = new MemoryStream(checked((int)size));
+            segment.CopyTo(output);
+            byte[] data = output.ToArray();
+            if ((ulong)data.Length != size)
+                throw new EndOfStreamException($"Bundle entry '{entry.Name}' ended before the requested AudioClip data was read.");
+            return data;
+        }
+    }
+
+    private static string GetExternalResourceDirectory(AssetsFileInstance instance)
+    {
+        string root = Path.GetDirectoryName(instance.path) ?? "";
+        if (instance.parentBundle != null)
+            root = Path.GetDirectoryName(root) ?? root;
+        return root;
+    }
+
+    private byte[] ReadExternalResource(AssetsFileInstance instance, string source, ulong offset, ulong size)
+    {
+        if (size == 0 || size > int.MaxValue)
+            throw new InvalidDataException("The external texture/audio resource size is invalid.");
+
+        string root = GetExternalResourceDirectory(instance);
+        string normalized = NormalizeResourcePath(source);
+        string relative = normalized.Replace('/', Path.DirectorySeparatorChar);
+        var candidates = new List<string>();
+        if (Path.IsPathRooted(source)) candidates.Add(source);
+        candidates.Add(Path.Combine(root, relative));
+        candidates.Add(Path.Combine(root, Path.GetFileName(normalized)));
+
+        bool HasValidRange(string path)
+        {
+            try
+            {
+                long length = new FileInfo(path).Length;
+                return offset <= (ulong)length && size <= (ulong)length - offset;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        string? fullPath = null;
+
+        // First honor the exact metadata path. If that file exists but the
+        // requested range is invalid, do not silently substitute another file.
+        var existingCandidates = candidates
+            .Where(File.Exists)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        if (existingCandidates.Count > 0)
+        {
+            var validCandidates = existingCandidates.Where(HasValidRange).ToList();
+            if (validCandidates.Count == 1)
+                fullPath = validCandidates[0];
+            else if (validCandidates.Count > 1)
+                throw new FileNotFoundException(
+                    "The external resource path resolves to multiple files. Select the matching resource file.");
+            else
+                throw new InvalidDataException(
+                    "The matching resource file exists, but the requested offset and size are outside that file.");
+        }
+
+        // Android filesystems are case-sensitive. Resolve a case-insensitive
+        // filename match before considering any generic session fallback.
+        if (fullPath == null && Directory.Exists(root))
+        {
+            string expectedName = Path.GetFileName(normalized);
+            var sameName = Directory.EnumerateFiles(root, "*", SearchOption.TopDirectoryOnly)
+                .Where(path => string.Equals(
+                    Path.GetFileName(path), expectedName,
+                    StringComparison.OrdinalIgnoreCase))
+                .ToList();
+
+            if (sameName.Count > 0)
+            {
+                var validSameName = sameName.Where(HasValidRange).ToList();
+                if (validSameName.Count == 1)
+                    fullPath = validSameName[0];
+                else if (validSameName.Count > 1)
+                    throw new FileNotFoundException(
+                        "Multiple resource files match this texture path. Select the matching resource file.");
+                else
+                    throw new InvalidDataException(
+                        "The matching resource file exists, but the requested offset and size are outside that file.");
+            }
+        }
+
+        // A resource imported alongside the .assets file is not proof that
+        // it belongs to this Texture2D. Only permit a differently named session
+        // file after the user explicitly selected it in the resource picker.
+        // Otherwise a .resource audio file can be mistaken for the missing .resS
+        // texture stream simply because its byte range happens to fit.
+        if (fullPath == null && _sessionResourceWasExplicitlySelected)
+        {
+            var validSessionFiles = _sessionResourcePaths
+                .Where(File.Exists)
+                .Where(HasValidRange)
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList();
+
+            if (validSessionFiles.Count == 1)
+                fullPath = validSessionFiles[0];
+            else if (validSessionFiles.Count > 1)
+                throw new FileNotFoundException(
+                    "Several imported resource files could match this stream. Select the exact matching .resource or .resS file.");
+        }
+
+        if (fullPath == null)
+            throw new FileNotFoundException(
+                "The matching external resource file was not found. Select the correct .resource or .resS file with the assets file.");
+
+        using var stream = File.OpenRead(fullPath);
+        stream.Position = checked((long)offset);
+        byte[] data = new byte[checked((int)size)];
+        int read = 0;
+        while (read < data.Length)
+        {
+            int count = stream.Read(data, read, data.Length - read);
+            if (count == 0)
+                throw new EndOfStreamException("The external resource file ended unexpectedly.");
+            read += count;
+        }
+        return data;
+    }
+    private void AddResourceRequestCard(
+        string title, string source, string description, MaterialIconKind iconKind,
+        Func<Task<bool>> chooseResource, Func<Task> retryPreview)
+    {
+        string expectedName = Path.GetFileName(NormalizeResourcePath(source));
+        if (string.IsNullOrWhiteSpace(expectedName)) expectedName = "the matching Unity resource file";
+        var content = new StackPanel { Spacing = 10 };
+        content.Children.Add(new TextBlock
+        {
+            Text = description + "\nRequired file: " + expectedName,
+            Foreground = TextBrush, TextWrapping = TextWrapping.Wrap
+        });
+        var button = new Button
+        {
+            Content = "Select file and show preview", MinHeight = 44,
+            HorizontalAlignment = HorizontalAlignment.Stretch,
+            Background = PrimaryBrush, Foreground = OnPrimaryBrush,
+            CornerRadius = new CornerRadius(13), FontWeight = FontWeight.SemiBold
+        };
+        var card = CreatePreviewCard(title, content, iconKind);
+        button.Click += async (_, _) =>
+        {
+            if (_currentAssets != null && _currentPage == BrowserPage.AssetDetails)
+            {
+                button.IsEnabled = false;
+                try
+                {
+                    bool selected = await chooseResource();
+                    if (selected && _currentAssets != null && _currentPage == BrowserPage.AssetDetails)
+                    {
+                        _items.Children.Remove(card);
+                        await retryPreview();
+                    }
+                }
+                catch (Exception ex)
+                {
+                    content.Children.Add(new TextBlock { Text = "Resource selection failed: " + ex.Message, Foreground = TextBrush, TextWrapping = TextWrapping.Wrap });
+                }
+                finally { button.IsEnabled = true; }
+            }
+        };
+        content.Children.Add(button);
+        _items.Children.Add(card);
+    }
+    private Border CreatePreviewCard(string title, Control content, MaterialIconKind iconKind = MaterialIconKind.Image)
+    {
+        var panel = new StackPanel { Spacing = 9, VerticalAlignment = VerticalAlignment.Center };
+        var titleRow = new StackPanel
+        {
+            Orientation = Orientation.Horizontal,
+            Spacing = 8,
+            VerticalAlignment = VerticalAlignment.Center
+        };
+        titleRow.Children.Add(CreateIcon(iconKind, 18, PrimaryBrush));
+        titleRow.Children.Add(new TextBlock
+        {
+            Text = title,
+            FontWeight = FontWeight.SemiBold,
+            FontSize = 13,
+            Foreground = MutedBrush,
+            TextWrapping = TextWrapping.Wrap,
+            VerticalAlignment = VerticalAlignment.Center
+        });
+        panel.Children.Add(titleRow);
+        panel.Children.Add(content);
+        var card = new Border
+        {
+            Background = SurfaceContainerBrush,
+            CornerRadius = new CornerRadius(16),
+            Padding = new Thickness(14),
+            HorizontalAlignment = HorizontalAlignment.Stretch,
+            Child = panel
+        };
+        FadeIn(card);
+        return card;
+    }
+
+    private static void FadeIn(Control control)
+    {
+        control.Opacity = 0;
+        int frame = 0;
+        const int frameCount = 9;
+        var timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(16) };
+        timer.Tick += (_, _) =>
+        {
+            frame++;
+            double progress = Math.Min(1, frame / (double)frameCount);
+            control.Opacity = 1 - Math.Pow(1 - progress, 3);
+            if (frame >= frameCount)
+            {
+                control.Opacity = 1;
+                timer.Stop();
+            }
+        };
+        timer.Start();
+    }
+
+    private Border AddPreviewLoadingCard(string title, MaterialIconKind iconKind)
+    {
+        var rotation = new RotateTransform();
+        _previewSpinnerRotations.Add(rotation);
+        var spinner = new TextBlock { Text = "◌", FontSize = 34, Foreground = PrimaryBrush, HorizontalAlignment = HorizontalAlignment.Center, RenderTransform = rotation };
+        var label = new TextBlock { Text = "Loading preview...", FontSize = 12, Foreground = MutedBrush, HorizontalAlignment = HorizontalAlignment.Center };
+        var content = new StackPanel { Spacing = 4, HorizontalAlignment = HorizontalAlignment.Center };
+        content.Children.Add(spinner); content.Children.Add(label);
+        var card = CreatePreviewCard(title, content, iconKind);
+        card.Tag = rotation;
+        _items.Children.Add(card);
+        if (!_spinnerTimer.IsEnabled) _spinnerTimer.Start();
+        return card;
+    }
+
+    private void RemovePreviewLoadingCard(Border card)
+    {
+        if (card.Tag is RotateTransform rotation) _previewSpinnerRotations.Remove(rotation);
+        _items.Children.Remove(card);
+        if (!_loadingOverlay.IsVisible && _previewSpinnerRotations.Count == 0) _spinnerTimer.Stop();
+    }
+
+    private void OpenImageViewer(Avalonia.Media.Imaging.Bitmap bitmap)
+    {
+        _zoomImage.Source = bitmap;
+        _zoomScale.ScaleX = _zoomScale.ScaleY = 1;
+        _zoomTranslate.X = _zoomTranslate.Y = 0;
+        _zoomPointers.Clear();
+        _lastZoomTap = 0;
+        _imageViewerOverlay.IsVisible = true;
+    }
+
+    private void CloseImageViewer()
+    {
+        _imageViewerOverlay.IsVisible = false;
+        _zoomImage.Source = null;
+        _zoomPointers.Clear();
+        _zoomScale.ScaleX = _zoomScale.ScaleY = 1;
+        _zoomTranslate.X = _zoomTranslate.Y = 0;
+    }
+
+    private void OnZoomPointerPressed(object? sender, PointerPressedEventArgs e)
+    {
+        Point pointerPosition = e.GetPosition(_imageViewerOverlay);
+        _zoomPointers[e.Pointer] = pointerPosition;
+        e.Pointer.Capture(_zoomImage);
+        _zoomGestureUsed = false;
+        if (_zoomPointers.Count == 1) _lastPanPoint = pointerPosition;
+        else if (_zoomPointers.Count == 2)
+        {
+            var points = _zoomPointers.Values.ToArray();
+            _pinchStartDistance = Distance(points[0], points[1]);
+            _pinchStartScale = _zoomScale.ScaleX;
+            _zoomGestureUsed = true;
+        }
+    }
+
+    private void OnZoomPointerMoved(object? sender, PointerEventArgs e)
+    {
+        if (!_zoomPointers.ContainsKey(e.Pointer)) return;
+        // Measure gestures in the fixed viewer coordinate space. Measuring
+        // against the transformed image makes pan speed drift as zoom changes.
+        Point current = e.GetPosition(_imageViewerOverlay);
+        _zoomPointers[e.Pointer] = current;
+        if (_zoomPointers.Count >= 2)
+        {
+            var points = _zoomPointers.Values.Take(2).ToArray();
+            double distance = Distance(points[0], points[1]);
+            if (_pinchStartDistance > 0)
+            {
+                double scale = Math.Clamp(_pinchStartScale * distance / _pinchStartDistance, 1, 6);
+                _zoomScale.ScaleX = _zoomScale.ScaleY = scale;
+            }
+            _zoomGestureUsed = true;
+        }
+        else if (_zoomScale.ScaleX > 1)
+        {
+            _zoomTranslate.X += current.X - _lastPanPoint.X;
+            _zoomTranslate.Y += current.Y - _lastPanPoint.Y;
+        }
+        _lastPanPoint = current;
+    }
+
+    private void OnZoomPointerReleased(object? sender, PointerReleasedEventArgs e)
+    {
+        bool single = _zoomPointers.Count == 1;
+        _zoomPointers.Remove(e.Pointer);
+        e.Pointer.Capture(null);
+        if (single && !_zoomGestureUsed)
+        {
+            long now = Environment.TickCount64;
+            if (now - _lastZoomTap <= 320)
+            {
+                double next = _zoomScale.ScaleX >= 5.5 ? 1 : Math.Min(6, Math.Max(2, _zoomScale.ScaleX * 2));
+                _zoomScale.ScaleX = _zoomScale.ScaleY = next;
+                if (next == 1) _zoomTranslate.X = _zoomTranslate.Y = 0;
+                _lastZoomTap = 0;
+            }
+            else _lastZoomTap = now;
+        }
+        if (_zoomPointers.Count < 2) _pinchStartDistance = 0;
+        if (_zoomPointers.Count == 0) _zoomGestureUsed = false;
+    }
+
+    private static double Distance(Point a, Point b)
+    {
+        double dx = a.X - b.X; double dy = a.Y - b.Y;
+        return Math.Sqrt(dx * dx + dy * dy);
+    }
+
+    private void AddDetail(string label, string value)
+    {
+        var icon = label switch
+        {
+            "Name" => MaterialIconKind.TagText,
+            "Type" => MaterialIconKind.ShapeOutline,
+            "Path ID" => MaterialIconKind.Identifier,
+            "Type ID" => MaterialIconKind.Numeric,
+            "Data size" => MaterialIconKind.Database,
+            "Source file" => MaterialIconKind.FileDocumentOutline,
+            _ => MaterialIconKind.InformationOutline
+        };
+        _items.Children.Add(CreateInfoRow(label, value, icon));
+    }
+
+    private void AddEmptyMessage(string message)
+    {
+        _items.Children.Add(new Border
+        {
+            Background = SurfaceContainerBrush,
+            CornerRadius = new CornerRadius(16),
+            Padding = new Thickness(16),
+            Child = CreateIconLabel(MaterialIconKind.InformationOutline, message, MutedBrush, 14)
+        });
+    }
+
+    private Control CreateActionRow(string title, string detail,
+        MaterialIconKind iconKind, Action action, Action? exportAction = null, Action? openAction = null, Action? holdAction = null)
+    {
+        var button = new Button
+        {
+            HorizontalAlignment = HorizontalAlignment.Stretch,
+            HorizontalContentAlignment = HorizontalAlignment.Stretch,
+            Padding = new Thickness(14, 13),
+            Margin = new Thickness(0, 0, 0, 6),
+            Background = SurfaceContainerBrush,
+            Foreground = TextBrush,
+            BorderBrush = OutlineBrush,
+            BorderThickness = new Thickness(1),
+            CornerRadius = new CornerRadius(17),
+            Content = new Grid
+            {
+                ColumnDefinitions = new ColumnDefinitions("44,*,24"),
+                Children =
+                {
+                    new Border
+                    {
+                        Width = 38,
+                        Height = 38,
+                        CornerRadius = new CornerRadius(13),
+                        Background = SurfaceHighBrush,
+                        Child = CreateIcon(iconKind, 21, PrimaryBrush),
+                        VerticalAlignment = VerticalAlignment.Center
+                    },
+                    new StackPanel
+                    {
+                        Spacing = 5,
+                        VerticalAlignment = VerticalAlignment.Center,
+                        HorizontalAlignment = HorizontalAlignment.Stretch,
+                        Margin = new Thickness(8, 0, 8, 0),
+                        Children =
+                        {
+                            new TextBlock
+                            {
+                                Text = title,
+                                FontWeight = FontWeight.SemiBold,
+                                FontSize = 14,
+                                TextWrapping = TextWrapping.Wrap,
+                                Foreground = TextBrush
+                            },
+                            new TextBlock
+                            {
+                                Text = detail,
+                                FontSize = 12,
+                                TextWrapping = TextWrapping.Wrap,
+                                Foreground = MutedBrush
+                            }
+                        }
+                    },
+                    CreateIcon(MaterialIconKind.ChevronRight, 20, MutedBrush)
+                }
+            }
+        };
+        Grid.SetColumn((Control)((Grid)button.Content).Children[0], 0);
+        Grid.SetColumn((Control)((Grid)button.Content).Children[1], 1);
+        Grid.SetColumn((Control)((Grid)button.Content).Children[2], 2);
+        ToolTip.SetTip(button, $"Open {title}");
+        var suppressNextClick = false;
+        button.PointerPressed += (_, _) => suppressNextClick = false;
+        button.Holding += (_, args) =>
+        {
+            if (args.HoldingState.ToString() == "Started") { suppressNextClick = true; holdAction?.Invoke(); }
+        };
+        button.Click += (_, _) =>
+        {
+            if (suppressNextClick)
+            {
+                suppressNextClick = false;
+                return;
+            }
+            action();
+        };
+
+        if (exportAction is not null || openAction is not null || (_currentPage == BrowserPage.Bundle && _currentBundle is not null))
+        {
+            var menu = new ContextMenu();
+            if (openAction is not null)
+            {
+                var openItem = new MenuItem { Header = "Open" };
+                openItem.Click += (_, _) => openAction();
+                menu.Items.Add(openItem);
+            }
+            if (exportAction is not null)
+            {
+                var exportItem = new MenuItem { Header = "Export" };
+                exportItem.Click += (_, _) => exportAction();
+                menu.Items.Add(exportItem);
+            }
+            if (_currentPage == BrowserPage.Bundle && _currentBundle is not null)
+            {
+                var replaceItem = new MenuItem { Header = "Replace" };
+                replaceItem.Click += async (_, _) => await ImportBundleEntryAsync(title);
+                menu.Items.Add(replaceItem);
+                var renameItem = new MenuItem { Header = "Rename" };
+                renameItem.Click += (_, _) => ShowRenameBundleEntry(title);
+                menu.Items.Add(renameItem);
+                var deleteItem = new MenuItem { Header = "Delete" };
+                deleteItem.Click += (_, _) => DeleteBundleEntry(title);
+                menu.Items.Add(deleteItem);
+            }
+            button.ContextMenu = menu;
+        }
+        return button;
+    }
+
+    private ContextMenu CreateNewAssetImportMenu()
+    {
+        var menu = new ContextMenu();
+        if (_currentAssets is null) return menu;
+
+        void Add(string label, int typeId, Func<AssetFileInfo, Task> import)
+        {
+            var template = _assetRows.FirstOrDefault(x => x.Info.GetTypeId(_currentAssets.file) == typeId)?.Info;
+            if (template is null) return;
+            var item = new MenuItem { Header = label };
+            item.Click += async (_, _) =>
+            {
+                try { await import(template); }
+                catch (Exception ex) { _status.Text = "Import failed: " + ex.Message; }
+            };
+            menu.Items.Add(item);
+        }
+
+        Add("Texture2D • PNG / JPG", (int)AssetClassID.Texture2D, x => ImportTextureImageAsync(x, true));
+        Add("Sprite • PNG + Texture2D", (int)AssetClassID.Sprite, x => ImportSpriteImageAsync(x, true));
+        Add("AudioClip • WAV / OGG", (int)AssetClassID.AudioClip, x => ImportAudioClipAsync(x, true));
+        Add("Font • TTF / OTF", (int)AssetClassID.Font, x => ImportFontAssetAsync(x, true));
+        Add("TextAsset", (int)AssetClassID.TextAsset, x => ImportTextAssetAsync(x, true));
+        Add("Cubemap • ZIP", (int)AssetClassID.Cubemap, x => ImportCubemapAsync(x, true));
+        Add("Mesh • OBJ", (int)AssetClassID.Mesh, x => ImportMeshObjAsync(x, true));
+        return menu;
+    }
+
+    private Button CreateDetailActionButton(MaterialIconKind icon, string label, IBrush background, IBrush foreground)
+    {
+        return new Button
+        {
+            Content = CreateIconLabel(icon, label, foreground, 16),
+            Background = background,
+            Foreground = foreground,
+            BorderBrush = OutlineBrush,
+            BorderThickness = new Thickness(1),
+            CornerRadius = new CornerRadius(13),
+            MinHeight = 48,
+            HorizontalAlignment = HorizontalAlignment.Stretch,
+            HorizontalContentAlignment = HorizontalAlignment.Center,
+            FontWeight = FontWeight.SemiBold
+        };
+    }
+
+    private void BuildFloatingActions()
+    {
+        var panel = new StackPanel { Spacing = 9, HorizontalAlignment = HorizontalAlignment.Left, VerticalAlignment = VerticalAlignment.Bottom };
+        _floatingMenu = new Border
+        {
+            Background = SurfaceBrush,
+            BorderBrush = OutlineBrush,
+            BorderThickness = new Thickness(1),
+            CornerRadius = new CornerRadius(18),
+            Padding = new Thickness(9),
+            IsVisible = false,
+            Child = new StackPanel { Spacing = 7 }
+        };
+        panel.Children.Add(_floatingMenu);
+        _floatingActionButton = new Button
+        {
+            Width = 58, Height = 58, MinWidth = 58, MinHeight = 58,
+            CornerRadius = new CornerRadius(29),
+            Background = PrimaryBrush, Foreground = OnPrimaryBrush,
+            HorizontalAlignment = HorizontalAlignment.Left,
+            Content = CreateIcon(MaterialIconKind.Menu, 25, OnPrimaryBrush)
+        };
+        _floatingActionButton.Click += (_, _) =>
+        {
+            _floatingMenuOpen = !_floatingMenuOpen;
+            UpdateFloatingActions();
+        };
+        panel.Children.Add(_floatingActionButton);
+        var host = new Border
+        {
+            HorizontalAlignment = HorizontalAlignment.Left,
+            VerticalAlignment = VerticalAlignment.Bottom,
+            Margin = new Thickness(16),
+            Child = panel,
+            IsVisible = false
+        };
+        host.Name = "FloatingActionsHost";
+        _pageLayers.Children.Add(host);
+        _floatingHost = host;
+        UpdateFloatingActions();
+    }
+
+    private Border? _floatingHost;
+
+    private Button CreateFloatingMenuButton(string text, MaterialIconKind icon, Action action, bool destructive = false)
+    {
+        var button = new Button
+        {
+            Content = CreateIconLabel(icon, text, TextBrush, 14),
+            Background = destructive ? Brush.Parse("#51252B") : SurfaceHighBrush,
+            Foreground = TextBrush,
+            BorderBrush = OutlineBrush,
+            BorderThickness = new Thickness(1),
+            CornerRadius = new CornerRadius(12),
+            MinHeight = 44,
+            HorizontalAlignment = HorizontalAlignment.Stretch,
+            HorizontalContentAlignment = HorizontalAlignment.Left
+        };
+        button.Click += (_, _) => { _floatingMenuOpen = false; UpdateFloatingActions(); action(); };
+        return button;
+    }
+
+    private void UpdateFloatingActions()
+    {
+        if (_floatingHost is null || _floatingMenu is null || _floatingActionButton is null) return;
+        _floatingHost.IsVisible = (_currentPage == BrowserPage.Assets && _currentAssets is not null) || (_currentPage == BrowserPage.Bundle && _currentBundle is not null);
+        _floatingActionButton.Content = CreateIcon(_selectionMode ? MaterialIconKind.CheckAll : MaterialIconKind.Menu, 25, OnPrimaryBrush);
+        _floatingMenu.IsVisible = _floatingMenuOpen;
+        if (_floatingMenu.Child is not StackPanel menu) return;
+        menu.Children.Clear();
+        if (_currentPage == BrowserPage.Bundle && _currentBundle is not null)
+        {
+            menu.Children.Add(CreateFloatingMenuButton("Add bundle entry", MaterialIconKind.FilePlus, () => _ = ImportBundleEntryAsync(null)));
+            var saveBundle = CreateFloatingMenuButton("Save modified bundle", MaterialIconKind.ContentSave, () => _ = SaveBundleWorkspaceAsync());
+            saveBundle.IsEnabled = _bundleWorkspace.Modified;
+            menu.Children.Add(saveBundle);
+            return;
+        }
+        if (_selectionMode)
+        {
+            int count = _selectedAssetIds.Count;
+            menu.Children.Add(CreateFloatingMenuButton($"Delete ({count})", MaterialIconKind.Delete, DeleteSelectedAssets, true));
+            menu.Children.Add(CreateFloatingMenuButton($"Extract ({count})", MaterialIconKind.Download, ExportSelectedAssets));
+            menu.Children.Add(CreateFloatingMenuButton("Cancel selection", MaterialIconKind.Close, ExitSelectionMode));
+        }
+        else
+        {
+            menu.Children.Add(CreateFloatingMenuButton("Import new asset", MaterialIconKind.FilePlus, () =>
+            {
+                var importMenu = CreateNewAssetImportMenu();
+                if (importMenu.Items.Count == 0)
+                {
+                    _status.Text = "No supported asset types are available for importing into this file.";
+                    return;
+                }
+                var target = (Control?)_floatingActionButton ?? this;
+                importMenu.PlacementTarget = target;
+                importMenu.Open(target);
+            }));
+            menu.Children.Add(CreateFloatingMenuButton("Extract all assets", MaterialIconKind.Download, () =>
+            {
+                if (_currentAssets is not null)
+                    _ = ExportAssetsArchiveAsync(_currentAssets.file.AssetInfos
+                        .Where(x => !_pendingDeleteIds.Contains(x.PathId)).ToList());
+            }));
+            menu.Children.Add(CreateFloatingMenuButton("Extract filtered assets", MaterialIconKind.Filter, () =>
+            {
+                var rows = _currentRows.Where(x => x.AssetInfo is not null).Select(x => x.AssetInfo!).ToList();
+                if (rows.Count > 0) _ = ExportAssetsArchiveAsync(rows);
+            }));
+            var save = CreateFloatingMenuButton($"Save changes ({_pendingAssetChanges.Count})", MaterialIconKind.ContentSave, () => _ = SavePendingAssetsAsync());
+            save.IsEnabled = _hasUnsavedChanges && _pendingAssetChanges.Count > 0;
+            menu.Children.Add(save);
+        }
+    }
+
+    private void EnterSelectionMode(AssetFileInfo asset)
+    {
+        if (_currentPage != BrowserPage.Assets) return;
+        _selectionMode = true;
+        _selectedAssetIds.Clear();
+        _selectedAssetIds.Add(asset.PathId);
+        _floatingMenuOpen = false;
+        // Selection mode is indicated by the floating action icon and selected rows.
+        UpdateFloatingActions();
+        RefreshCurrentList();
+    }
+
+    private void ToggleAssetSelection(AssetFileInfo asset)
+    {
+        if (!_selectionMode) return;
+        if (!_selectedAssetIds.Add(asset.PathId)) _selectedAssetIds.Remove(asset.PathId);
+        if (_selectedAssetIds.Count == 0) { ExitSelectionMode(); return; }
+        // Keep selection mode free of redundant status text.
+        UpdateFloatingActions();
+        RefreshCurrentList();
+    }
+
+    private void ExitSelectionMode()
+    {
+        _selectionMode = false;
+        _selectedAssetIds.Clear();
+        _floatingMenuOpen = false;
+        UpdateFloatingActions();
+        if (_currentPage == BrowserPage.Assets) RefreshCurrentList();
+    }
+
+    private List<AssetFileInfo> GetSelectedAssets()
+    {
+        if (_currentAssets is null) return new();
+        return _currentAssets.file.AssetInfos.Where(x => _selectedAssetIds.Contains(x.PathId)).ToList();
+    }
+
+    private void DeleteSelectedAssets()
+    {
+        var assets = GetSelectedAssets();
+        int queued = 0;
+        foreach (var asset in assets)
+            if (QueueAssetDeletion(asset)) queued++;
+        ExitSelectionMode();
+        _status.Text = queued == 0
+            ? "No assets were queued for deletion."
+            : $"{queued} asset(s) marked for deletion. Select Save changes to apply them.";
+    }
+
+    private async void ExportSelectedAssets()
+    {
+        var assets = GetSelectedAssets();
+        if (assets.Count == 0) return;
+        ExitSelectionMode();
+        await ExportAssetsArchiveAsync(assets);
+    }
+
+    private void ShowAssetFormatMenu(AssetFileInfo asset, bool replace, Control? placementTarget = null)
+    {
+        if (_currentAssets is null || _isBusy) return;
+        int typeId = asset.GetTypeId(_currentAssets.file);
+        var formats = GetAssetFormats(typeId, replace);
+        var menu = new ContextMenu();
+        foreach (var format in formats)
+        {
+            var item = new MenuItem { Header = format.Label };
+            item.Click += async (_, _) =>
+            {
+                try
+                {
+                    if (replace)
+                    {
+                        if (format.Key == "json")
+                            await ImportStructuredJsonAssetAsync(asset, Enum.GetName(typeof(AssetClassID), typeId) ?? $"Type_{typeId}");
+                        else
+                            await ReplaceAssetSafelyAsync(asset, format.Key);
+                    }
+                    else if (format.Key == "raw")
+                        await ExportRawAssetAsync(asset);
+                    else if (format.Key == "json")
+                        await ExportAssetDumpAsync(asset);
+                    else
+                        await ExportAssetAsync(asset);
+                }
+                catch (Exception ex)
+                {
+                    _status.Text = (replace ? "Replace failed: " : "Export failed: ") + ex.Message;
+                }
+            };
+            menu.Items.Add(item);
+        }
+        var target = placementTarget ?? (Control?)_floatingActionButton ?? this;
+        menu.PlacementTarget = target;
+        menu.Open(target);
+    }
+
+    private async Task ReplaceAssetSafelyAsync(AssetFileInfo asset, string format)
+    {
+        if (_currentAssets is null || _isBusy) return;
+        try
+        {
+            await ReplaceAssetAsync(asset, format);
+            if (_currentAssets is not null && _currentPage == BrowserPage.AssetDetails)
+                ShowAssetDetails(asset);
+        }
+        catch (Exception ex)
+        {
+            _status.Text = "Replace failed: " + ex.Message;
+            SetLoading(false);
+            _isBusy = false;
+        }
+    }
+
+    private static List<(string Key, string Label)> GetAssetFormats(int typeId, bool replace)
+    {
+        var formats = new List<(string Key, string Label)>();
+        if (typeId == (int)AssetClassID.Texture2D)
+            formats.AddRange(replace ? new List<(string Key, string Label)> { ("png", "PNG image"), ("jpg", "JPG image") } : new List<(string Key, string Label)> { ("png", "PNG image") });
+        else if (typeId == (int)AssetClassID.Sprite)
+            formats.Add(("png", "PNG image"));
+        else if (typeId == (int)AssetClassID.AudioClip)
+            formats.AddRange(replace ? new List<(string Key, string Label)> { ("wav", "WAV audio"), ("ogg", "OGG audio") } : new List<(string Key, string Label)> { ("audio", "Original decoded audio (WAV / OGG)") });
+        else if (typeId == (int)AssetClassID.Font)
+            formats.AddRange(replace ? new List<(string Key, string Label)> { ("ttf", "TTF font"), ("otf", "OTF font") } : new List<(string Key, string Label)> { ("font", "Embedded font (TTF / OTF)") });
+        else if (typeId == (int)AssetClassID.TextAsset)
+            formats.Add(replace ? ("text", "Text / TXT / JSON / XML / CSV / YAML / BYTES") : ("text", "Text file (.txt)"));
+        else if (typeId == (int)AssetClassID.Cubemap)
+            formats.Add(("zip", "ZIP with six PNG faces"));
+        else if (typeId == (int)AssetClassID.Mesh)
+            formats.Add(("obj", "Wavefront OBJ model"));
+
+        formats.Add(("raw", "Raw serialized asset data (.assetdata)"));
+        formats.Add(("json", "Type-tree JSON dump"));
+        return formats;
+    }
+
+    private async Task ReplaceAssetAsync(AssetFileInfo asset, string? format)
+    {
+        if (_currentAssets is null) return;
+        int typeId = asset.GetTypeId(_currentAssets.file);
+        if (format is null || format == "raw") { await ImportRawAssetAsync(asset); return; }
+        if (format == "json")
+        {
+            await ImportStructuredJsonAssetAsync(asset, Enum.GetName(typeof(AssetClassID), typeId) ?? $"Type_{typeId}");
+            return;
+        }
+        if (typeId == (int)AssetClassID.Texture2D) await ImportTextureImageAsync(asset);
+        else if (typeId == (int)AssetClassID.Sprite) await ImportSpriteImageAsync(asset);
+        else if (typeId == (int)AssetClassID.AudioClip) await ImportAudioClipAsync(asset);
+        else if (typeId == (int)AssetClassID.Font) await ImportFontAssetAsync(asset);
+        else if (typeId == (int)AssetClassID.TextAsset) await ImportTextAssetAsync(asset);
+        else if (typeId == (int)AssetClassID.Cubemap) await ImportCubemapAsync(asset);
+        else if (typeId == (int)AssetClassID.Mesh) await ImportMeshObjAsync(asset);
+    }
+
+    private static Control CreateInfoRow(string title, string detail, MaterialIconKind iconKind)
+    {
+        var icon = CreateIcon(iconKind, 20, PrimaryBrush);
+        var text = new StackPanel
+        {
+            Spacing = 5,
+            HorizontalAlignment = HorizontalAlignment.Stretch,
+            VerticalAlignment = VerticalAlignment.Center,
+            Margin = new Thickness(8, 0, 0, 0),
+            Children =
+            {
+                new TextBlock
+                {
+                    Text = title,
+                    FontWeight = FontWeight.SemiBold,
+                    FontSize = 13,
+                    TextWrapping = TextWrapping.Wrap,
+                    Foreground = MutedBrush
+                },
+                new TextBlock
+                {
+                    Text = detail,
+                    FontSize = 14,
+                    TextWrapping = TextWrapping.Wrap,
+                    Foreground = TextBrush
+                }
+            }
+        };
+        var grid = new Grid
+        {
+            ColumnDefinitions = new ColumnDefinitions("34,*"),
+            VerticalAlignment = VerticalAlignment.Center
+        };
+        Grid.SetColumn(icon, 0);
+        Grid.SetColumn(text, 1);
+        grid.Children.Add(icon);
+        grid.Children.Add(text);
+
+        return new Border
+        {
+            Background = SurfaceContainerBrush,
+            CornerRadius = new CornerRadius(16),
+            Padding = new Thickness(14),
+            HorizontalAlignment = HorizontalAlignment.Stretch,
+            Child = grid
+        };
+    }
+
+    private static Control CreateIcon(MaterialIconKind kind, double size, IBrush? foreground = null) =>
+        new MaterialIcon
+        {
+            Kind = kind,
+            Width = size,
+            Height = size,
+            Foreground = foreground ?? TextBrush,
+            HorizontalAlignment = HorizontalAlignment.Center,
+            VerticalAlignment = VerticalAlignment.Center
+        };
+
+    private static Control CreateIconLabel(MaterialIconKind kind, string text,
+        IBrush foreground, double fontSize)
+    {
+        var panel = new StackPanel
+        {
+            Orientation = Orientation.Horizontal,
+            Spacing = 10,
+            VerticalAlignment = VerticalAlignment.Center
+        };
+        panel.Children.Add(CreateIcon(kind, fontSize + 5, foreground));
+        panel.Children.Add(new TextBlock
+        {
+            Text = text,
+            FontSize = fontSize,
+            Foreground = foreground,
+            VerticalAlignment = VerticalAlignment.Center,
+            TextWrapping = TextWrapping.Wrap
+        });
+        return panel;
+    }
+
+    private static MaterialIconKind GetAssetIcon(string typeName)
+    {
+        if (typeName.Contains("Texture", StringComparison.OrdinalIgnoreCase) ||
+            typeName.Contains("Sprite", StringComparison.OrdinalIgnoreCase))
+            return MaterialIconKind.Image;
+        if (typeName.Contains("Audio", StringComparison.OrdinalIgnoreCase))
+            return MaterialIconKind.MusicNote;
+        if (typeName.Contains("GameObject", StringComparison.OrdinalIgnoreCase))
+            return MaterialIconKind.CubeOutline;
+        if (typeName.Contains("Text", StringComparison.OrdinalIgnoreCase))
+            return MaterialIconKind.FileDocumentOutline;
+        if (typeName.Contains("MonoBehaviour", StringComparison.OrdinalIgnoreCase))
+            return MaterialIconKind.CodeBraces;
+        if (typeName.Contains("Font", StringComparison.OrdinalIgnoreCase))
+            return MaterialIconKind.FormatFont;
+        if (typeName.Contains("Material", StringComparison.OrdinalIgnoreCase))
+            return MaterialIconKind.PaletteOutline;
+        if (typeName.Contains("Mesh", StringComparison.OrdinalIgnoreCase))
+            return MaterialIconKind.Shape;
+        return MaterialIconKind.Cube;
+    }
+
+    private static MaterialIconKind GetEntryIcon(string name)
+    {
+        if (name.EndsWith(".assets", StringComparison.OrdinalIgnoreCase))
+            return MaterialIconKind.Database;
+        if (name.EndsWith(".resS", StringComparison.OrdinalIgnoreCase) ||
+            name.EndsWith(".resource", StringComparison.OrdinalIgnoreCase) ||
+            name.EndsWith(".resources", StringComparison.OrdinalIgnoreCase))
+            return MaterialIconKind.FileDocumentOutline;
+        return MaterialIconKind.FileOutline;
+    }
+
+    private static bool Matches(string value, string query) =>
+        string.IsNullOrEmpty(query) ||
+        value.Contains(query, StringComparison.OrdinalIgnoreCase);
+
+    private static string GetEntryKind(string name)
+    {
+        if (name.EndsWith(".resS", StringComparison.OrdinalIgnoreCase))
+            return "Resource stream (.resS)";
+        if (name.EndsWith(".resource", StringComparison.OrdinalIgnoreCase) ||
+            name.EndsWith(".resources", StringComparison.OrdinalIgnoreCase))
+            return "Resource file";
+        if (name.EndsWith(".assets", StringComparison.OrdinalIgnoreCase))
+            return "Assets-like file";
+        return "Raw bundle entry";
+    }
+
+    private static string FormatSize(long bytes)
+    {
+        string[] units = { "B", "KB", "MB", "GB" };
+        double size = bytes;
+        var unit = 0;
+        while (size >= 1024 && unit < units.Length - 1)
+        {
+            size /= 1024;
+            unit++;
+        }
+        return unit == 0 ? $"{bytes:N0} B" : $"{size:0.##} {units[unit]}";
+    }
+}

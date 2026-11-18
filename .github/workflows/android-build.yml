@@ -1,0 +1,184 @@
+name: UABE Avalonia Android Release
+
+on:
+  push:
+    branches: [ android-port ]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: uabe-avalonia-android-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  android:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET 8
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Install Android workload
+        run: dotnet workload install android
+
+      - name: Install Android NDK and CMake
+        run: |
+          set -euo pipefail
+          SDK_ROOT="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-}}"
+          if [ -z "$SDK_ROOT" ]; then
+            echo "::error::Android SDK root is not configured."
+            exit 1
+          fi
+          SDKMANAGER="$(find "$SDK_ROOT/cmdline-tools" -type f -name sdkmanager | head -n 1)"
+          if [ -z "$SDKMANAGER" ]; then
+            echo "::error::Android sdkmanager was not found."
+            exit 1
+          fi
+          "$SDKMANAGER" --licenses <<< "$(printf 'y\\n%.0s' {1..30})" >/dev/null
+          "$SDKMANAGER" "ndk;27.2.12479018" "cmake;3.22.1"
+          test -f "$SDK_ROOT/ndk/27.2.12479018/build/cmake/android.toolchain.cmake"
+
+      - name: Build AssetStudio decoder for Linux fixture tests
+        run: |
+          set -euo pipefail
+          cmake -S Texture2DDecoderNative -B "$RUNNER_TEMP/t2d-linux" -DCMAKE_BUILD_TYPE=Release
+          cmake --build "$RUNNER_TEMP/t2d-linux" --config Release --parallel 2
+          echo "LD_LIBRARY_PATH=$RUNNER_TEMP/t2d-linux:${LD_LIBRARY_PATH:-}" >> "$GITHUB_ENV"
+
+      - name: Build AssetStudio decoder for Android ARM64
+        run: |
+          set -euo pipefail
+          NDK_DIR="$ANDROID_HOME/ndk/27.2.12479018"
+          if [ ! -f "$NDK_DIR/build/cmake/android.toolchain.cmake" ]; then
+            echo "::error::Pinned Android NDK 27.2.12479018 CMake toolchain was not found at $NDK_DIR."
+            find "$ANDROID_HOME/ndk" -mindepth 1 -maxdepth 1 -type d -print
+            exit 1
+          fi
+          cmake -S Texture2DDecoderNative -B "$RUNNER_TEMP/t2d-android" \
+            -DCMAKE_TOOLCHAIN_FILE="$NDK_DIR/build/cmake/android.toolchain.cmake" \
+            -DANDROID_ABI=arm64-v8a \
+            -DANDROID_PLATFORM=android-23 \
+            -DANDROID_STL=c++_static \
+            -DCMAKE_BUILD_TYPE=Release
+          cmake --build "$RUNNER_TEMP/t2d-android" --config Release --parallel 2
+          mkdir -p UABEA.Android/runtimes/android-arm64/native
+          cp "$RUNNER_TEMP/t2d-android/libTexture2DDecoderNative.so" \
+            UABEA.Android/runtimes/android-arm64/native/libTexture2DDecoderNative.so
+          test -s UABEA.Android/runtimes/android-arm64/native/libTexture2DDecoderNative.so
+
+      - name: Test Texture2D and Sprite data from sharedassets fixture
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/sharedassets-fixture"
+          unzip -q sharedassets.zip -d "$RUNNER_TEMP/sharedassets-fixture"
+          ASSETS_FILE="$(find "$RUNNER_TEMP/sharedassets-fixture" -type f -iname '*.assets' | head -n 1)"
+          if [ -z "$ASSETS_FILE" ]; then
+            echo "::error::No .assets file found in sharedassets.zip"
+            exit 1
+          fi
+          dotnet run --project TexturePreviewSmokeTest/TexturePreviewSmokeTest.csproj -- "$ASSETS_FILE" ReleaseFiles/classdata.tpk
+          test -s "texture-preview-output/report.txt"
+
+      - name: Upload texture diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: texture-diagnostics-${{ github.run_number }}
+          path: texture-preview-output/
+          if-no-files-found: warn
+          retention-days: 7
+
+      - name: Prepare stable release signing key
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+        run: |
+          set -euo pipefail
+          if [ -z "$ANDROID_KEYSTORE_BASE64" ]; then
+            echo "::error::Missing repository secret ANDROID_KEYSTORE_BASE64. Add the persistent release keystore secrets before building."
+            exit 1
+          fi
+          echo "$ANDROID_KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/uabea-release.keystore"
+          test -s "$RUNNER_TEMP/uabea-release.keystore"
+
+      - name: Publish signed ARM64 APK
+        env:
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          for name in ANDROID_KEYSTORE_PASSWORD ANDROID_KEY_ALIAS ANDROID_KEY_PASSWORD; do
+            if [ -z "${!name}" ]; then
+              echo "::error::Missing repository secret $name."
+              exit 1
+            fi
+          done
+
+          VERSION="0.2.${GITHUB_RUN_NUMBER}"
+          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
+          dotnet restore UABEA.Android/UABEA.Android.csproj
+          dotnet publish UABEA.Android/UABEA.Android.csproj -c Release -f net8.0-android31.0 -r android-arm64 -p:AndroidPackageFormat=apk -p:AndroidKeyStore=true -p:AndroidSigningKeyStore="$RUNNER_TEMP/uabea-release.keystore" -p:AndroidSigningKeyAlias="$ANDROID_KEY_ALIAS" -p:AndroidSigningStorePass="$ANDROID_KEYSTORE_PASSWORD" -p:AndroidSigningKeyPass="$ANDROID_KEY_PASSWORD" -p:PublishTrimmed=false -p:RunAOTCompilation=false -p:ApplicationDisplayVersion="$VERSION" -p:ApplicationVersion="$GITHUB_RUN_NUMBER" -p:Version="$VERSION" -p:InformationalVersion="$VERSION"
+
+          APK="$(find UABEA.Android/bin/Release/net8.0-android31.0/android-arm64/publish -maxdepth 1 -type f -iname '*signed.apk' | head -n 1)"
+          if [ -z "$APK" ]; then
+            echo "::error::The signed APK was not produced."
+            find UABEA.Android/bin/Release/net8.0-android31.0/android-arm64/publish -maxdepth 1 -type f -print
+            exit 1
+          fi
+
+          cp "$APK" "UABE-Avalonia-${VERSION}.apk"
+          APKSIGNER="$(find "$ANDROID_HOME/build-tools" -type f -name apksigner | sort -V | tail -n 1)"
+          "$APKSIGNER" verify --verbose "UABE-Avalonia-${VERSION}.apk"
+          "$APKSIGNER" verify --print-certs "UABE-Avalonia-${VERSION}.apk"
+          echo "APK_PATH=UABE-Avalonia-${VERSION}.apk" >> "$GITHUB_ENV"
+
+      - name: Install 7-Zip
+        run: |
+          set -euo pipefail
+          if ! command -v 7z >/dev/null 2>&1; then
+            sudo apt-get update
+            sudo apt-get install -y p7zip-full
+          fi
+          7z i >/dev/null
+      - name: Create and verify Ultra 7z archive
+        run: |
+          set -euo pipefail
+          SHORT_SHA="${GITHUB_SHA:0:7}"
+          echo "SHORT_SHA=$SHORT_SHA" >> "$GITHUB_ENV"
+          ARCHIVE="UABE-Avalonia-${VERSION}-${SHORT_SHA}.7z"
+          7z a -t7z -mx=9 -m0=lzma2 -mmt=on "$ARCHIVE" "$APK_PATH"
+          7z t "$ARCHIVE"
+          7z l "$ARCHIVE" | grep -F "$APK_PATH"
+          echo "ARCHIVE=$ARCHIVE" >> "$GITHUB_ENV"
+
+      - name: Upload 7z build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: UABE-Avalonia-${{ env.SHORT_SHA }}
+          path: ${{ env.ARCHIVE }}
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 30
+
+      - name: Publish GitHub Release with plain APK
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ env.VERSION }}
+          name: UABE Avalonia v${{ env.VERSION }}
+          target_commitish: ${{ github.sha }}
+          generate_release_notes: true
+          fail_on_unmatched_files: true
+          files: ${{ env.APK_PATH }}
+          body: |
+            Android ARM64 release for UABE Avalonia.
+
+            - Minimum Android version: 12 (API 31)
+            - Package: com.g5j.uabeamobile
+            - Signed APK attached as a plain `.apk` file.
+            - A separately compressed Ultra 7z archive is available from the workflow artifact.
