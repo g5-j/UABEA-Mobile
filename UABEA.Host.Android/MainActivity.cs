@@ -372,7 +372,7 @@ public sealed class MainActivity : Android.App.Activity
     void CopyVncAddress()
     {
         var clipboard = (Android.Content.ClipboardManager?)GetSystemService(ClipboardService);
-        clipboard?.SetPrimaryClip(ClipData.NewPlainText("VNC address", "127.0.0.1:5900"));
+        if (clipboard is not null) clipboard.PrimaryClip = ClipData.NewPlainText("VNC address", "127.0.0.1:5900");
         _status.Text = "Copied: 127.0.0.1:5900";
     }
 
