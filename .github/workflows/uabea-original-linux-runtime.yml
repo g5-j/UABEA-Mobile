@@ -120,7 +120,7 @@ jobs:
         run: |
           set -euo pipefail
           sudo apt-get update
-          sudo apt-get install -y p7zip-full xvfb x11vnc novnc websockify curl netcat-openbsd libfontconfig1 libfreetype6 libx11-6 libice6 libsm6 libxrender1 libxext6 libxfixes3 libxi6 libxrandr2 libxss1 libxtst6 libglib2.0-0
+          sudo apt-get install -y p7zip-full xvfb x11vnc curl netcat-openbsd libfontconfig1 libfreetype6 libx11-6 libice6 libsm6 libxrender1 libxext6 libxfixes3 libxi6 libxrandr2 libxss1 libxtst6 libglib2.0-0
           mkdir -p "${RUNNER_TEMP}/uabea-payload"
           ARCHIVE="$(find "${RUNNER_TEMP}/payload-zip" -type f -name '*.7z' | head -n 1)"
           test -n "$ARCHIVE"
@@ -159,15 +159,11 @@ jobs:
             if nc -z 127.0.0.1 6001; then break; fi
             sleep 1
           done
-          x11vnc -display :1 -forever -shared -nopw -rfbport 5900 -bg -o "${RUNNER_TEMP}/x11vnc.log"
-          websockify --web=/usr/share/novnc 6080 127.0.0.1:5900 > "${RUNNER_TEMP}/websockify.log" 2>&1 &
-          WEBSOCKIFY_PID=$!
-          trap 'kill "$WEBSOCKIFY_PID" 2>/dev/null || true; kill "$XVFB_PID" 2>/dev/null || true' EXIT
+          x11vnc -display :1 -forever -shared -nopw -localhost -rfbport 5900 -bg -o "${RUNNER_TEMP}/x11vnc.log"
           for attempt in $(seq 1 20); do
-            if curl -fsS http://127.0.0.1:6080/vnc.html -o /dev/null; then break; fi
+            if nc -z 127.0.0.1 5900; then break; fi
             sleep 1
           done
-          curl -fsS http://127.0.0.1:6080/vnc.html -o /dev/null
           nc -z 127.0.0.1 5900
           set +e
           timeout --signal=TERM 25s box64 "$DOTNET_X64" UABEAvalonia.dll > "${RUNNER_TEMP}/uabea-box64-smoke.log" 2>&1
@@ -178,7 +174,7 @@ jobs:
             echo "::error::UABEA did not remain running under Box64 (exit code $STATUS)."
             exit 1
           fi
-          echo "Original UABEA remained running under Box64; Xvfb, x11vnc, websockify and noVNC HTTP endpoint passed."
+          echo "Original UABEA remained running under Box64; Xvfb and localhost-only x11vnc passed."
 
   android-host:
     needs: [publish-original, linux-rootfs]
@@ -241,9 +237,14 @@ jobs:
           test -s "${RUNNER_TEMP}/proot-dist/loader"
           file "${RUNNER_TEMP}/proot-dist/proot"
           readelf -h "${RUNNER_TEMP}/proot-dist/proot" | grep -E "Machine:.*AArch64"
-          cp "${RUNNER_TEMP}/proot-dist/proot" UABEA.Host.Android/Assets/proot
-          cp "${RUNNER_TEMP}/proot-dist/loader" UABEA.Host.Android/Assets/loader
-          chmod 755 UABEA.Host.Android/Assets/proot UABEA.Host.Android/Assets/loader
+          mkdir -p UABEA.Host.Android/runtimes/android-arm64/native
+          cp "${RUNNER_TEMP}/proot-dist/proot" UABEA.Host.Android/runtimes/android-arm64/native/libproot.so
+          cp "${RUNNER_TEMP}/proot-dist/loader" UABEA.Host.Android/runtimes/android-arm64/native/libloader.so
+          chmod 755 UABEA.Host.Android/runtimes/android-arm64/native/libproot.so UABEA.Host.Android/runtimes/android-arm64/native/libloader.so
+          for binary in UABEA.Host.Android/runtimes/android-arm64/native/libproot.so UABEA.Host.Android/runtimes/android-arm64/native/libloader.so; do
+            file "$binary"
+            readelf -h "$binary" | grep -E "Machine:.*AArch64"
+          done
 
       - name: Build Box64 for Android ARM64
         run: |
@@ -317,6 +318,22 @@ jobs:
               if compressed:
                   sys.exit("ERROR: managed assemblies are compressed instead of STORED: " + ", ".join(compressed[:10]))
               print(f"Verified {len(assemblies)} managed assemblies embedded and STORED in APK.")
+
+              native = [
+                  "lib/arm64-v8a/libproot.so",
+                  "lib/arm64-v8a/libloader.so",
+                  "lib/arm64-v8a/libbox64.so",
+              ]
+              missing = [name for name in native if name not in zf.namelist()]
+              if missing:
+                  sys.exit("ERROR: Android native executables missing from APK: " + ", ".join(missing))
+              compressed_native = [
+                  name for name in native
+                  if zf.getinfo(name).compress_type != zipfile.ZIP_STORED
+              ]
+              if compressed_native:
+                  sys.exit("ERROR: Android native executables must be STORED for extraction: " + ", ".join(compressed_native))
+              print("Verified PRoot, loader and Box64 are STORED under lib/arm64-v8a for Android extraction.")
           PY
 
           echo "APK size: $(stat -c%s UABEA-Original-Host-debug.apk) bytes"
@@ -370,7 +387,7 @@ jobs:
           prerelease: true
           generate_release_notes: true
           body: |
-            Experimental Android ARM64 host containing the original UABEA Linux x64 application, PRoot, Box64 and the Debian runtime.
+            Experimental Android ARM64 host containing the original UABEA Linux x64 application, PRoot, Box64 and the Debian runtime. The host exposes a localhost-only VNC server at 127.0.0.1:5900 for external VNC viewer apps; no embedded WebView/noVNC bridge is used.
 
             This build has passed the GitHub Actions build and CI smoke checks. It has not yet been verified on a physical Android device. The APK uses a debug signing certificate.
           files: UABEA-Original-Host-debug.apk
