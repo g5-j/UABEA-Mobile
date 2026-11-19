@@ -10,7 +10,7 @@ sudo apt-get update
 sudo apt-get install -y debootstrap ca-certificates curl
 sudo rm -rf "$ROOTFS"
 sudo mkdir -p "$ROOTFS"
-sudo debootstrap --arch=amd64 --variant=minbase --include=apt,ca-certificates,gnupg bookworm "$ROOTFS" https://deb.debian.org/debian
+sudo debootstrap --arch=amd64 --variant=minbase --include=apt,ca-certificates,gnupg,libc-bin bookworm "$ROOTFS" https://deb.debian.org/debian
 
 sudo chroot "$ROOTFS" /usr/bin/env DEBIAN_FRONTEND=noninteractive apt-get update
 sudo chroot "$ROOTFS" /usr/bin/env DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
@@ -19,11 +19,32 @@ sudo chroot "$ROOTFS" /usr/bin/env DEBIAN_FRONTEND=noninteractive apt-get instal
   fonts-dejavu-core fontconfig \
   libfontconfig1 libfreetype6 libx11-6 libice6 libsm6 libxrender1 libxext6 \
   libxfixes3 libxi6 libxrandr2 libxss1 libxtst6 libglib2.0-0 \
-  libgl1 libegl1 libxcb1 libxkbcommon0 libdbus-1-3 libgcc-s1 libstdc++6 \
-  libx11-xcb1 libxcb-render0 libxcb-shape0 libxcb-randr0 libxcb-xfixes0 libxcb-sync1 \
-  libxcb-xkb1 libxkbcommon-x11-0 libxcb-cursor0 libxcb-icccm4 libxcb-image0 \
-  libxcb-keysyms1 libxcb-render-util0 libxcb-xinerama0 libharfbuzz0b libpng16-16 \
-  zlib1g libssl3 libicu72
+  libgl1 libglx0 libegl1 libgbm1 libdrm2 \
+  libpixman-1-0 libxau6 libxdmcp6 libxcb1 libxcb-render0 libxcb-shape0 \
+  libxcb-randr0 libxcb-xfixes0 libxcb-sync1 libxcb-xkb1 libxcb-cursor0 \
+  libxcb-icccm4 libxcb-image0 libxcb-keysyms1 libxcb-render-util0 \
+  libxcb-xinerama0 libx11-xcb1 libxkbcommon0 libxkbcommon-x11-0 \
+  libdbus-1-3 libgcc-s1 libstdc++6 libpng16-16 zlib1g libssl3 libicu72 \
+  libselinux1 libgcrypt20 libsystemd0 libcap-ng0 libcap2 liblzma5 \
+  libzstd1 libbz2-1.0 libbrotli1 libgpg-error0 libpcre2-8-0 \
+  libxfont2 libxkbfile1 libxinerama1 libxcursor1 libxdamage1 \
+  libxcomposite1 libxres1 libxmu6 libxpm4 libxt6 libxft2
+
+sudo chroot "$ROOTFS" /sbin/ldconfig
+
+# Validate the actual x86_64 guest binaries and their complete dependency
+# chains inside the rootfs. This catches missing packages before APK creation.
+for binary in /usr/bin/Xvfb /usr/bin/x11vnc /usr/bin/python3; do
+  sudo chroot "$ROOTFS" /usr/bin/test -x "$binary"
+  echo "===== Guest dependency check: $binary ====="
+  output="$(sudo chroot "$ROOTFS" /usr/bin/ldd "$binary" 2>&1)"
+  printf '%s\n' "$output"
+  if printf '%s\n' "$output" | grep -q 'not found'; then
+    echo "Unresolved shared library dependency in $binary" >&2
+    exit 1
+  fi
+done
+
 sudo chroot "$ROOTFS" /usr/bin/env DEBIAN_FRONTEND=noninteractive apt-get clean
 sudo rm -rf "$ROOTFS/var/lib/apt/lists/"* "$ROOTFS/var/cache/apt/"*
 
