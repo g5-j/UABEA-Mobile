@@ -5,6 +5,7 @@
   <application
       android:allowBackup="false"
       android:label="UABEA Original"
+      android:extractNativeLibs="true"
       android:usesCleartextTraffic="true"
       android:supportsRtl="true" />
 </manifest>
