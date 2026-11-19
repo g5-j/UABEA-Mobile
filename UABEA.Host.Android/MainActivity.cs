@@ -2,7 +2,6 @@ using Android.App;
 using Android.Content;
 using Android.OS;
 using Android.Views;
-using Android.Webkit;
 using Android.Widget;
 using System.Diagnostics;
 using System.Formats.Tar;
@@ -22,75 +21,96 @@ public sealed class MainActivity : Android.App.Activity
 {
     const int PickFileRequest = 4101;
     const int SaveFileRequest = 4102;
-    const string VncUrl = "http://127.0.0.1:6080/vnc.html?autoconnect=true&resize=remote";
+    const int VncPort = 5900;
 
     TextView _status = null!;
-    WebView _display = null!;
+    TextView _connection = null!;
     string? _lastImportedFile;
-    readonly List<System.Diagnostics.Process> _runtimeProcesses = new();
+    Task? _installTask;
+    readonly List<Process> _runtimeProcesses = new();
 
     string RuntimeDirectory => Path.Combine(FilesDir!.AbsolutePath, "runtime");
     string ImportDirectory => Path.Combine(FilesDir!.AbsolutePath, "imports");
     string RootfsDirectory => Path.Combine(RuntimeDirectory, "rootfs");
-    string BinDirectory => Path.Combine(RuntimeDirectory, "bin");
+    string NativeDirectory => ApplicationInfo!.NativeLibraryDir!;
+
+    string ProotPath => Path.Combine(NativeDirectory, "libproot.so");
+    string LoaderPath => Path.Combine(NativeDirectory, "libloader.so");
+    string Box64Path => Path.Combine(NativeDirectory, "libbox64.so");
 
     protected override void OnCreate(Bundle? savedInstanceState)
     {
         base.OnCreate(savedInstanceState);
         BuildHostUi();
-        _ = InstallRuntimeAssetsAsync();
+        _installTask = InstallRuntimeAssetsAsync();
     }
 
     void BuildHostUi()
     {
         var root = new LinearLayout(this) { Orientation = Orientation.Vertical };
-        root.SetPadding(12, 12, 12, 12);
+        root.SetPadding(Dp(16), Dp(16), Dp(16), Dp(16));
 
         var header = new TextView(this)
         {
             Text = "UABEA ORIGINAL",
-            TextSize = 20,
+            TextSize = 22,
             Gravity = GravityFlags.CenterVertical
         };
         root.AddView(header, new LinearLayout.LayoutParams(
-            ViewGroup.LayoutParams.MatchParent, Dp(48)));
-
-        var actions = new LinearLayout(this) { Orientation = Orientation.Horizontal };
-        AddAction(actions, "Start", StartOriginalRuntime);
-        AddAction(actions, "Open file", PickUnityFile);
-        AddAction(actions, "Save copy", PickSaveDestination);
-        AddAction(actions, "Reconnect", ConnectDisplay);
-        root.AddView(actions, new LinearLayout.LayoutParams(
             ViewGroup.LayoutParams.MatchParent, Dp(52)));
 
         _status = new TextView(this)
         {
-            Text = "Installing original UABEA and Linux runtime…",
+            Text = "Installing Linux runtime…",
             TextSize = 13
         };
         root.AddView(_status, new LinearLayout.LayoutParams(
-            ViewGroup.LayoutParams.MatchParent, Dp(54)));
+            ViewGroup.LayoutParams.MatchParent, Dp(64)));
 
-        _display = new WebView(this);
-        _display.Settings.JavaScriptEnabled = true;
-        _display.Settings.DomStorageEnabled = true;
-        _display.Settings.AllowFileAccess = false;
-        _display.Settings.AllowContentAccess = false;
-        _display.SetWebChromeClient(new WebChromeClient());
-        _display.SetWebViewClient(new WebViewClient());
-        root.AddView(_display, new LinearLayout.LayoutParams(
-            ViewGroup.LayoutParams.MatchParent, 0, 1));
+        var connectionTitle = new TextView(this)
+        {
+            Text = "VNC CONNECTION",
+            TextSize = 14
+        };
+        root.AddView(connectionTitle);
+
+        _connection = new TextView(this)
+        {
+            Text = "127.0.0.1:5900",
+            TextSize = 20,
+            Typeface = Android.Graphics.Typeface.Monospace
+        };
+        _connection.SetTextIsSelectable(true);
+        root.AddView(_connection, new LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MatchParent, Dp(48)));
+
+        var actions = new LinearLayout(this) { Orientation = Orientation.Horizontal };
+        AddAction(actions, "Start", StartOriginalRuntime);
+        AddAction(actions, "Stop", StopRuntimeFromUi);
+        AddAction(actions, "Copy", CopyVncAddress);
+        root.AddView(actions, new LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MatchParent, Dp(52)));
+
+        var files = new LinearLayout(this) { Orientation = Orientation.Horizontal };
+        AddAction(files, "Open file", PickUnityFile);
+        AddAction(files, "Save copy", PickSaveDestination);
+        root.AddView(files, new LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MatchParent, Dp(52)));
+
+        var help = new TextView(this)
+        {
+            Text = "Start the runtime, then open a VNC Viewer app on this phone and connect to 127.0.0.1:5900. The VNC server accepts local connections only.",
+            TextSize = 13
+        };
+        root.AddView(help, new LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MatchParent, ViewGroup.LayoutParams.WrapContent));
 
         SetContentView(root);
-        _display.LoadData(
-            "<html><body style='background:#111;color:#eee;font:16px sans-serif;padding:24px'>" +
-            "<h3>Original UABEA</h3><p>Press Start to launch the original Linux desktop application.</p></body></html>",
-            "text/html", "UTF-8");
     }
 
     void AddAction(LinearLayout row, string title, Action action)
     {
-        var button = new Button(this) { Text = title, TextSize = 11 };
+        var button = new Button(this) { Text = title, TextSize = 12 };
         button.Click += (_, _) => action();
         row.AddView(button, new LinearLayout.LayoutParams(0, Dp(48), 1));
     }
@@ -102,7 +122,6 @@ public sealed class MainActivity : Android.App.Activity
         try
         {
             Directory.CreateDirectory(RuntimeDirectory);
-            Directory.CreateDirectory(BinDirectory);
             Directory.CreateDirectory(ImportDirectory);
             Directory.CreateDirectory(Path.Combine(RuntimeDirectory, "logs"));
             Directory.CreateDirectory(Path.Combine(RuntimeDirectory, "proot-tmp"));
@@ -115,40 +134,19 @@ public sealed class MainActivity : Android.App.Activity
             if (!File.Exists(rootfsMarker))
                 await ExtractTarGzAssetAsync("linux-x64-rootfs.tar.gz", RootfsDirectory);
 
-            CopyAssetIfMissing("proot", Path.Combine(BinDirectory, "proot"));
-            CopyAssetIfMissing("loader", Path.Combine(BinDirectory, "loader"));
+            foreach (var nativeBinary in new[] { ProotPath, LoaderPath, Box64Path })
+            {
+                if (!File.Exists(nativeBinary))
+                    throw new FileNotFoundException(
+                        "Android did not extract a required executable from the APK native libraries: " + nativeBinary);
+            }
 
-            var box64Source = Path.Combine(ApplicationInfo!.NativeLibraryDir!, "libbox64.so");
-            var box64Target = Path.Combine(BinDirectory, "box64");
-            if (!File.Exists(box64Target))
-                File.Copy(box64Source, box64Target, overwrite: true);
-
-            SetExecutable(Path.Combine(BinDirectory, "proot"));
-            SetExecutable(Path.Combine(BinDirectory, "loader"));
-            SetExecutable(box64Target);
-
-            _status.Text = "Linux x64 rootfs, PRoot, Box64 and original UABEA are installed. Press Start.";
+            _status.Text = "Runtime installed. Press Start, then connect with a VNC app.";
         }
         catch (Exception ex)
         {
             _status.Text = "Runtime installation failed: " + ex.Message;
         }
-    }
-
-    void CopyAssetIfMissing(string assetName, string target)
-    {
-        if (File.Exists(target)) return;
-        using var source = Assets!.Open(assetName);
-        using var output = File.Create(target);
-        source.CopyTo(output);
-    }
-
-    static void SetExecutable(string path)
-    {
-        File.SetUnixFileMode(path,
-            UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute |
-            UnixFileMode.GroupRead | UnixFileMode.GroupExecute |
-            UnixFileMode.OtherRead | UnixFileMode.OtherExecute);
     }
 
     async Task ExtractTarGzAssetAsync(string assetName, string destinationRoot)
@@ -216,54 +214,52 @@ public sealed class MainActivity : Android.App.Activity
 
     async void StartOriginalRuntime()
     {
-        if (_runtimeProcesses.Count > 0)
+        if (_runtimeProcesses.Any(p => { try { return !p.HasExited; } catch { return false; } }))
         {
-            _status.Text = "UABEA runtime is already running.";
-            ConnectDisplay();
+            _status.Text = "UABEA is already running. Connect using your VNC app.";
             return;
         }
 
         try
         {
-            var proot = Path.Combine(BinDirectory, "proot");
-            var loader = Path.Combine(BinDirectory, "loader");
-            var box64 = Path.Combine(BinDirectory, "box64");
-            var original = Path.Combine(RuntimeDirectory, "original");
+            if (_installTask is not null)
+                await _installTask;
 
             foreach (var required in new[] {
-                proot, loader, box64,
+                ProotPath, LoaderPath, Box64Path,
                 Path.Combine(RootfsDirectory, "opt", "dotnet", "dotnet"),
-                Path.Combine(original, "UABEAvalonia.dll")
+                Path.Combine(RuntimeDirectory, "original", "UABEAvalonia.dll")
             })
                 if (!File.Exists(required))
                     throw new FileNotFoundException("Missing runtime component: " + required);
 
-            _status.Text = "Starting Linux display server…";
+            _status.Text = "Starting Linux desktop…";
             StartGuestProcess("Xvfb", "/usr/local/bin/box64", "/usr/bin/Xvfb",
                 ":1", "-screen", "0", "1280x800x24", "-nolisten", "tcp");
 
             var socketReady = await WaitForFileAsync(
-                Path.Combine(RootfsDirectory, "tmp", ".X11-unix", "X1"), 15000);
+                Path.Combine(RootfsDirectory, "tmp", ".X11-unix", "X1"), 20000);
             if (!socketReady)
                 throw new IOException("Xvfb did not create its display socket. Check runtime/logs/Xvfb.log.");
 
-            _status.Text = "Starting VNC and touch display bridge…";
+            _status.Text = "Starting local VNC server…";
             StartGuestProcess("x11vnc", "/usr/local/bin/box64", "/usr/bin/x11vnc",
-                "-display", ":1", "-forever", "-shared", "-nopw", "-rfbport", "5900");
-            StartGuestProcess("websockify", "/usr/local/bin/box64", "/usr/bin/python3",
-                "/usr/bin/websockify", "--web=/usr/share/novnc", "6080", "127.0.0.1:5900");
+                "-display", ":1", "-forever", "-shared", "-nopw",
+                "-localhost", "-rfbport", VncPort.ToString());
 
-            var webReady = await WaitForPortAsync(6080, 15000);
-            if (!webReady)
-                throw new IOException("noVNC did not start on port 6080. Check runtime/logs/websockify.log.");
+            if (!await WaitForPortAsync(VncPort, 15000))
+                throw new IOException("VNC server did not listen on 127.0.0.1:5900. Check runtime/logs/x11vnc.log.");
 
-            _status.Text = "Launching the original UABEA desktop application…";
+            _status.Text = "Launching original UABEA…";
             StartGuestProcess("UABEA", "/usr/local/bin/box64", "/opt/dotnet/dotnet",
                 "/opt/uabea/UABEAvalonia.dll");
 
-            await Task.Delay(1200);
-            ConnectDisplay();
-            _status.Text = "Original UABEA launched. Open files from /workspace inside its file dialog.";
+            await Task.Delay(1500);
+            var app = _runtimeProcesses.LastOrDefault();
+            if (app is null || app.HasExited)
+                throw new IOException("UABEA exited during startup. Check runtime/logs/UABEA.log.");
+
+            _status.Text = "UABEA is running. Connect your VNC app to 127.0.0.1:5900.";
         }
         catch (Exception ex)
         {
@@ -274,29 +270,27 @@ public sealed class MainActivity : Android.App.Activity
 
     void StartGuestProcess(string name, params string[] command)
     {
-        var proot = Path.Combine(BinDirectory, "proot");
-        var loader = Path.Combine(BinDirectory, "loader");
-        var box64 = Path.Combine(BinDirectory, "box64");
         var args = new List<string>
         {
             "--link2symlink", "-0", "-r", RootfsDirectory,
             "-b", "/dev", "-b", "/proc", "-b", "/sys",
             "-b", "/system", "-b", "/apex",
-            "-b", box64 + ":/usr/local/bin/box64",
+            "-b", Box64Path + ":/usr/local/bin/box64",
             "-b", Path.Combine(RuntimeDirectory, "original") + ":/opt/uabea",
             "-b", ImportDirectory + ":/workspace",
             "-w", "/"
         };
         args.AddRange(command);
 
-        var start = new ProcessStartInfo(proot)
+        var start = new ProcessStartInfo(ProotPath)
         {
             UseShellExecute = false,
             RedirectStandardOutput = true,
-            RedirectStandardError = true
+            RedirectStandardError = true,
+            WorkingDirectory = FilesDir!.AbsolutePath
         };
         foreach (var arg in args) start.ArgumentList.Add(arg);
-        start.Environment["PROOT_LOADER"] = loader;
+        start.Environment["PROOT_LOADER"] = LoaderPath;
         start.Environment["PROOT_TMP_DIR"] = Path.Combine(RuntimeDirectory, "proot-tmp");
         start.Environment["BOX64_LD_LIBRARY_PATH"] =
             "/lib/x86_64-linux-gnu:/usr/lib/x86_64-linux-gnu:/lib";
@@ -308,12 +302,25 @@ public sealed class MainActivity : Android.App.Activity
 
         var logPath = Path.Combine(RuntimeDirectory, "logs", name + ".log");
         var log = new StreamWriter(logPath, append: false) { AutoFlush = true };
-        var process = new System.Diagnostics.Process { StartInfo = start, EnableRaisingEvents = true };
+        var process = new Process { StartInfo = start, EnableRaisingEvents = true };
         process.OutputDataReceived += (_, e) => { if (e.Data is not null) lock (log) log.WriteLine(e.Data); };
         process.ErrorDataReceived += (_, e) => { if (e.Data is not null) lock (log) log.WriteLine(e.Data); };
         process.Exited += (_, _) => { try { log.Dispose(); } catch { } };
-        if (!process.Start())
-            throw new IOException("Could not start " + name + ".");
+
+        try
+        {
+            if (!process.Start())
+                throw new IOException("Android refused to execute " + ProotPath + ".");
+        }
+        catch (Exception ex)
+        {
+            log.WriteLine("Process launch failed: " + ex);
+            log.Dispose();
+            throw new IOException(
+                "Could not execute Android native PRoot at " + ProotPath +
+                ". Confirm the APK extracted libproot.so and libloader.so. " + ex.Message, ex);
+        }
+
         process.BeginOutputReadLine();
         process.BeginErrorReadLine();
         _runtimeProcesses.Add(process);
@@ -346,6 +353,12 @@ public sealed class MainActivity : Android.App.Activity
         return false;
     }
 
+    void StopRuntimeFromUi()
+    {
+        StopRuntimeProcesses();
+        _status.Text = "Runtime stopped.";
+    }
+
     void StopRuntimeProcesses()
     {
         foreach (var process in _runtimeProcesses.AsEnumerable().Reverse())
@@ -354,6 +367,13 @@ public sealed class MainActivity : Android.App.Activity
             try { process.Dispose(); } catch { }
         }
         _runtimeProcesses.Clear();
+    }
+
+    void CopyVncAddress()
+    {
+        var clipboard = (Android.Content.ClipboardManager?)GetSystemService(ClipboardService);
+        clipboard?.SetPrimaryClip(ClipData.NewPlainText("VNC address", "127.0.0.1:5900"));
+        _status.Text = "Copied: 127.0.0.1:5900";
     }
 
     void PickUnityFile()
@@ -426,7 +446,7 @@ public sealed class MainActivity : Android.App.Activity
                 await input.CopyToAsync(output);
 
             _lastImportedFile = targetPath;
-            _status.Text = "File copied to /workspace/" + safeName +
+            _status.Text = "Copied to /workspace/" + safeName +
                 ". In UABEA, use File > Open and select this path.";
         }
         catch (Exception ex)
@@ -443,22 +463,15 @@ public sealed class MainActivity : Android.App.Activity
         return index >= 0 ? cursor.GetString(index) : null;
     }
 
-    void ConnectDisplay()
-    {
-        _display.LoadUrl(VncUrl);
-        _status.Text = "Connecting to the local noVNC display…";
-    }
-
     protected override void OnDestroy()
     {
         StopRuntimeProcesses();
-        _display?.Destroy();
         base.OnDestroy();
     }
 
     public override void OnBackPressed()
     {
-        if (_display.CanGoBack()) _display.GoBack();
-        else base.OnBackPressed();
+        StopRuntimeProcesses();
+        base.OnBackPressed();
     }
 }
