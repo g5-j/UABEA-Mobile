@@ -27,7 +27,7 @@ public sealed class MainActivity : Android.App.Activity
     TextView _connection = null!;
     string? _lastImportedFile;
     Task? _installTask;
-    readonly List<Process> _runtimeProcesses = new();
+    readonly List<System.Diagnostics.Process> _runtimeProcesses = new();
 
     string RuntimeDirectory => Path.Combine(FilesDir!.AbsolutePath, "runtime");
     string ImportDirectory => Path.Combine(FilesDir!.AbsolutePath, "imports");
@@ -302,7 +302,7 @@ public sealed class MainActivity : Android.App.Activity
 
         var logPath = Path.Combine(RuntimeDirectory, "logs", name + ".log");
         var log = new StreamWriter(logPath, append: false) { AutoFlush = true };
-        var process = new Process { StartInfo = start, EnableRaisingEvents = true };
+        var process = new System.Diagnostics.Process { StartInfo = start, EnableRaisingEvents = true };
         process.OutputDataReceived += (_, e) => { if (e.Data is not null) lock (log) log.WriteLine(e.Data); };
         process.ErrorDataReceived += (_, e) => { if (e.Data is not null) lock (log) log.WriteLine(e.Data); };
         process.Exited += (_, _) => { try { log.Dispose(); } catch { } };
