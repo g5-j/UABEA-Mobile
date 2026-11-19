@@ -327,13 +327,15 @@ jobs:
               missing = [name for name in native if name not in zf.namelist()]
               if missing:
                   sys.exit("ERROR: Android native executables missing from APK: " + ", ".join(missing))
-              compressed_native = [
-                  name for name in native
-                  if zf.getinfo(name).compress_type != zipfile.ZIP_STORED
-              ]
-              if compressed_native:
-                  sys.exit("ERROR: Android native executables must be STORED for extraction: " + ", ".join(compressed_native))
-              print("Verified PRoot, loader and Box64 are STORED under lib/arm64-v8a for Android extraction.")
+              import struct
+              for name in native:
+                  data = zf.read(name)
+                  if data[:4] != b"\\x7fELF" or data[4] != 2 or data[5] != 1:
+                      sys.exit("ERROR: native executable is not a 64-bit little-endian ELF: " + name)
+                  machine = struct.unpack_from("<H", data, 18)[0]
+                  if machine != 183:
+                      sys.exit("ERROR: native executable is not AArch64: " + name)
+              print("Verified PRoot, loader and Box64 are AArch64 ELF files in lib/arm64-v8a. AndroidManifest extractNativeLibs=true allows Package Manager to extract them for execution.")
           PY
 
           echo "APK size: $(stat -c%s UABEA-Original-Host-debug.apk) bytes"
