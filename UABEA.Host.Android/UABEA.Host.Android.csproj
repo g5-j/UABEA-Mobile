@@ -6,9 +6,9 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <ApplicationId>com.g5j.uabeahost</ApplicationId>
     <ApplicationTitle>UABEA Original</ApplicationTitle>
-    <ApplicationDisplayVersion>0.1.0</ApplicationDisplayVersion>
-    <Version>0.1.0</Version>
-    <ApplicationVersion>1</ApplicationVersion>
+    <ApplicationDisplayVersion>0.2.0</ApplicationDisplayVersion>
+    <Version>0.2.0</Version>
+    <ApplicationVersion>2</ApplicationVersion>
     <AndroidMinSdkVersion>31</AndroidMinSdkVersion>
     <SupportedOSPlatformVersion>31.0</SupportedOSPlatformVersion>
     <RuntimeIdentifiers>android-arm64</RuntimeIdentifiers>
@@ -23,8 +23,12 @@
   <ItemGroup>
     <AndroidAsset Include="Assets/uabea-original.tar.gz" Link="uabea-original.tar.gz" />
     <AndroidAsset Include="Assets/linux-x64-rootfs.tar.gz" Link="linux-x64-rootfs.tar.gz" />
-    <AndroidAsset Include="Assets/proot" Link="proot" />
-    <AndroidAsset Include="Assets/loader" Link="loader" />
+    <AndroidNativeLibrary Include="runtimes/android-arm64/native/libproot.so"
+                          Abi="arm64-v8a"
+                          Condition="Exists('runtimes/android-arm64/native/libproot.so')" />
+    <AndroidNativeLibrary Include="runtimes/android-arm64/native/libloader.so"
+                          Abi="arm64-v8a"
+                          Condition="Exists('runtimes/android-arm64/native/libloader.so')" />
     <AndroidNativeLibrary Include="runtimes/android-arm64/native/libbox64.so"
                           Abi="arm64-v8a"
                           Condition="Exists('runtimes/android-arm64/native/libbox64.so')" />
