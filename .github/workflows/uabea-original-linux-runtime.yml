@@ -330,7 +330,7 @@ jobs:
               import struct
               for name in native:
                   data = zf.read(name)
-                  if data[:4] != b"\\x7fELF" or data[4] != 2 or data[5] != 1:
+                  if data[:4] != bytes((127, 69, 76, 70)) or data[4] != 2 or data[5] != 1:
                       sys.exit("ERROR: native executable is not a 64-bit little-endian ELF: " + name)
                   machine = struct.unpack_from("<H", data, 18)[0]
                   if machine != 183:
