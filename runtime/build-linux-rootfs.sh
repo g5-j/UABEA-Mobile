@@ -14,7 +14,7 @@ sudo debootstrap --arch=amd64 --variant=minbase --include=apt,ca-certificates,gn
 
 sudo chroot "$ROOTFS" /usr/bin/env DEBIAN_FRONTEND=noninteractive apt-get update
 sudo chroot "$ROOTFS" /usr/bin/env DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
-  xvfb x11vnc novnc python3-websockify python3 \
+  xvfb x11vnc python3 \
   dbus-x11 xauth x11-utils xdotool \
   fonts-dejavu-core fontconfig \
   libfontconfig1 libfreetype6 libx11-6 libice6 libsm6 libxrender1 libxext6 \
