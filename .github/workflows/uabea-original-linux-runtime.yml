@@ -390,6 +390,8 @@ jobs:
     needs: [android-host]
     runs-on: ubuntu-latest
     timeout-minutes: 50
+    env:
+      ANDROID_I_WANT_MY_TCG: "yes"
     steps:
       - name: Checkout Android smoke test
         uses: actions/checkout@v4
