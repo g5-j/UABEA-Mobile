@@ -49,6 +49,7 @@ adb shell run-as com.g5j.uabeahost sh -c '
   test -s files/runtime/original/UABEAvalonia.deps.json
   test -s files/runtime/rootfs/.install-complete
   test -s files/runtime/original/.install-complete
+  test -s files/runtime/logs/runtime.log
   test -d files/linux-home
 '
 
@@ -152,6 +153,76 @@ if [[ "$bundle_test" != 1 ]]; then
   dump_ui
   adb shell run-as com.g5j.uabeahost sh -c 'for f in files/runtime/logs/UABEA-Bundle-*.log; do echo ==== $f; cat "$f"; done' || true
   echo "::error::UABEA bundle edit/save round-trip did not finish."
+  exit 1
+fi
+
+tap_ui_button() {
+  local button="$1"
+  local ui
+  ui="$(dump_ui)"
+  python3 - "$button" "$ui" <<'PY'
+import re
+import subprocess
+import sys
+import xml.etree.ElementTree as ET
+
+label, raw = sys.argv[1], sys.argv[2]
+match = re.search(r'(<hierarchy[\\s\\S]*</hierarchy>)', raw)
+if not match:
+    raise SystemExit("Could not read Android UI hierarchy.")
+root = ET.fromstring(match.group(1))
+for node in root.iter("node"):
+    if node.attrib.get("text") == label:
+        bounds = node.attrib.get("bounds", "")
+        values = list(map(int, re.findall(r"-?\\d+", bounds)))
+        if len(values) != 4:
+            raise SystemExit(f"Invalid bounds for {label}: {bounds}")
+        x = (values[0] + values[2]) // 2
+        y = (values[1] + values[3]) // 2
+        subprocess.check_call(["adb", "shell", "input", "tap", str(x), str(y)])
+        print(f"Tapped {label} at {x},{y}")
+        break
+else:
+    raise SystemExit(f"Button not found: {label}")
+PY
+}
+
+echo "Checking clean stop and restart lifecycle..."
+tap_ui_button "Stop"
+stopped=0
+for attempt in $(seq 1 30); do
+  UI="$(dump_ui)"
+  if grep -q "Runtime stopped" <<<"$UI"; then
+    stopped=1
+    break
+  fi
+  sleep 1
+done
+if [[ "$stopped" != 1 ]]; then
+  dump_ui
+  echo "::error::Android host did not stop the guest runtime cleanly."
+  exit 1
+fi
+
+tap_ui_button "Start"
+restarted=0
+for attempt in $(seq 1 240); do
+  UI="$(dump_ui)"
+  if grep -q "UABEA is running" <<<"$UI"; then
+    restarted=1
+    break
+  fi
+  if grep -q "Runtime start failed" <<<"$UI"; then
+    echo "$UI"
+    adb shell run-as com.g5j.uabeahost sh -c 'for f in files/runtime/logs/*.log; do echo ==== $f; cat "$f"; done' || true
+    echo "::error::UABEA failed to restart after Stop."
+    exit 1
+  fi
+  sleep 2
+done
+if [[ "$restarted" != 1 ]]; then
+  dump_ui
+  echo "::error::UABEA did not restart after Stop."
   exit 1
 fi
 
