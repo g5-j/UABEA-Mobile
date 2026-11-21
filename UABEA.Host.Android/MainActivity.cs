@@ -4,6 +4,8 @@ using Android.OS;
 using Android.Views;
 using Android.Widget;
 using System.Diagnostics;
+using System.Security.Cryptography;
+using System.Text;
 using System.Formats.Tar;
 using System.IO.Compression;
 using System.Net.Sockets;
@@ -104,6 +106,7 @@ public sealed class MainActivity : Android.App.Activity
         var files = new LinearLayout(this) { Orientation = Orientation.Horizontal };
         AddAction(files, "Open file", PickUnityFile);
         AddAction(files, "Output folder", PickOutputFolder);
+        AddAction(files, "Bundle test", RunBundleRoundTripSelfTest);
         root.AddView(files, new LinearLayout.LayoutParams(
             ViewGroup.LayoutParams.MatchParent, Dp(52)));
 
@@ -320,7 +323,7 @@ public sealed class MainActivity : Android.App.Activity
         }
     }
 
-    void StartGuestProcess(string name, params string[] command)
+    System.Diagnostics.Process StartGuestProcess(string name, params string[] command)
     {
         var args = new List<string>
         {
@@ -376,6 +379,120 @@ public sealed class MainActivity : Android.App.Activity
         process.BeginOutputReadLine();
         process.BeginErrorReadLine();
         _runtimeProcesses.Add(process);
+        return process;
+    }
+
+    async void RunBundleRoundTripSelfTest()
+    {
+        try
+        {
+            if (_installTask is not null) await _installTask;
+
+            var testDirectory = Path.Combine(HomeDirectory, ".uabea-selftest");
+            if (Directory.Exists(testDirectory))
+                Directory.Delete(testDirectory, recursive: true);
+            Directory.CreateDirectory(testDirectory);
+
+            var bundlePath = Path.Combine(testDirectory, "smoke.unity3d");
+            var entryPath = bundlePath + "_payload.txt";
+            CreateUnityFsTestBundle(bundlePath);
+            await File.WriteAllTextAsync(entryPath, "after");
+
+            var beforeHash = SHA256.HashData(await File.ReadAllBytesAsync(bundlePath));
+            _status.Text = "Testing original UABEA bundle edit and save…";
+
+            var import = StartGuestProcess("UABEA-Bundle-Import",
+                "/usr/local/bin/box64", "/opt/dotnet/dotnet", "/opt/uabea/UABEAvalonia.dll",
+                "batchimportbundle", "/home/uabea/.uabea-selftest");
+            await import.WaitForExitAsync().WaitAsync(TimeSpan.FromSeconds(90));
+            if (import.ExitCode != 0)
+                throw new IOException("UABEA bundle import/save command exited with code " + import.ExitCode + ".");
+
+            var afterHash = SHA256.HashData(await File.ReadAllBytesAsync(bundlePath));
+            if (CryptographicOperations.FixedTimeEquals(beforeHash, afterHash))
+                throw new InvalidDataException("The test bundle did not change after the edit operation.");
+
+            var export = StartGuestProcess("UABEA-Bundle-Verify",
+                "/usr/local/bin/box64", "/opt/dotnet/dotnet", "/opt/uabea/UABEAvalonia.dll",
+                "batchexportbundle", "/home/uabea/.uabea-selftest");
+            await export.WaitForExitAsync().WaitAsync(TimeSpan.FromSeconds(90));
+            if (export.ExitCode != 0)
+                throw new IOException("UABEA bundle verification command exited with code " + export.ExitCode + ".");
+
+            var roundTripText = (await File.ReadAllTextAsync(entryPath)).Trim();
+            if (!string.Equals(roundTripText, "after", StringComparison.Ordinal))
+                throw new InvalidDataException("The edited bundle entry did not survive reopening and export.");
+
+            var savedBundle = await File.ReadAllBytesAsync(bundlePath);
+            if (savedBundle.Length < 32 ||
+                !savedBundle.AsSpan(0, 7).SequenceEqual(Encoding.ASCII.GetBytes("UnityFS")))
+                throw new InvalidDataException("The saved bundle has an invalid UnityFS signature.");
+
+            Directory.Delete(testDirectory, recursive: true);
+            _status.Text = "UABEA bundle open/edit/save test passed.";
+        }
+        catch (Exception ex)
+        {
+            _status.Text = "Bundle self-test failed: " + ex.Message;
+        }
+    }
+
+    static void CreateUnityFsTestBundle(string path)
+    {
+        var payload = Encoding.UTF8.GetBytes("before");
+        var entryName = Encoding.UTF8.GetBytes("payload.txt\0");
+
+        using var info = new MemoryStream();
+        info.Write(new byte[16]);
+        WriteUInt32BigEndian(info, 1);
+        WriteUInt32BigEndian(info, (uint)payload.Length);
+        WriteUInt32BigEndian(info, (uint)payload.Length);
+        WriteUInt16BigEndian(info, 0x40);
+        WriteUInt32BigEndian(info, 1);
+        WriteUInt64BigEndian(info, 0);
+        WriteUInt64BigEndian(info, (ulong)payload.Length);
+        WriteUInt32BigEndian(info, 0);
+        info.Write(entryName);
+        var infoBytes = info.ToArray();
+
+        var signature = Encoding.ASCII.GetBytes("UnityFS\0");
+        var generation = Encoding.ASCII.GetBytes("5.x.x\0");
+        var engine = Encoding.ASCII.GetBytes("2020.3.0f1\0");
+        var headerLength = signature.Length + sizeof(uint) + generation.Length + engine.Length +
+                           sizeof(ulong) + sizeof(uint) * 3;
+        var totalLength = (ulong)(headerLength + infoBytes.Length + payload.Length);
+
+        using var output = File.Create(path);
+        output.Write(signature);
+        WriteUInt32BigEndian(output, 6);
+        output.Write(generation);
+        output.Write(engine);
+        WriteUInt64BigEndian(output, totalLength);
+        WriteUInt32BigEndian(output, (uint)infoBytes.Length);
+        WriteUInt32BigEndian(output, (uint)infoBytes.Length);
+        WriteUInt32BigEndian(output, 0x40);
+        output.Write(infoBytes);
+        output.Write(payload);
+    }
+
+    static void WriteUInt16BigEndian(Stream stream, ushort value)
+    {
+        stream.WriteByte((byte)(value >> 8));
+        stream.WriteByte((byte)value);
+    }
+
+    static void WriteUInt32BigEndian(Stream stream, uint value)
+    {
+        stream.WriteByte((byte)(value >> 24));
+        stream.WriteByte((byte)(value >> 16));
+        stream.WriteByte((byte)(value >> 8));
+        stream.WriteByte((byte)value);
+    }
+
+    static void WriteUInt64BigEndian(Stream stream, ulong value)
+    {
+        for (var shift = 56; shift >= 0; shift -= 8)
+            stream.WriteByte((byte)(value >> shift));
     }
 
     static async Task<bool> WaitForFileAsync(string path, int timeoutMs)
@@ -489,6 +606,8 @@ public sealed class MainActivity : Android.App.Activity
         {
             var files = Directory.EnumerateFiles(HomeDirectory, "*", SearchOption.AllDirectories)
                 .Where(path => !path.EndsWith(".tmp", StringComparison.OrdinalIgnoreCase))
+                .Where(path => !Path.GetRelativePath(HomeDirectory, path).StartsWith(
+                    ".uabea-selftest" + Path.DirectorySeparatorChar, StringComparison.Ordinal))
                 .ToArray();
             foreach (var file in files)
             {
