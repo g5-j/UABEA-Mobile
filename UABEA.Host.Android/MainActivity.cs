@@ -31,11 +31,12 @@ public sealed class MainActivity : Android.App.Activity
     TextView _connection = null!;
     string? _lastImportedFile;
     Android.Net.Uri? _outputTreeUri;
-    Task? _installTask;
+    Task<bool>? _installTask;
+    bool _startingRuntime;
     FileSystemWatcher? _homeWatcher;
     CancellationTokenSource? _syncDebounce;
     readonly SemaphoreSlim _syncLock = new(1, 1);
-    readonly List<System.Diagnostics.Process> _runtimeProcesses = new();
+    readonly Dictionary<string, System.Diagnostics.Process> _runtimeProcesses = new(StringComparer.OrdinalIgnoreCase);
     static readonly object RuntimeLogLock = new();
 
     string RuntimeDirectory => Path.Combine(FilesDir!.AbsolutePath, "runtime");
@@ -171,7 +172,7 @@ public sealed class MainActivity : Android.App.Activity
 
     int Dp(int value) => (int)(value * Resources!.DisplayMetrics!.Density + 0.5f);
 
-    async Task InstallRuntimeAssetsAsync()
+    async Task<bool> InstallRuntimeAssetsAsync()
     {
         WriteRuntimeLog("INSTALL", $"Runtime installation started. Version={RuntimeInstallVersion}; runtime={RuntimeDirectory}; rootfs={RootfsDirectory}.");
         try
@@ -209,11 +210,13 @@ public sealed class MainActivity : Android.App.Activity
             StartHomeFileWatcher();
             WriteRuntimeLog("INSTALL", "Runtime installation completed successfully. Required files and Android native libraries are present.");
             _status.Text = "Linux runtime installed and verified. Press Start, then connect with a VNC app.";
+            return true;
         }
         catch (Exception ex)
         {
             WriteRuntimeLog("INSTALL-ERROR", ex.ToString());
             _status.Text = "Runtime installation failed: " + ex.Message;
+            return false;
         }
     }
 
@@ -361,17 +364,25 @@ public sealed class MainActivity : Android.App.Activity
 
     async void StartOriginalRuntime()
     {
-        if (_runtimeProcesses.Any(p => { try { return !p.HasExited; } catch { return false; } }))
+        if (_startingRuntime)
+        {
+            _status.Text = "Runtime startup is already in progress.";
+            return;
+        }
+
+        var existingApp = GetRunningProcess("UABEA");
+        if (existingApp is not null)
         {
             _status.Text = "UABEA is already running. Connect using your VNC app.";
             return;
         }
 
+        _startingRuntime = true;
         WriteRuntimeLog("START", "Start button pressed.");
         try
         {
-            if (_installTask is not null)
-                await _installTask;
+            if (_installTask is not null && !await _installTask)
+                throw new InvalidOperationException("Linux runtime installation failed. Review runtime/logs/runtime.log before retrying.");
 
             foreach (var required in new[] {
                 ProotPath, LoaderPath, Box64Path,
@@ -389,29 +400,33 @@ public sealed class MainActivity : Android.App.Activity
             }
 
             _status.Text = "Starting Linux desktop…";
-            StartGuestProcess("Xvfb", "/usr/local/bin/box64", "/usr/bin/Xvfb",
-                ":1", "-screen", "0", "1280x800x24", "-nolisten", "tcp");
-
-            var socketReady = await WaitForFileAsync(
-                Path.Combine(RootfsDirectory, "tmp", ".X11-unix", "X1"), 20000);
-            if (!socketReady)
-                throw new IOException("Xvfb did not create its display socket. Check runtime/logs/Xvfb.log.");
+            if (GetRunningProcess("Xvfb") is null)
+            {
+                var socketPath = Path.Combine(RootfsDirectory, "tmp", ".X11-unix", "X1");
+                try { if (File.Exists(socketPath)) File.Delete(socketPath); } catch { }
+                StartGuestProcess("Xvfb", "/usr/local/bin/box64", "/usr/bin/Xvfb",
+                    ":1", "-screen", "0", "1280x800x24", "-nolisten", "tcp");
+                if (!await WaitForFileAsync(socketPath, 20000))
+                    throw new IOException("Xvfb did not create its display socket. Check runtime/logs/Xvfb.log.");
+            }
 
             _status.Text = "Starting local VNC server…";
-            StartGuestProcess("x11vnc", "/usr/local/bin/box64", "/usr/bin/x11vnc",
-                "-display", ":1", "-forever", "-shared", "-nopw",
-                "-localhost", "-rfbport", VncPort.ToString());
+            if (GetRunningProcess("x11vnc") is null)
+            {
+                StartGuestProcess("x11vnc", "/usr/local/bin/box64", "/usr/bin/x11vnc",
+                    "-display", ":1", "-forever", "-shared", "-nopw",
+                    "-localhost", "-rfbport", VncPort.ToString());
+            }
 
             if (!await WaitForPortAsync(VncPort, 15000))
                 throw new IOException("VNC server did not listen on 127.0.0.1:5900. Check runtime/logs/x11vnc.log.");
 
             _status.Text = "Launching original UABEA…";
-            StartGuestProcess("UABEA", "/usr/local/bin/box64", "/opt/dotnet/dotnet",
+            var app = StartGuestProcess("UABEA", "/usr/local/bin/box64", "/opt/dotnet/dotnet",
                 "/opt/uabea/UABEAvalonia.dll");
 
             await Task.Delay(1500);
-            var app = _runtimeProcesses.LastOrDefault();
-            if (app is null || app.HasExited)
+            if (app.HasExited)
                 throw new IOException("UABEA exited during startup. Check runtime/logs/UABEA.log.");
 
             _status.Text = "UABEA is running. Connect your VNC app to 127.0.0.1:5900.";
@@ -422,6 +437,24 @@ public sealed class MainActivity : Android.App.Activity
             _status.Text = "Runtime start failed: " + ex.Message;
             StopRuntimeProcesses();
         }
+        finally
+        {
+            _startingRuntime = false;
+        }
+    }
+
+    System.Diagnostics.Process? GetRunningProcess(string name)
+    {
+        if (!_runtimeProcesses.TryGetValue(name, out var process))
+            return null;
+        try
+        {
+            if (!process.HasExited) return process;
+        }
+        catch { }
+        _runtimeProcesses.Remove(name);
+        try { process.Dispose(); } catch { }
+        return null;
     }
 
     System.Diagnostics.Process StartGuestProcess(string name, params string[] command)
@@ -492,7 +525,11 @@ public sealed class MainActivity : Android.App.Activity
 
         process.BeginOutputReadLine();
         process.BeginErrorReadLine();
-        _runtimeProcesses.Add(process);
+        if (_runtimeProcesses.TryGetValue(name, out var previous))
+        {
+            try { previous.Dispose(); } catch { }
+        }
+        _runtimeProcesses[name] = process;
         WriteRuntimeLog("PROCESS", $"{name} started. PID={process.Id}.");
         return process;
     }
@@ -501,7 +538,8 @@ public sealed class MainActivity : Android.App.Activity
     {
         try
         {
-            if (_installTask is not null) await _installTask;
+            if (_installTask is not null && !await _installTask)
+                throw new InvalidOperationException("Linux runtime installation failed; bundle self-test cannot run.");
 
             var testDirectory = Path.Combine(HomeDirectory, ".uabea-selftest");
             if (Directory.Exists(testDirectory))
@@ -645,12 +683,13 @@ public sealed class MainActivity : Android.App.Activity
 
     void StopRuntimeProcesses()
     {
-        foreach (var process in _runtimeProcesses.AsEnumerable().Reverse())
+        foreach (var process in _runtimeProcesses.Values.Reverse())
         {
             try { if (!process.HasExited) process.Kill(entireProcessTree: true); } catch { }
             try { process.Dispose(); } catch { }
         }
         _runtimeProcesses.Clear();
+        _startingRuntime = false;
     }
 
     void CopyVncAddress()
@@ -722,37 +761,170 @@ public sealed class MainActivity : Android.App.Activity
             var files = Directory.EnumerateFiles(HomeDirectory, "*", SearchOption.AllDirectories)
                 .Where(path => !path.EndsWith(".tmp", StringComparison.OrdinalIgnoreCase))
                 .Where(path => !Path.GetRelativePath(HomeDirectory, path).StartsWith(
-                    ".uabea-selftest" + Path.DirectorySeparatorChar, StringComparison.Ordinal))
+                    ".uabea-selftest", StringComparison.Ordinal))
+                .Where(path => !Path.GetRelativePath(HomeDirectory, path).Contains(
+                    Path.DirectorySeparatorChar + ".uabea-selftest", StringComparison.Ordinal))
                 .ToArray();
+            var synced = 0;
+            var skipped = 0;
             foreach (var file in files)
             {
                 cancellationToken.ThrowIfCancellationRequested();
-                var relative = Path.GetRelativePath(HomeDirectory, file);
-                await CopyFileToTreeAsync(file, relative, _outputTreeUri);
+                var stableStream = await OpenStableFileAsync(file, cancellationToken);
+                if (stableStream is null)
+                {
+                    skipped++;
+                    WriteRuntimeLog("SYNC-SKIP", $"Skipped a file that is still changing or locked: {file}");
+                    continue;
+                }
+
+                using (stableStream)
+                {
+                    var relative = Path.GetRelativePath(HomeDirectory, file);
+                    await CopyFileToTreeAsync(file, relative, _outputTreeUri, stableStream);
+                    synced++;
+                }
             }
-            RunOnUiThread(() => _status.Text = "Saved Linux files synced to /UABEA (" + files.Length + " files).");
+            RunOnUiThread(() => _status.Text =
+                $"Output sync complete: {synced} files copied; {skipped} changing files deferred.");
         }
         finally { _syncLock.Release(); }
     }
 
-    async Task CopyFileToTreeAsync(string sourcePath, string relativePath, Android.Net.Uri treeUri)
+    async Task<FileStream?> OpenStableFileAsync(string path, CancellationToken cancellationToken)
+    {
+        long previousLength = -1;
+        DateTime previousWrite = DateTime.MinValue;
+        var stableSamples = 0;
+
+        for (var attempt = 0; attempt < 12; attempt++)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            if (!File.Exists(path)) return null;
+
+            var info = new FileInfo(path);
+            var length = info.Length;
+            var lastWrite = info.LastWriteTimeUtc;
+            if (length == previousLength && lastWrite == previousWrite)
+                stableSamples++;
+            else
+                stableSamples = 0;
+
+            previousLength = length;
+            previousWrite = lastWrite;
+
+            if (stableSamples >= 2)
+            {
+                try
+                {
+                    var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.None,
+                        128 * 1024, FileOptions.Asynchronous | FileOptions.SequentialScan);
+                    if (stream.Length == length && File.GetLastWriteTimeUtc(path) == lastWrite)
+                    {
+                        stream.Position = 0;
+                        return stream;
+                    }
+                    stream.Dispose();
+                }
+                catch (IOException) { }
+                catch (UnauthorizedAccessException) { }
+            }
+
+            await Task.Delay(500, cancellationToken);
+        }
+
+        return null;
+    }
+
+    async Task CopyFileToTreeAsync(
+        string sourcePath,
+        string relativePath,
+        Android.Net.Uri treeUri,
+        FileStream input)
     {
         var parts = relativePath.Split(Path.DirectorySeparatorChar, StringSplitOptions.RemoveEmptyEntries);
+        if (parts.Length == 0) throw new IOException("Invalid empty output path.");
         var parent = Android.Provider.DocumentsContract.BuildDocumentUriUsingTree(
             treeUri, Android.Provider.DocumentsContract.GetTreeDocumentId(treeUri));
         for (var i = 0; i < parts.Length - 1; i++)
             parent = FindOrCreateDirectory(treeUri, parent, parts[i]);
+
         var name = parts[^1];
-        var target = FindChildDocument(treeUri, parent, name);
-        if (target is not null)
-            Android.Provider.DocumentsContract.DeleteDocument(ContentResolver!, target);
-        target = Android.Provider.DocumentsContract.CreateDocument(
-            ContentResolver!, parent, "application/octet-stream", name);
-        if (target is null) throw new IOException("Could not create output file " + name);
-        using var input = File.OpenRead(sourcePath);
-        using var output = ContentResolver!.OpenOutputStream(target, "w");
-        if (output is null) throw new IOException("Could not write output file " + name);
-        await input.CopyToAsync(output);
+        var tempName = $".{name}.uabea-tmp-{Guid.NewGuid():N}";
+        var backupName = $".{name}.uabea-backup-{Guid.NewGuid():N}";
+        var temp = Android.Provider.DocumentsContract.CreateDocument(
+            ContentResolver!, parent, "application/octet-stream", tempName);
+        if (temp is null) throw new IOException("Could not create temporary output file for " + name);
+
+        Android.Net.Uri? backup = null;
+        var committed = false;
+        try
+        {
+            input.Position = 0;
+            var sourceHash = await SHA256.HashDataAsync(input);
+            input.Position = 0;
+            using (var output = ContentResolver!.OpenOutputStream(temp, "w"))
+            {
+                if (output is null) throw new IOException("Could not write temporary output file for " + name);
+                await input.CopyToAsync(output);
+                await output.FlushAsync();
+            }
+
+            input.Position = 0;
+            using (var verify = ContentResolver!.OpenInputStream(temp))
+            {
+                if (verify is null) throw new IOException("Could not reopen temporary output file for verification: " + name);
+                var outputHash = await SHA256.HashDataAsync(verify);
+                if (!CryptographicOperations.FixedTimeEquals(sourceHash, outputHash))
+                    throw new InvalidDataException("Output verification failed; existing copy was preserved: " + name);
+            }
+
+            var target = FindChildDocument(treeUri, parent, name);
+            if (target is not null)
+            {
+                backup = Android.Provider.DocumentsContract.RenameDocument(
+                    ContentResolver!, target, backupName);
+                if (backup is null)
+                    throw new IOException("The selected output provider cannot safely rename the existing file. Existing copy was preserved: " + name);
+            }
+
+            var finalUri = Android.Provider.DocumentsContract.RenameDocument(
+                ContentResolver!, temp, name);
+            if (finalUri is null)
+                throw new IOException("The selected output provider cannot safely commit the new file. Existing copy was preserved: " + name);
+
+            committed = true;
+            if (backup is not null)
+            {
+                try { Android.Provider.DocumentsContract.DeleteDocument(ContentResolver!, backup); }
+                catch (Exception cleanupEx)
+                {
+                    WriteRuntimeLog("SYNC-WARN", $"New file saved but backup cleanup failed for '{name}': {cleanupEx.Message}");
+                }
+            }
+        }
+        catch
+        {
+            if (!committed && backup is not null)
+            {
+                try
+                {
+                    var restored = Android.Provider.DocumentsContract.RenameDocument(
+                        ContentResolver!, backup, name);
+                    if (restored is null)
+                        WriteRuntimeLog("SYNC-CRITICAL", $"Could not restore previous output after failed replacement: {name}; backup={backup}.");
+                }
+                catch (Exception restoreEx)
+                {
+                    WriteRuntimeLog("SYNC-CRITICAL", $"Failed to restore previous output '{name}': {restoreEx}");
+                }
+            }
+            if (!committed)
+            {
+                try { Android.Provider.DocumentsContract.DeleteDocument(ContentResolver!, temp); } catch { }
+            }
+            throw;
+        }
     }
 
     Android.Net.Uri FindOrCreateDirectory(Android.Net.Uri treeUri, Android.Net.Uri parent, string name)
