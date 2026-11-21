@@ -82,7 +82,7 @@ public sealed class MainActivity : Android.App.Activity
 
     void WriteRuntimeLog(string category, string message)
     {
-        var line = $"[{DateTime.UtcNow:O}] [{category}] {message}{Environment.NewLine}";
+        var line = $"[{DateTime.UtcNow:O}] [{category}] {message}{System.Environment.NewLine}";
         try
         {
             lock (RuntimeLogLock)
@@ -254,8 +254,8 @@ public sealed class MainActivity : Android.App.Activity
                             $"Linux .NET runtime executable is truncated ({dotnetInfo.Length} bytes).");
 
                     using var dotnetStream = File.OpenRead(required);
-                    Span<byte> elfHeader = stackalloc byte[20];
-                    var headerRead = dotnetStream.Read(elfHeader);
+                    var elfHeader = new byte[20];
+                    var headerRead = await dotnetStream.ReadAsync(elfHeader);
                     if (headerRead != elfHeader.Length ||
                         elfHeader[0] != 0x7f || elfHeader[1] != (byte)'E' ||
                         elfHeader[2] != (byte)'L' || elfHeader[3] != (byte)'F' ||
@@ -378,12 +378,15 @@ public sealed class MainActivity : Android.App.Activity
                 Path.Combine(RootfsDirectory, "opt", "dotnet", "dotnet"),
                 Path.Combine(RuntimeDirectory, "original", "UABEAvalonia.dll")
             })
+            {
                 if (!File.Exists(required))
                 {
                     WriteRuntimeLog("START-ERROR", $"Missing runtime component: {required}");
                     throw new FileNotFoundException("Missing runtime component: " + required);
                 }
+
                 WriteRuntimeLog("START", $"Required component present: {required}; bytes={new FileInfo(required).Length}.");
+            }
 
             _status.Text = "Starting Linux desktop…";
             StartGuestProcess("Xvfb", "/usr/local/bin/box64", "/usr/bin/Xvfb",
