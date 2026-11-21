@@ -36,6 +36,7 @@ public sealed class MainActivity : Android.App.Activity
     CancellationTokenSource? _syncDebounce;
     readonly SemaphoreSlim _syncLock = new(1, 1);
     readonly List<System.Diagnostics.Process> _runtimeProcesses = new();
+    static readonly object RuntimeLogLock = new();
 
     string RuntimeDirectory => Path.Combine(FilesDir!.AbsolutePath, "runtime");
     string HomeDirectory => Path.Combine(FilesDir!.AbsolutePath, "linux-home");
@@ -49,12 +50,52 @@ public sealed class MainActivity : Android.App.Activity
     protected override void OnCreate(Bundle? savedInstanceState)
     {
         base.OnCreate(savedInstanceState);
+        InitializeRuntimeLogging();
+        WriteRuntimeLog("APP", $"Application started. Package={PackageName}; FilesDir={FilesDir?.AbsolutePath}; NativeLibraryDir={NativeDirectory}; Android={Build.VERSION.Release} (API {Build.VERSION.SdkInt}).");
+        AppDomain.CurrentDomain.UnhandledException += (_, e) =>
+            WriteRuntimeLog("FATAL", "Unhandled exception: " + e.ExceptionObject);
+        TaskScheduler.UnobservedTaskException += (_, e) =>
+        {
+            WriteRuntimeLog("FATAL", "Unobserved task exception: " + e.Exception);
+            e.SetObserved();
+        };
         BuildHostUi();
         var savedTree = GetSharedPreferences("uabea-host", FileCreationMode.Private)!
             .GetString("output_tree_uri", null);
         if (!string.IsNullOrWhiteSpace(savedTree) && Android.Net.Uri.Parse(savedTree) is { } savedUri)
             _outputTreeUri = savedUri;
         _installTask = InstallRuntimeAssetsAsync();
+    }
+
+    void InitializeRuntimeLogging()
+    {
+        try
+        {
+            Directory.CreateDirectory(Path.Combine(RuntimeDirectory, "logs"));
+            Directory.CreateDirectory(Path.Combine(RuntimeDirectory, "proot-tmp"));
+        }
+        catch (Exception ex)
+        {
+            Android.Util.Log.Error("UABEA.Runtime", "Could not initialize file logging: " + ex);
+        }
+    }
+
+    void WriteRuntimeLog(string category, string message)
+    {
+        var line = $"[{DateTime.UtcNow:O}] [{category}] {message}{Environment.NewLine}";
+        try
+        {
+            lock (RuntimeLogLock)
+            {
+                Directory.CreateDirectory(Path.Combine(RuntimeDirectory, "logs"));
+                File.AppendAllText(Path.Combine(RuntimeDirectory, "logs", "runtime.log"), line);
+            }
+        }
+        catch (Exception ex)
+        {
+            Android.Util.Log.Error("UABEA.Runtime", "File log write failed: " + ex);
+            Android.Util.Log.Error("UABEA.Runtime", line);
+        }
     }
 
     void BuildHostUi()
@@ -132,23 +173,30 @@ public sealed class MainActivity : Android.App.Activity
 
     async Task InstallRuntimeAssetsAsync()
     {
+        WriteRuntimeLog("INSTALL", $"Runtime installation started. Version={RuntimeInstallVersion}; runtime={RuntimeDirectory}; rootfs={RootfsDirectory}.");
         try
         {
             Directory.CreateDirectory(RuntimeDirectory);
             Directory.CreateDirectory(HomeDirectory);
             Directory.CreateDirectory(Path.Combine(RuntimeDirectory, "logs"));
             Directory.CreateDirectory(Path.Combine(RuntimeDirectory, "proot-tmp"));
+            WriteRuntimeLog("INSTALL", "Runtime directories created. Beginning original UABEA payload installation.");
 
             await InstallArchiveAtomicallyAsync(
                 "uabea-original.tar.gz",
                 Path.Combine(RuntimeDirectory, "original"),
                 new[] { "UABEAvalonia.dll", "UABEAvalonia.deps.json", "UABEAvalonia.runtimeconfig.json" });
+            WriteRuntimeLog("INSTALL", "Original UABEA payload installed and verified.");
 
+            WriteRuntimeLog("INSTALL", "Beginning Linux x64 rootfs installation."); 
             await InstallArchiveAtomicallyAsync(
                 "linux-x64-rootfs.tar.gz",
                 RootfsDirectory,
                 new[] { "opt/dotnet/dotnet", "usr/bin/Xvfb", "usr/bin/x11vnc", "etc/debian_version" });
 
+            WriteRuntimeLog("INSTALL", "Linux x64 rootfs installed and verified.");
+            var dotnetPath = Path.Combine(RootfsDirectory, "opt", "dotnet", "dotnet");
+            WriteRuntimeLog("VERIFY", $"dotnet exists={File.Exists(dotnetPath)}; bytes={(File.Exists(dotnetPath) ? new FileInfo(dotnetPath).Length : 0)}; path={dotnetPath}.");
             Directory.CreateDirectory(Path.Combine(RootfsDirectory, "home", "uabea"));
 
             foreach (var nativeBinary in new[] { ProotPath, LoaderPath, Box64Path })
@@ -159,33 +207,43 @@ public sealed class MainActivity : Android.App.Activity
             }
 
             StartHomeFileWatcher();
+            WriteRuntimeLog("INSTALL", "Runtime installation completed successfully. Required files and Android native libraries are present.");
             _status.Text = "Linux runtime installed and verified. Press Start, then connect with a VNC app.";
         }
         catch (Exception ex)
         {
+            WriteRuntimeLog("INSTALL-ERROR", ex.ToString());
             _status.Text = "Runtime installation failed: " + ex.Message;
         }
     }
 
     async Task InstallArchiveAtomicallyAsync(string assetName, string destination, string[] requiredFiles)
     {
+        WriteRuntimeLog("ARCHIVE", $"Checking archive '{assetName}' for destination '{destination}'.");
         var marker = Path.Combine(destination, ".install-complete");
         var valid = File.Exists(marker) &&
             File.ReadAllText(marker).StartsWith(RuntimeInstallVersion, StringComparison.Ordinal) && requiredFiles.All(
             item => File.Exists(Path.Combine(destination, item.Replace('/', Path.DirectorySeparatorChar))));
-        if (valid) return;
+        if (valid)
+        {
+            WriteRuntimeLog("ARCHIVE", $"Existing installation is valid: {destination}.");
+            return;
+        }
 
+        WriteRuntimeLog("ARCHIVE", $"Extraction required for '{assetName}'.");
         var staging = destination + ".staging";
         if (Directory.Exists(staging)) Directory.Delete(staging, recursive: true);
         Directory.CreateDirectory(staging);
         try
         {
             await ExtractTarGzAssetAsync(assetName, staging);
+            WriteRuntimeLog("ARCHIVE", $"Extraction finished for '{assetName}'. Verifying required files.");
             foreach (var item in requiredFiles)
             {
                 var required = Path.Combine(staging, item.Replace('/', Path.DirectorySeparatorChar));
                 if (!File.Exists(required))
                     throw new InvalidDataException("Archive is incomplete; missing " + item);
+                WriteRuntimeLog("VERIFY", $"Required archive file present: {item}; bytes={new FileInfo(required).Length}.");
                 if (item == "opt/dotnet/dotnet")
                 {
                     // The .NET apphost is normally well below 1 MiB. Validate its
@@ -212,10 +270,13 @@ public sealed class MainActivity : Android.App.Activity
                 RuntimeInstallVersion + "\n" + assetName + "\n" + DateTime.UtcNow.ToString("O"));
             if (Directory.Exists(destination)) Directory.Delete(destination, recursive: true);
             Directory.Move(staging, destination);
+            WriteRuntimeLog("ARCHIVE", $"Atomic installation committed: {destination}.");
         }
-        catch
+        catch (Exception ex)
         {
-            if (Directory.Exists(staging)) Directory.Delete(staging, recursive: true);
+            WriteRuntimeLog("ARCHIVE-ERROR", $"Archive '{assetName}' failed: {ex}");
+            // Keep staging data and its diagnostic evidence for inspection; next
+            // install attempt will safely clear and recreate this staging directory.
             throw;
         }
     }
@@ -225,12 +286,15 @@ public sealed class MainActivity : Android.App.Activity
         Directory.CreateDirectory(destinationRoot);
         var fullRoot = Path.GetFullPath(destinationRoot);
 
+        WriteRuntimeLog("EXTRACT", $"Opening packaged asset '{assetName}' into '{destinationRoot}'.");
         using var input = Assets!.Open(assetName);
+        WriteRuntimeLog("EXTRACT", $"Asset stream opened. Compressed length={input.Length} bytes.");
         using var gzip = new GZipStream(input, CompressionMode.Decompress);
         using var reader = new TarReader(gzip);
 
         TarEntry? entry;
         long extracted = 0;
+        long extractedBytes = 0;
         while ((entry = reader.GetNextEntry()) is not null)
         {
             var relative = entry.Name.TrimStart('.', '/', '\\')
@@ -276,13 +340,23 @@ public sealed class MainActivity : Android.App.Activity
                 Directory.CreateDirectory(Path.GetDirectoryName(output)!);
                 using var target = File.Create(output);
                 if (entry.DataStream is not null)
+                {
+                    var before = target.Length;
                     await entry.DataStream.CopyToAsync(target);
-                try { File.SetUnixFileMode(output, entry.Mode); } catch { }
+                    extractedBytes += target.Length - before;
+                }
+                try { File.SetUnixFileMode(output, entry.Mode); } catch (Exception modeEx) {
+                    WriteRuntimeLog("EXTRACT-WARN", $"Could not apply mode to '{relative}': {modeEx.Message}");
+                }
                 extracted++;
-                if (extracted % 3000 == 0)
+                if (extracted % 1000 == 0)
+                {
+                    WriteRuntimeLog("EXTRACT", $"Progress for '{assetName}': files={extracted}; bytes={extractedBytes}.");
                     RunOnUiThread(() => _status.Text = "Installing Linux runtime… " + extracted + " files");
+                }
             }
         }
+        WriteRuntimeLog("EXTRACT", $"Completed '{assetName}': regular files={extracted}; extracted bytes={extractedBytes}.");
     }
 
     async void StartOriginalRuntime()
@@ -293,6 +367,7 @@ public sealed class MainActivity : Android.App.Activity
             return;
         }
 
+        WriteRuntimeLog("START", "Start button pressed.");
         try
         {
             if (_installTask is not null)
@@ -304,7 +379,11 @@ public sealed class MainActivity : Android.App.Activity
                 Path.Combine(RuntimeDirectory, "original", "UABEAvalonia.dll")
             })
                 if (!File.Exists(required))
+                {
+                    WriteRuntimeLog("START-ERROR", $"Missing runtime component: {required}");
                     throw new FileNotFoundException("Missing runtime component: " + required);
+                }
+                WriteRuntimeLog("START", $"Required component present: {required}; bytes={new FileInfo(required).Length}.");
 
             _status.Text = "Starting Linux desktop…";
             StartGuestProcess("Xvfb", "/usr/local/bin/box64", "/usr/bin/Xvfb",
@@ -336,6 +415,7 @@ public sealed class MainActivity : Android.App.Activity
         }
         catch (Exception ex)
         {
+            WriteRuntimeLog("START-ERROR", ex.ToString());
             _status.Text = "Runtime start failed: " + ex.Message;
             StopRuntimeProcesses();
         }
@@ -374,11 +454,23 @@ public sealed class MainActivity : Android.App.Activity
         start.Environment["LANG"] = "C.UTF-8";
 
         var logPath = Path.Combine(RuntimeDirectory, "logs", name + ".log");
-        var log = new StreamWriter(logPath, append: false) { AutoFlush = true };
+        Directory.CreateDirectory(Path.GetDirectoryName(logPath)!);
+        var log = new StreamWriter(logPath, append: true) { AutoFlush = true };
+        log.WriteLine($"[{DateTime.UtcNow:O}] Launching: {ProotPath} {string.Join(" ", args)}");
+        WriteRuntimeLog("PROCESS", $"Launching {name}; executable={ProotPath}; args={string.Join(" ", args)}; log={logPath}.");
         var process = new System.Diagnostics.Process { StartInfo = start, EnableRaisingEvents = true };
         process.OutputDataReceived += (_, e) => { if (e.Data is not null) lock (log) log.WriteLine(e.Data); };
         process.ErrorDataReceived += (_, e) => { if (e.Data is not null) lock (log) log.WriteLine(e.Data); };
-        process.Exited += (_, _) => { try { log.Dispose(); } catch { } };
+        process.Exited += (_, _) =>
+        {
+            try
+            {
+                log.WriteLine($"[{DateTime.UtcNow:O}] Process exited. ExitCode={process.ExitCode}");
+                log.Dispose();
+            }
+            catch { }
+            WriteRuntimeLog("PROCESS", $"{name} exited. ExitCode={(process.HasExited ? process.ExitCode : -1)}.");
+        };
 
         try
         {
@@ -388,6 +480,7 @@ public sealed class MainActivity : Android.App.Activity
         catch (Exception ex)
         {
             log.WriteLine("Process launch failed: " + ex);
+            WriteRuntimeLog("PROCESS-ERROR", $"{name} launch failed: {ex}");
             log.Dispose();
             throw new IOException(
                 "Could not execute Android native PRoot at " + ProotPath +
@@ -397,6 +490,7 @@ public sealed class MainActivity : Android.App.Activity
         process.BeginOutputReadLine();
         process.BeginErrorReadLine();
         _runtimeProcesses.Add(process);
+        WriteRuntimeLog("PROCESS", $"{name} started. PID={process.Id}.");
         return process;
     }
 
