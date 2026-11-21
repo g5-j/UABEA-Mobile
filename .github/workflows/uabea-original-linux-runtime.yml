@@ -420,7 +420,7 @@ jobs:
           disable-animations: true
           emulator-boot-timeout: 900
           script: |
-            set -euo pipefail
+            set -eu
             adb shell getprop ro.build.version.sdk
             adb shell getprop ro.product.cpu.abilist
             bash tests/android-emulator-smoke.sh
