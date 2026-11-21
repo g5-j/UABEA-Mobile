@@ -25,7 +25,7 @@ public sealed class MainActivity : Android.App.Activity
     const int SaveFileRequest = 4102;
     const int OutputFolderRequest = 4103;
     const int VncPort = 5900;
-    const string RuntimeInstallVersion = "uabea-runtime-v3";
+    const string RuntimeInstallVersion = "uabea-runtime-v4";
 
     TextView _status = null!;
     TextView _connection = null!;
