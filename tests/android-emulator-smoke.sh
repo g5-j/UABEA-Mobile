@@ -114,14 +114,14 @@ import sys
 import xml.etree.ElementTree as ET
 
 raw = sys.argv[1]
-match = re.search(r'(<hierarchy[\\s\\S]*</hierarchy>)', raw)
+match = re.search(r'(<hierarchy[\s\S]*</hierarchy>)', raw)
 if not match:
     raise SystemExit("Could not read Android UI hierarchy.")
 root = ET.fromstring(match.group(1))
 for node in root.iter("node"):
     if node.attrib.get("text") == "Bundle test":
         bounds = node.attrib.get("bounds", "")
-        values = list(map(int, re.findall(r"-?\\d+", bounds)))
+        values = list(map(int, re.findall(r"-?\d+", bounds)))
         if len(values) != 4:
             raise SystemExit("Bundle test button has invalid bounds: " + bounds)
         x = (values[0] + values[2]) // 2
