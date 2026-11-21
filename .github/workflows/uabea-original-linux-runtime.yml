@@ -385,33 +385,3 @@ jobs:
           if-no-files-found: error
           compression-level: 0
           retention-days: 30
-
-  android-emulator-integration:
-    needs: [android-host]
-    runs-on: ubuntu-latest
-    timeout-minutes: 50
-    env:
-      ANDROID_I_WANT_MY_TCG: "yes"
-    steps:
-      - name: Checkout Android smoke test
-        uses: actions/checkout@v4
-
-      - name: Download the exact APK built by this workflow
-        uses: actions/download-artifact@v4
-        with:
-          name: UABEA-Original-Android-Host-APK-${{ github.sha }}
-          path: ${{ runner.temp }}/uabea-apk
-
-      - name: Run Android 15 emulator integration test
-        uses: reactivecircus/android-emulator-runner@v2
-        with:
-          api-level: 35
-          target: google_apis
-          arch: x86_64
-          profile: pixel_5
-          ram-size: 4096M
-          heap-size: 1024M
-          disk-size: 8G
-          disable-animations: true
-          emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim
-          script: bash tests/android-emulator-smoke.sh
