@@ -288,7 +288,7 @@ public sealed class MainActivity : Android.App.Activity
 
         WriteRuntimeLog("EXTRACT", $"Opening packaged asset '{assetName}' into '{destinationRoot}'.");
         using var input = Assets!.Open(assetName);
-        WriteRuntimeLog("EXTRACT", $"Asset stream opened. Compressed length={input.Length} bytes.");
+        WriteRuntimeLog("EXTRACT", "Asset stream opened successfully.");
         using var gzip = new GZipStream(input, CompressionMode.Decompress);
         using var reader = new TarReader(gzip);
 
