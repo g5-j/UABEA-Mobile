@@ -186,8 +186,26 @@ public sealed class MainActivity : Android.App.Activity
                 var required = Path.Combine(staging, item.Replace('/', Path.DirectorySeparatorChar));
                 if (!File.Exists(required))
                     throw new InvalidDataException("Archive is incomplete; missing " + item);
-                if (item == "opt/dotnet/dotnet" && new FileInfo(required).Length < 1024 * 1024)
-                    throw new InvalidDataException("Linux .NET runtime executable is unexpectedly small.");
+                if (item == "opt/dotnet/dotnet")
+                {
+                    // The .NET apphost is normally well below 1 MiB. Validate its
+                    // ELF header and architecture instead of imposing an invalid size floor.
+                    var dotnetInfo = new FileInfo(required);
+                    if (dotnetInfo.Length < 64 * 1024)
+                        throw new InvalidDataException(
+                            $"Linux .NET runtime executable is truncated ({dotnetInfo.Length} bytes).");
+
+                    using var dotnetStream = File.OpenRead(required);
+                    Span<byte> elfHeader = stackalloc byte[20];
+                    var headerRead = dotnetStream.Read(elfHeader);
+                    if (headerRead != elfHeader.Length ||
+                        elfHeader[0] != 0x7f || elfHeader[1] != (byte)'E' ||
+                        elfHeader[2] != (byte)'L' || elfHeader[3] != (byte)'F' ||
+                        elfHeader[4] != 2 || elfHeader[5] != 1 ||
+                        elfHeader[18] != 0x3e || elfHeader[19] != 0x00)
+                        throw new InvalidDataException(
+                            "Linux .NET runtime executable is not a valid 64-bit little-endian x86_64 ELF binary.");
+                }
             }
 
             await File.WriteAllTextAsync(Path.Combine(staging, ".install-complete"),
