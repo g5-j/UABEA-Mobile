@@ -23,6 +23,7 @@ public sealed class MainActivity : Android.App.Activity
     const int SaveFileRequest = 4102;
     const int OutputFolderRequest = 4103;
     const int VncPort = 5900;
+    const string RuntimeInstallVersion = "uabea-runtime-v3";
 
     TextView _status = null!;
     TextView _connection = null!;
@@ -108,7 +109,7 @@ public sealed class MainActivity : Android.App.Activity
 
         var help = new TextView(this)
         {
-            Text = "Start the runtime, then open a VNC Viewer app on this phone and connect to 127.0.0.1:5900. The VNC server accepts local connections only.",
+            Text = "Start the runtime, then connect with an external VNC Viewer to 127.0.0.1:5900. Choose or create the UABEA folder with Output folder; saved files sync there automatically. VNC accepts local connections only.",
             TextSize = 13
         };
         root.AddView(help, new LinearLayout.LayoutParams(
@@ -145,6 +146,8 @@ public sealed class MainActivity : Android.App.Activity
                 RootfsDirectory,
                 new[] { "opt/dotnet/dotnet", "usr/bin/Xvfb", "usr/bin/x11vnc", "etc/debian_version" });
 
+            Directory.CreateDirectory(Path.Combine(RootfsDirectory, "home", "uabea"));
+
             foreach (var nativeBinary in new[] { ProotPath, LoaderPath, Box64Path })
             {
                 if (!File.Exists(nativeBinary))
@@ -164,7 +167,8 @@ public sealed class MainActivity : Android.App.Activity
     async Task InstallArchiveAtomicallyAsync(string assetName, string destination, string[] requiredFiles)
     {
         var marker = Path.Combine(destination, ".install-complete");
-        var valid = File.Exists(marker) && requiredFiles.All(
+        var valid = File.Exists(marker) &&
+            File.ReadAllText(marker).StartsWith(RuntimeInstallVersion, StringComparison.Ordinal) && requiredFiles.All(
             item => File.Exists(Path.Combine(destination, item.Replace('/', Path.DirectorySeparatorChar))));
         if (valid) return;
 
@@ -184,7 +188,7 @@ public sealed class MainActivity : Android.App.Activity
             }
 
             await File.WriteAllTextAsync(Path.Combine(staging, ".install-complete"),
-                "uabea-runtime-v3\n" + assetName + "\n" + DateTime.UtcNow.ToString("O"));
+                RuntimeInstallVersion + "\n" + assetName + "\n" + DateTime.UtcNow.ToString("O"));
             if (Directory.Exists(destination)) Directory.Delete(destination, recursive: true);
             Directory.Move(staging, destination);
         }
