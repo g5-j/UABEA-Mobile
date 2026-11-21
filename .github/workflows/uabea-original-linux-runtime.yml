@@ -353,31 +353,14 @@ jobs:
           echo "APK_ARCHIVE=$ARCHIVE" >> "$GITHUB_ENV"
           ls -lh UABEA-Original-Host-debug.apk "$ARCHIVE"
 
-      - name: Clean old releases and unused branches
-        if: github.ref == 'refs/heads/uabea-android-host'
-        env:
-          GH_TOKEN: ${{ github.token }}
-          GH_REPO: ${{ github.repository }}
-        run: |
-          set -euo pipefail
-
-          echo "Deleting all existing GitHub Releases..."
-          gh release list --limit 1000 --json tagName --jq '.[].tagName' | while IFS= read -r tag; do
-            [ -n "$tag" ] || continue
-            echo "Deleting release: $tag"
-            gh release delete "$tag" --yes
-          done
-
-          echo "Deleting obsolete branches; keeping master and uabea-android-host..."
-          gh api --paginate "repos/$GH_REPO/branches?per_page=100" --jq '.[].name' | while IFS= read -r branch; do
-            case "$branch" in
-              master|uabea-android-host) echo "Keeping branch: $branch" ;;
-              *)
-                echo "Deleting branch: $branch"
-                gh api --method DELETE "repos/$GH_REPO/git/refs/heads/$branch"
-                ;;
-            esac
-          done
+      - name: Upload raw Android host APK for device-level CI
+        uses: actions/upload-artifact@v4
+        with:
+          name: UABEA-Original-Android-Host-APK-${{ github.sha }}
+          path: UABEA-Original-Host-debug.apk
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 30
 
       - name: Publish APK to GitHub Releases
         if: github.ref == 'refs/heads/uabea-android-host'
