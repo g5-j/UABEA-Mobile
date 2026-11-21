@@ -105,6 +105,56 @@ if [[ "$started" != 1 ]]; then
   exit 1
 fi
 
+echo "Running a real UABEA UnityFS bundle open/edit/save round-trip..."
+UI="$(dump_ui)"
+python3 - "$UI" <<'PY'
+import re
+import subprocess
+import sys
+import xml.etree.ElementTree as ET
+
+raw = sys.argv[1]
+match = re.search(r'(<hierarchy[\\s\\S]*</hierarchy>)', raw)
+if not match:
+    raise SystemExit("Could not read Android UI hierarchy.")
+root = ET.fromstring(match.group(1))
+for node in root.iter("node"):
+    if node.attrib.get("text") == "Bundle test":
+        bounds = node.attrib.get("bounds", "")
+        values = list(map(int, re.findall(r"-?\\d+", bounds)))
+        if len(values) != 4:
+            raise SystemExit("Bundle test button has invalid bounds: " + bounds)
+        x = (values[0] + values[2]) // 2
+        y = (values[1] + values[3]) // 2
+        subprocess.check_call(["adb", "shell", "input", "tap", str(x), str(y)])
+        print(f"Tapped Bundle test at {x},{y}")
+        break
+else:
+    raise SystemExit("Bundle test button was not found.")
+PY
+
+bundle_test=0
+for attempt in $(seq 1 120); do
+  UI="$(dump_ui)"
+  if grep -q "UABEA bundle open/edit/save test passed" <<<"$UI"; then
+    bundle_test=1
+    break
+  fi
+  if grep -q "Bundle self-test failed" <<<"$UI"; then
+    echo "$UI"
+    adb shell run-as com.g5j.uabeahost sh -c 'for f in files/runtime/logs/UABEA-Bundle-*.log; do echo ==== $f; cat "$f"; done' || true
+    echo "::error::UABEA could not edit, save and reopen the test UnityFS bundle."
+    exit 1
+  fi
+  sleep 2
+done
+if [[ "$bundle_test" != 1 ]]; then
+  dump_ui
+  adb shell run-as com.g5j.uabeahost sh -c 'for f in files/runtime/logs/UABEA-Bundle-*.log; do echo ==== $f; cat "$f"; done' || true
+  echo "::error::UABEA bundle edit/save round-trip did not finish."
+  exit 1
+fi
+
 echo "Verifying the localhost-only VNC server and framebuffer handshake..."
 adb forward tcp:15900 tcp:5900
 python3 - <<'PY'
