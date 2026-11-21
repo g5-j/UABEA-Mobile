@@ -21,16 +21,21 @@ public sealed class MainActivity : Android.App.Activity
 {
     const int PickFileRequest = 4101;
     const int SaveFileRequest = 4102;
+    const int OutputFolderRequest = 4103;
     const int VncPort = 5900;
 
     TextView _status = null!;
     TextView _connection = null!;
     string? _lastImportedFile;
+    Android.Net.Uri? _outputTreeUri;
     Task? _installTask;
+    FileSystemWatcher? _homeWatcher;
+    CancellationTokenSource? _syncDebounce;
+    readonly SemaphoreSlim _syncLock = new(1, 1);
     readonly List<System.Diagnostics.Process> _runtimeProcesses = new();
 
     string RuntimeDirectory => Path.Combine(FilesDir!.AbsolutePath, "runtime");
-    string ImportDirectory => Path.Combine(FilesDir!.AbsolutePath, "imports");
+    string HomeDirectory => Path.Combine(FilesDir!.AbsolutePath, "linux-home");
     string RootfsDirectory => Path.Combine(RuntimeDirectory, "rootfs");
     string NativeDirectory => ApplicationInfo!.NativeLibraryDir!;
 
@@ -42,6 +47,10 @@ public sealed class MainActivity : Android.App.Activity
     {
         base.OnCreate(savedInstanceState);
         BuildHostUi();
+        var savedTree = GetSharedPreferences("uabea-host", FileCreationMode.Private)!
+            .GetString("output_tree_uri", null);
+        if (!string.IsNullOrWhiteSpace(savedTree) && Android.Net.Uri.Parse(savedTree) is { } savedUri)
+            _outputTreeUri = savedUri;
         _installTask = InstallRuntimeAssetsAsync();
     }
 
@@ -93,7 +102,7 @@ public sealed class MainActivity : Android.App.Activity
 
         var files = new LinearLayout(this) { Orientation = Orientation.Horizontal };
         AddAction(files, "Open file", PickUnityFile);
-        AddAction(files, "Save copy", PickSaveDestination);
+        AddAction(files, "Output folder", PickOutputFolder);
         root.AddView(files, new LinearLayout.LayoutParams(
             ViewGroup.LayoutParams.MatchParent, Dp(52)));
 
@@ -122,17 +131,19 @@ public sealed class MainActivity : Android.App.Activity
         try
         {
             Directory.CreateDirectory(RuntimeDirectory);
-            Directory.CreateDirectory(ImportDirectory);
+            Directory.CreateDirectory(HomeDirectory);
             Directory.CreateDirectory(Path.Combine(RuntimeDirectory, "logs"));
             Directory.CreateDirectory(Path.Combine(RuntimeDirectory, "proot-tmp"));
 
-            var originalMarker = Path.Combine(RuntimeDirectory, "original", "UABEAvalonia.dll");
-            if (!File.Exists(originalMarker))
-                await ExtractTarGzAssetAsync("uabea-original.tar.gz", Path.Combine(RuntimeDirectory, "original"));
+            await InstallArchiveAtomicallyAsync(
+                "uabea-original.tar.gz",
+                Path.Combine(RuntimeDirectory, "original"),
+                new[] { "UABEAvalonia.dll", "UABEAvalonia.deps.json", "UABEAvalonia.runtimeconfig.json" });
 
-            var rootfsMarker = Path.Combine(RootfsDirectory, "opt", "dotnet", "dotnet");
-            if (!File.Exists(rootfsMarker))
-                await ExtractTarGzAssetAsync("linux-x64-rootfs.tar.gz", RootfsDirectory);
+            await InstallArchiveAtomicallyAsync(
+                "linux-x64-rootfs.tar.gz",
+                RootfsDirectory,
+                new[] { "opt/dotnet/dotnet", "usr/bin/Xvfb", "usr/bin/x11vnc", "etc/debian_version" });
 
             foreach (var nativeBinary in new[] { ProotPath, LoaderPath, Box64Path })
             {
@@ -141,7 +152,8 @@ public sealed class MainActivity : Android.App.Activity
                         "Android did not extract a required executable from the APK native libraries: " + nativeBinary);
             }
 
-            _status.Text = "Runtime installed. Press Start, then connect with a VNC app.";
+            StartHomeFileWatcher();
+            _status.Text = "Linux runtime installed and verified. Press Start, then connect with a VNC app.";
         }
         catch (Exception ex)
         {
@@ -149,10 +161,42 @@ public sealed class MainActivity : Android.App.Activity
         }
     }
 
+    async Task InstallArchiveAtomicallyAsync(string assetName, string destination, string[] requiredFiles)
+    {
+        var marker = Path.Combine(destination, ".install-complete");
+        var valid = File.Exists(marker) && requiredFiles.All(
+            item => File.Exists(Path.Combine(destination, item.Replace('/', Path.DirectorySeparatorChar))));
+        if (valid) return;
+
+        var staging = destination + ".staging";
+        if (Directory.Exists(staging)) Directory.Delete(staging, recursive: true);
+        Directory.CreateDirectory(staging);
+        try
+        {
+            await ExtractTarGzAssetAsync(assetName, staging);
+            foreach (var item in requiredFiles)
+            {
+                var required = Path.Combine(staging, item.Replace('/', Path.DirectorySeparatorChar));
+                if (!File.Exists(required))
+                    throw new InvalidDataException("Archive is incomplete; missing " + item);
+                if (item == "opt/dotnet/dotnet" && new FileInfo(required).Length < 1024 * 1024)
+                    throw new InvalidDataException("Linux .NET runtime executable is unexpectedly small.");
+            }
+
+            await File.WriteAllTextAsync(Path.Combine(staging, ".install-complete"),
+                "uabea-runtime-v3\n" + assetName + "\n" + DateTime.UtcNow.ToString("O"));
+            if (Directory.Exists(destination)) Directory.Delete(destination, recursive: true);
+            Directory.Move(staging, destination);
+        }
+        catch
+        {
+            if (Directory.Exists(staging)) Directory.Delete(staging, recursive: true);
+            throw;
+        }
+    }
+
     async Task ExtractTarGzAssetAsync(string assetName, string destinationRoot)
     {
-        if (Directory.Exists(destinationRoot))
-            Directory.Delete(destinationRoot, recursive: true);
         Directory.CreateDirectory(destinationRoot);
         var fullRoot = Path.GetFullPath(destinationRoot);
 
@@ -166,6 +210,7 @@ public sealed class MainActivity : Android.App.Activity
         {
             var relative = entry.Name.TrimStart('.', '/', '\\')
                 .Replace('/', Path.DirectorySeparatorChar);
+            if (string.IsNullOrEmpty(relative)) continue;
             var output = Path.GetFullPath(Path.Combine(fullRoot, relative));
             if (!output.StartsWith(fullRoot + Path.DirectorySeparatorChar, StringComparison.Ordinal)
                 && !string.Equals(output, fullRoot, StringComparison.Ordinal))
@@ -192,8 +237,11 @@ public sealed class MainActivity : Android.App.Activity
             if (entry.EntryType == TarEntryType.HardLink)
             {
                 Directory.CreateDirectory(Path.GetDirectoryName(output)!);
-                var linkTarget = Path.GetFullPath(Path.Combine(fullRoot, entry.LinkName.TrimStart('.', '/', '\\')));
-                if (File.Exists(linkTarget))
+                var linkRelative = entry.LinkName.TrimStart('.', '/', '\\')
+                    .Replace('/', Path.DirectorySeparatorChar);
+                var linkTarget = Path.GetFullPath(Path.Combine(fullRoot, linkRelative));
+                if (linkTarget.StartsWith(fullRoot + Path.DirectorySeparatorChar, StringComparison.Ordinal)
+                    && File.Exists(linkTarget))
                     File.Copy(linkTarget, output, overwrite: true);
                 continue;
             }
@@ -207,7 +255,7 @@ public sealed class MainActivity : Android.App.Activity
                 try { File.SetUnixFileMode(output, entry.Mode); } catch { }
                 extracted++;
                 if (extracted % 3000 == 0)
-                    _status.Text = "Installing Linux runtime… " + extracted + " files";
+                    RunOnUiThread(() => _status.Text = "Installing Linux runtime… " + extracted + " files");
             }
         }
     }
@@ -277,8 +325,8 @@ public sealed class MainActivity : Android.App.Activity
             "-b", "/system", "-b", "/apex",
             "-b", Box64Path + ":/usr/local/bin/box64",
             "-b", Path.Combine(RuntimeDirectory, "original") + ":/opt/uabea",
-            "-b", ImportDirectory + ":/workspace",
-            "-w", "/"
+            "-b", HomeDirectory + ":/home/uabea",
+            "-w", "/home/uabea"
         };
         args.AddRange(command);
 
@@ -296,7 +344,7 @@ public sealed class MainActivity : Android.App.Activity
             "/lib/x86_64-linux-gnu:/usr/lib/x86_64-linux-gnu:/lib";
         start.Environment["BOX64_PATH"] = "/usr/bin:/bin";
         start.Environment["DISPLAY"] = ":1";
-        start.Environment["HOME"] = "/root";
+        start.Environment["HOME"] = "/home/uabea";
         start.Environment["DOTNET_ROOT"] = "/opt/dotnet";
         start.Environment["LANG"] = "C.UTF-8";
 
@@ -387,23 +435,117 @@ public sealed class MainActivity : Android.App.Activity
         StartActivityForResult(intent, PickFileRequest);
     }
 
-    void PickSaveDestination()
+    void PickOutputFolder()
     {
-        if (string.IsNullOrEmpty(_lastImportedFile) || !File.Exists(_lastImportedFile))
-        {
-            _status.Text = "Open a Unity file first.";
-            return;
-        }
-
-        var intent = new Intent(Intent.ActionCreateDocument);
-        intent.AddCategory(Intent.CategoryOpenable);
-        intent.SetType("*/*");
-        intent.PutExtra(Intent.ExtraTitle, Path.GetFileNameWithoutExtension(_lastImportedFile) + "-edited" +
-            Path.GetExtension(_lastImportedFile));
-        intent.AddFlags(ActivityFlags.GrantWriteUriPermission |
-                        ActivityFlags.GrantReadUriPermission |
+        var intent = new Intent(Intent.ActionOpenDocumentTree);
+        intent.AddFlags(ActivityFlags.GrantReadUriPermission |
+                        ActivityFlags.GrantWriteUriPermission |
                         ActivityFlags.GrantPersistableUriPermission);
-        StartActivityForResult(intent, SaveFileRequest);
+        StartActivityForResult(intent, OutputFolderRequest);
+    }
+
+    void StartHomeFileWatcher()
+    {
+        if (_homeWatcher is not null) return;
+        _homeWatcher = new FileSystemWatcher(HomeDirectory)
+        {
+            IncludeSubdirectories = true,
+            NotifyFilter = NotifyFilters.FileName | NotifyFilters.LastWrite | NotifyFilters.Size,
+            EnableRaisingEvents = true
+        };
+        _homeWatcher.Changed += (_, _) => ScheduleOutputSync();
+        _homeWatcher.Created += (_, _) => ScheduleOutputSync();
+        _homeWatcher.Renamed += (_, _) => ScheduleOutputSync();
+    }
+
+    void ScheduleOutputSync()
+    {
+        if (_outputTreeUri is null) return;
+        _syncDebounce?.Cancel();
+        _syncDebounce?.Dispose();
+        _syncDebounce = new CancellationTokenSource();
+        var token = _syncDebounce.Token;
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                await Task.Delay(1800, token);
+                await SyncHomeToOutputFolderAsync(token);
+            }
+            catch (OperationCanceledException) { }
+            catch (Exception ex) { RunOnUiThread(() => _status.Text = "Output sync failed: " + ex.Message); }
+        }, token);
+    }
+
+    async Task SyncHomeToOutputFolderAsync(CancellationToken cancellationToken)
+    {
+        if (_outputTreeUri is null) return;
+        await _syncLock.WaitAsync(cancellationToken);
+        try
+        {
+            var files = Directory.EnumerateFiles(HomeDirectory, "*", SearchOption.AllDirectories)
+                .Where(path => !path.EndsWith(".tmp", StringComparison.OrdinalIgnoreCase))
+                .ToArray();
+            foreach (var file in files)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                var relative = Path.GetRelativePath(HomeDirectory, file);
+                await CopyFileToTreeAsync(file, relative, _outputTreeUri);
+            }
+            RunOnUiThread(() => _status.Text = "Saved Linux files synced to /UABEA (" + files.Length + " files).");
+        }
+        finally { _syncLock.Release(); }
+    }
+
+    async Task CopyFileToTreeAsync(string sourcePath, string relativePath, Android.Net.Uri treeUri)
+    {
+        var parts = relativePath.Split(Path.DirectorySeparatorChar, StringSplitOptions.RemoveEmptyEntries);
+        var parent = Android.Provider.DocumentsContract.BuildDocumentUriUsingTree(
+            treeUri, Android.Provider.DocumentsContract.GetTreeDocumentId(treeUri));
+        for (var i = 0; i < parts.Length - 1; i++)
+            parent = FindOrCreateDirectory(treeUri, parent, parts[i]);
+        var name = parts[^1];
+        var target = FindChildDocument(treeUri, parent, name);
+        if (target is not null)
+            Android.Provider.DocumentsContract.DeleteDocument(ContentResolver!, target);
+        target = Android.Provider.DocumentsContract.CreateDocument(
+            ContentResolver!, parent, "application/octet-stream", name);
+        if (target is null) throw new IOException("Could not create output file " + name);
+        using var input = File.OpenRead(sourcePath);
+        using var output = ContentResolver!.OpenOutputStream(target, "w");
+        if (output is null) throw new IOException("Could not write output file " + name);
+        await input.CopyToAsync(output);
+    }
+
+    Android.Net.Uri FindOrCreateDirectory(Android.Net.Uri treeUri, Android.Net.Uri parent, string name)
+    {
+        var existing = FindChildDocument(treeUri, parent, name);
+        if (existing is not null) return existing;
+        var created = Android.Provider.DocumentsContract.CreateDocument(
+            ContentResolver!, parent, Android.Provider.DocumentsContract.Document.MimeTypeDir, name);
+        return created ?? throw new IOException("Could not create output directory " + name);
+    }
+
+    Android.Net.Uri? FindChildDocument(Android.Net.Uri treeUri, Android.Net.Uri parent, string name)
+    {
+        var parentId = Android.Provider.DocumentsContract.GetDocumentId(parent);
+        var children = Android.Provider.DocumentsContract.BuildChildDocumentsUriUsingTree(treeUri, parentId);
+        using var cursor = ContentResolver!.Query(children,
+            new[] { Android.Provider.DocumentsContract.Document.ColumnDocumentId,
+                    Android.Provider.DocumentsContract.Document.ColumnDisplayName },
+            null, null, null);
+        if (cursor is null) return null;
+        var idIndex = cursor.GetColumnIndex(Android.Provider.DocumentsContract.Document.ColumnDocumentId);
+        var nameIndex = cursor.GetColumnIndex(Android.Provider.DocumentsContract.Document.ColumnDisplayName);
+        while (cursor.MoveToNext())
+        {
+            if (nameIndex >= 0 && string.Equals(cursor.GetString(nameIndex), name, StringComparison.Ordinal))
+            {
+                var id = cursor.GetString(idIndex);
+                return Android.Provider.DocumentsContract.BuildDocumentUriUsingTree(treeUri, id);
+            }
+        }
+        return null;
     }
 
     protected override async void OnActivityResult(int requestCode, Result resultCode, Intent? data)
@@ -413,15 +555,16 @@ public sealed class MainActivity : Android.App.Activity
 
         try
         {
-            if (requestCode == SaveFileRequest)
+            if (requestCode == OutputFolderRequest)
             {
-                if (string.IsNullOrEmpty(_lastImportedFile) || !File.Exists(_lastImportedFile))
-                    throw new FileNotFoundException("The imported workspace file no longer exists.");
-                using var source = File.OpenRead(_lastImportedFile);
-                using var target = ContentResolver!.OpenOutputStream(data.Data, "wt");
-                if (target is null) throw new IOException("Android did not provide a writable output stream.");
-                await source.CopyToAsync(target);
-                _status.Text = "Edited file exported to the selected phone location.";
+                var flags = data.Flags &
+                    (ActivityFlags.GrantReadUriPermission | ActivityFlags.GrantWriteUriPermission);
+                ContentResolver!.TakePersistableUriPermission(data.Data, flags);
+                _outputTreeUri = data.Data;
+                GetSharedPreferences("uabea-host", FileCreationMode.Private)!
+                    .Edit()!.PutString("output_tree_uri", data.Data.ToString())!.Apply();
+                _status.Text = "Output folder selected. Linux saves will sync there automatically.";
+                await SyncHomeToOutputFolderAsync(CancellationToken.None);
                 return;
             }
 
@@ -435,19 +578,19 @@ public sealed class MainActivity : Android.App.Activity
             }
             catch { }
 
-            Directory.CreateDirectory(ImportDirectory);
+            Directory.CreateDirectory(HomeDirectory);
             var displayName = QueryDisplayName(data.Data) ?? "unity-file";
             var safeName = string.Concat(displayName.Select(c =>
                 Path.GetInvalidFileNameChars().Contains(c) ? '_' : c));
-            var targetPath = Path.Combine(ImportDirectory, safeName);
+            var targetPath = Path.Combine(HomeDirectory, safeName);
             using var input = ContentResolver!.OpenInputStream(data.Data);
             if (input is null) throw new IOException("Android did not provide a readable file stream.");
             using (var output = File.Create(targetPath))
                 await input.CopyToAsync(output);
 
             _lastImportedFile = targetPath;
-            _status.Text = "Copied to /workspace/" + safeName +
-                ". In UABEA, use File > Open and select this path.";
+            _status.Text = "Copied to Linux home: /home/uabea/" + safeName +
+                ". Open this path from UABEA's File > Open dialog.";
         }
         catch (Exception ex)
         {
@@ -465,12 +608,16 @@ public sealed class MainActivity : Android.App.Activity
 
     protected override void OnDestroy()
     {
+        _homeWatcher?.Dispose();
+        _syncDebounce?.Cancel();
         StopRuntimeProcesses();
         base.OnDestroy();
     }
 
     public override void OnBackPressed()
     {
+        _homeWatcher?.Dispose();
+        _syncDebounce?.Cancel();
         StopRuntimeProcesses();
         base.OnBackPressed();
     }
