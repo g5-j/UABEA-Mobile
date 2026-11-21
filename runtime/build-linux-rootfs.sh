@@ -49,7 +49,7 @@ sudo chroot "$ROOTFS" /usr/bin/env DEBIAN_FRONTEND=noninteractive apt-get clean
 sudo rm -rf "$ROOTFS/var/lib/apt/lists/"* "$ROOTFS/var/cache/apt/"*
 
 curl -fsSL https://dot.net/v1/dotnet-install.sh -o /tmp/dotnet-install.sh
-sudo mkdir -p "$ROOTFS/opt/dotnet"
+sudo mkdir -p "$ROOTFS/opt/dotnet" "$ROOTFS/home/uabea"
 sudo bash /tmp/dotnet-install.sh \
   --runtime dotnet --channel 8.0 --architecture x64 --os linux \
   --install-dir "$ROOTFS/opt/dotnet"
@@ -63,7 +63,7 @@ if grep -q "not found" /tmp/uabea-dotnet-ldd.txt; then
 fi
 
 sudo mkdir -p "$ROOTFS/opt/uabea" "$ROOTFS/workspace" "$ROOTFS/usr/local/bin"
-sudo chown -R "$(id -u):$(id -g)" "$ROOTFS/opt/dotnet" "$ROOTFS/opt/uabea" "$ROOTFS/workspace" "$ROOTFS/usr/local/bin"
+sudo chown -R "$(id -u):$(id -g)" "$ROOTFS/opt/dotnet" "$ROOTFS/opt/uabea" "$ROOTFS/home/uabea" "$ROOTFS/usr/local/bin"
 sudo tar --numeric-owner --xattrs --acls -czf "$ARCHIVE" -C "$ROOTFS" .
 gzip -t "$ARCHIVE"
 tar -tzf "$ARCHIVE" | grep -E '^\./(opt/dotnet/dotnet|usr/bin/Xvfb|usr/bin/x11vnc|usr/bin/python3)$'
