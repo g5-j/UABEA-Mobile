@@ -593,7 +593,7 @@ public sealed class MainActivity : Android.App.Activity
                 await Task.Delay(1800, token);
                 await SyncHomeToOutputFolderAsync(token);
             }
-            catch (OperationCanceledException) { }
+            catch (System.OperationCanceledException) { }
             catch (Exception ex) { RunOnUiThread(() => _status.Text = "Output sync failed: " + ex.Message); }
         }, token);
     }
