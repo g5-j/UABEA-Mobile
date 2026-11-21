@@ -781,7 +781,7 @@ public sealed class MainActivity : Android.App.Activity
                 using (stableStream)
                 {
                     var relative = Path.GetRelativePath(HomeDirectory, file);
-                    await CopyFileToTreeAsync(file, relative, _outputTreeUri, stableStream);
+                    await CopyFileToTreeAsync(relative, _outputTreeUri, stableStream);
                     synced++;
                 }
             }
@@ -837,7 +837,6 @@ public sealed class MainActivity : Android.App.Activity
     }
 
     async Task CopyFileToTreeAsync(
-        string sourcePath,
         string relativePath,
         Android.Net.Uri treeUri,
         FileStream input)
