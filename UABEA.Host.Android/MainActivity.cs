@@ -528,9 +528,11 @@ public sealed class MainActivity : Android.App.Activity
         {
             "-b", Path.Combine(RuntimeDirectory, "original") + ":/opt/uabea",
             "-b", HomeDirectory + ":/home/uabea",
-            "-w", "/home/uabea",
-            executable
+            "-w", "/home/uabea"
         });
+        if (!IsNativeX64)
+            args.Add("/usr/local/bin/box64");
+        args.Add(executable);
         args.AddRange(commandArguments);
 
         var start = new ProcessStartInfo(ProotPath)
