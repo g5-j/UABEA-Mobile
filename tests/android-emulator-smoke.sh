@@ -18,30 +18,48 @@ dump_ui() {
   adb shell cat /sdcard/uabea-window.xml 2>/dev/null || true
 }
 
-echo "Waiting for the app to finish installing and validating Linux..."
-installed=0
-for attempt in $(seq 1 300); do
-  UI="$(dump_ui)"
-  if grep -q "Linux runtime installed and verified" <<<"$UI"; then
-    installed=1
-    break
-  fi
-  if adb logcat -d -t 200 | grep -q "FATAL EXCEPTION"; then
-    adb logcat -d -t 1000
-    echo "::error::Android host crashed during Linux installation."
-    exit 1
-  fi
-  sleep 2
-done
-if [[ "$installed" != 1 ]]; then
-  adb logcat -d -t 1500
-  echo "::error::Linux rootfs and original UABEA payload did not finish installing in the Android app."
-  exit 1
-fi
-
 run_app_shell() {
   adb shell run-as com.g5j.uabeahost sh -s
 }
+
+dump_runtime_log() {
+  adb shell run-as com.g5j.uabeahost cat files/runtime/logs/runtime.log 2>/dev/null || true
+}
+
+echo "Waiting for the app to finish installing and validating Linux..."
+installed=0
+for attempt in $(seq 1 180); do
+  RUNTIME_LOG="$(dump_runtime_log)"
+  if grep -q "Runtime installation completed successfully" <<<"$RUNTIME_LOG"; then
+    installed=1
+    break
+  fi
+  if grep -q "\[INSTALL-ERROR\]" <<<"$RUNTIME_LOG"; then
+    echo "$RUNTIME_LOG"
+    echo "::error::Android host reported a Linux runtime installation error."
+    exit 1
+  fi
+  if (( attempt % 6 == 0 )); then
+    echo "Runtime installation is still running (poll $attempt/180). Latest installer log:"
+    tail -n 12 <<<"$RUNTIME_LOG"
+    if adb logcat -d -t 500 | grep -q "FATAL EXCEPTION"; then
+      adb logcat -d -t 1000
+      echo "$RUNTIME_LOG"
+      echo "::error::Android host crashed during Linux installation."
+      exit 1
+    fi
+  fi
+  sleep 10
+done
+if [[ "$installed" != 1 ]]; then
+  echo "Final runtime installer log:"
+  dump_runtime_log
+  echo "Android UI:"
+  dump_ui
+  adb logcat -d -t 1500
+  echo "::error::Linux rootfs and original UABEA payload did not finish installing within 30 minutes."
+  exit 1
+fi
 
 echo "Checking that the app extracted all critical Linux and UABEA files..."
 run_app_shell <<'APP_SHELL'
