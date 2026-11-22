@@ -246,6 +246,33 @@ jobs:
             readelf -h "$binary" | grep -E "Machine:.*AArch64"
           done
 
+      - name: Build Android PRoot x86_64 for native emulator testing
+        run: |
+          set -euo pipefail
+          NDK_DIR="$ANDROID_HOME/ndk/27.2.12479018"
+          SCRIPT="${RUNNER_TEMP}/proot-static/tools/build-static-aarch64.sh"
+          python3 - "$SCRIPT" <<'PY'
+          import pathlib, sys
+          path = pathlib.Path(sys.argv[1])
+          source = path.read_text()
+          old = 'if [[ "$ARCH" != "aarch64" ]]; then'
+          new = 'if [[ "$ARCH" != "aarch64" && "$ARCH" != "x86_64" ]]; then'
+          if old not in source:
+              raise SystemExit("Could not enable x86_64 in the pinned PRoot build script.")
+          path.write_text(source.replace(old, new, 1))
+          PY
+          ARCH=x86_64 NDK="$NDK_DIR" API=31 OUT="${RUNNER_TEMP}/proot-x86_64-build" \
+            REPO_ARTIFACT_DIR="${RUNNER_TEMP}/proot-x86_64-dist" \
+            bash "$SCRIPT"
+          test -s "${RUNNER_TEMP}/proot-x86_64-dist/proot"
+          test -s "${RUNNER_TEMP}/proot-x86_64-dist/loader"
+          readelf -h "${RUNNER_TEMP}/proot-x86_64-dist/proot" | grep -E "Machine:.*X86-64"
+          readelf -h "${RUNNER_TEMP}/proot-x86_64-dist/loader" | grep -E "Machine:.*X86-64"
+          mkdir -p UABEA.Host.Android/runtimes/android-x64/native
+          cp "${RUNNER_TEMP}/proot-x86_64-dist/proot" UABEA.Host.Android/runtimes/android-x64/native/libproot.so
+          cp "${RUNNER_TEMP}/proot-x86_64-dist/loader" UABEA.Host.Android/runtimes/android-x64/native/libloader.so
+          chmod 755 UABEA.Host.Android/runtimes/android-x64/native/libproot.so UABEA.Host.Android/runtimes/android-x64/native/libloader.so
+
       - name: Build Box64 for Android ARM64
         run: |
           set -euo pipefail
@@ -356,8 +383,51 @@ jobs:
       - name: Upload raw Android host APK for device-level CI
         uses: actions/upload-artifact@v4
         with:
-          name: UABEA-Original-Android-Host-APK-${{ github.sha }}
+          name: UABEA-Original-Android-Host-x86_64-CI-APK-${{ github.sha }}
           path: UABEA-Original-Host-debug.apk
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 30
+
+      - name: Build native x86_64 Android APK for emulator integration
+        run: |
+          set -euo pipefail
+          dotnet publish UABEA.Host.Android/UABEA.Host.Android.csproj \
+            --configuration Debug \
+            --framework net8.0-android31.0 \
+            --runtime android-x64 \
+            -p:AndroidPackageFormat=apk \
+            -p:PublishTrimmed=false \
+            -p:RunAOTCompilation=false
+          APK="$(find UABEA.Host.Android/bin/Debug/net8.0-android31.0/android-x64/publish -maxdepth 1 -type f -name '*.apk' | head -n 1)"
+          test -n "$APK"
+          BUILD_TOOLS="$(find "$ANDROID_HOME/build-tools" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -n 1)"
+          "$BUILD_TOOLS/zipalign" -f -p 4 "$APK" "$RUNNER_TEMP/uabea-x64-aligned.apk"
+          "$BUILD_TOOLS/apksigner" sign --ks "$RUNNER_TEMP/uabea-host-debug.keystore" --ks-key-alias androiddebugkey --ks-pass pass:android --key-pass pass:android --out UABEA-Original-Host-x86_64-ci.apk "$RUNNER_TEMP/uabea-x64-aligned.apk"
+          "$BUILD_TOOLS/apksigner" verify --verbose UABEA-Original-Host-x86_64-ci.apk
+          python3 - <<'PY'
+          import struct, sys, zipfile
+          apk = "UABEA-Original-Host-x86_64-ci.apk"
+          with zipfile.ZipFile(apk) as zf:
+              required = ["lib/x86_64/libproot.so", "lib/x86_64/libloader.so"]
+              missing = [name for name in required if name not in zf.namelist()]
+              if missing:
+                  sys.exit("Missing native x86_64 PRoot files: " + ", ".join(missing))
+              for name in required:
+                  data = zf.read(name)
+                  if data[:4] != b"\\x7fELF" or data[4] != 2 or data[5] != 1 or struct.unpack_from("<H", data, 18)[0] != 62:
+                      sys.exit("Invalid x86_64 ELF executable: " + name)
+              if "lib/x86_64/libbox64.so" in zf.namelist():
+                  sys.exit("x86_64 emulator APK must not package or invoke ARM64 Box64.")
+              print("Verified native x86_64 PRoot and loader. Emulator runs the Linux x86_64 guest natively.")
+          PY
+          ls -lh UABEA-Original-Host-x86_64-ci.apk
+
+      - name: Upload native x86_64 Android APK for emulator integration
+        uses: actions/upload-artifact@v4
+        with:
+          name: UABEA-Original-Android-Host-x86_64-CI-APK-${{ github.sha }}
+          path: UABEA-Original-Host-x86_64-ci.apk
           if-no-files-found: error
           compression-level: 0
           retention-days: 30
