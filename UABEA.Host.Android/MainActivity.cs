@@ -5,6 +5,7 @@ using Android.Views;
 using Android.Widget;
 using System.Diagnostics;
 using System.Security.Cryptography;
+using System.Runtime.InteropServices;
 using System.Text;
 using System.Formats.Tar;
 using System.IO.Compression;
@@ -25,7 +26,7 @@ public sealed class MainActivity : Android.App.Activity
     const int SaveFileRequest = 4102;
     const int OutputFolderRequest = 4103;
     const int VncPort = 5900;
-    const string RuntimeInstallVersion = "uabea-runtime-v4";
+    const string RuntimeInstallVersion = "uabea-runtime-v5";
 
     TextView _status = null!;
     TextView _connection = null!;
@@ -47,6 +48,7 @@ public sealed class MainActivity : Android.App.Activity
     string ProotPath => Path.Combine(NativeDirectory, "libproot.so");
     string LoaderPath => Path.Combine(NativeDirectory, "libloader.so");
     string Box64Path => Path.Combine(NativeDirectory, "libbox64.so");
+    bool IsNativeX64 => RuntimeInformation.ProcessArchitecture == Architecture.X64;
 
     protected override void OnCreate(Bundle? savedInstanceState)
     {
@@ -420,11 +422,15 @@ public sealed class MainActivity : Android.App.Activity
             if (_installTask is not null && !await _installTask)
                 throw new InvalidOperationException("Linux runtime installation failed. Review runtime/logs/runtime.log before retrying.");
 
-            foreach (var required in new[] {
-                ProotPath, LoaderPath, Box64Path,
+            var requiredComponents = new List<string> {
+                ProotPath, LoaderPath,
                 Path.Combine(RootfsDirectory, "opt", "dotnet", "dotnet"),
                 Path.Combine(RuntimeDirectory, "original", "UABEAvalonia.dll")
-            })
+            };
+            if (!IsNativeX64)
+                requiredComponents.Add(Box64Path);
+
+            foreach (var required in requiredComponents)
             {
                 if (!File.Exists(required))
                 {
@@ -435,22 +441,26 @@ public sealed class MainActivity : Android.App.Activity
                 WriteRuntimeLog("START", $"Required component present: {required}; bytes={new FileInfo(required).Length}.");
             }
 
-            _status.Text = "Checking Box64 Linux execution…";
-            var box64Sanity = StartGuestProcess("Box64-Sanity",
-                "/usr/local/bin/box64", "/usr/bin/true");
-            await box64Sanity.WaitForExitAsync().WaitAsync(TimeSpan.FromSeconds(20));
-            if (box64Sanity.ExitCode != 0)
+            var sanityName = IsNativeX64 ? "Native-X64-Sanity" : "Box64-Sanity";
+            _status.Text = IsNativeX64
+                ? "Checking native Linux x86_64 execution…"
+                : "Checking Box64 Linux execution…";
+            var sanity = StartGuestProcess(sanityName, "/usr/bin/true");
+            await sanity.WaitForExitAsync().WaitAsync(TimeSpan.FromSeconds(20));
+            if (sanity.ExitCode != 0)
                 throw new IOException(
-                    $"Box64 could not execute the Linux x86_64 sanity binary (exit code {box64Sanity.ExitCode}). Check runtime/logs/Box64-Sanity.log.");
+                    $"Linux x86_64 sanity executable failed (exit code {sanity.ExitCode}). Check runtime/logs/{sanityName}.log.");
 
-            WriteRuntimeLog("START", "Box64 x86_64 sanity executable completed successfully.");
+            WriteRuntimeLog("START", IsNativeX64
+                ? "Native Linux x86_64 sanity executable completed successfully."
+                : "Box64 x86_64 sanity executable completed successfully.");
 
             _status.Text = "Starting Linux desktop…";
             if (GetRunningProcess("Xvfb") is null)
             {
                 var socketPath = Path.Combine(RootfsDirectory, "tmp", ".X11-unix", "X1");
                 try { if (File.Exists(socketPath)) File.Delete(socketPath); } catch { }
-                StartGuestProcess("Xvfb", "/usr/local/bin/box64", "/usr/bin/Xvfb",
+                StartGuestProcess("Xvfb", "/usr/bin/Xvfb",
                     ":1", "-screen", "0", "1280x800x24", "-nolisten", "tcp");
                 if (!await WaitForFileAsync(socketPath, 20000))
                     throw new IOException("Xvfb did not create its display socket. Check runtime/logs/Xvfb.log.");
@@ -459,7 +469,7 @@ public sealed class MainActivity : Android.App.Activity
             _status.Text = "Starting local VNC server…";
             if (GetRunningProcess("x11vnc") is null)
             {
-                StartGuestProcess("x11vnc", "/usr/local/bin/box64", "/usr/bin/x11vnc",
+                StartGuestProcess("x11vnc", "/usr/bin/x11vnc",
                     "-display", ":1", "-forever", "-shared", "-nopw",
                     "-localhost", "-rfbport", VncPort.ToString());
             }
@@ -468,7 +478,7 @@ public sealed class MainActivity : Android.App.Activity
                 throw new IOException("VNC server did not listen on 127.0.0.1:5900. Check runtime/logs/x11vnc.log.");
 
             _status.Text = "Launching original UABEA…";
-            var app = StartGuestProcess("UABEA", "/usr/local/bin/box64", "/opt/dotnet/dotnet",
+            var app = StartGuestProcess("UABEA", "/opt/dotnet/dotnet",
                 "/opt/uabea/UABEAvalonia.dll");
 
             await Task.Delay(1500);
@@ -503,19 +513,25 @@ public sealed class MainActivity : Android.App.Activity
         return null;
     }
 
-    System.Diagnostics.Process StartGuestProcess(string name, params string[] command)
+    System.Diagnostics.Process StartGuestProcess(string name, string executable, params string[] commandArguments)
     {
         var args = new List<string>
         {
             "--link2symlink", "-0", "-r", RootfsDirectory,
             "-b", "/dev", "-b", "/proc", "-b", "/sys",
-            "-b", "/system", "-b", "/apex",
-            "-b", Box64Path + ":/usr/local/bin/box64",
+            "-b", "/system", "-b", "/apex"
+        };
+        if (!IsNativeX64)
+            args.AddRange(new[] { "-b", Box64Path + ":/usr/local/bin/box64" });
+
+        args.AddRange(new[]
+        {
             "-b", Path.Combine(RuntimeDirectory, "original") + ":/opt/uabea",
             "-b", HomeDirectory + ":/home/uabea",
-            "-w", "/home/uabea"
-        };
-        args.AddRange(command);
+            "-w", "/home/uabea",
+            executable
+        });
+        args.AddRange(commandArguments);
 
         var start = new ProcessStartInfo(ProotPath)
         {
@@ -527,24 +543,26 @@ public sealed class MainActivity : Android.App.Activity
         foreach (var arg in args) start.ArgumentList.Add(arg);
         start.Environment["PROOT_LOADER"] = LoaderPath;
         start.Environment["PROOT_TMP_DIR"] = Path.Combine(RuntimeDirectory, "proot-tmp");
-        start.Environment["BOX64_LD_LIBRARY_PATH"] =
-            "/lib/x86_64-linux-gnu:/usr/lib/x86_64-linux-gnu:/lib";
-        // Use Box64's interpreter while validating Android/PRoot compatibility.
-        // This avoids a dynarec crash masking whether x86_64 execution works at all.
-        start.Environment["BOX64_DYNAREC"] = "0";
-        start.Environment["BOX64_LOG"] = "1";
-        start.Environment["BOX64_SHOWSEGV"] = "1";
         start.Environment["BOX64_PATH"] = "/usr/bin:/bin";
         start.Environment["DISPLAY"] = ":1";
         start.Environment["HOME"] = "/home/uabea";
         start.Environment["DOTNET_ROOT"] = "/opt/dotnet";
         start.Environment["LANG"] = "C.UTF-8";
+        if (!IsNativeX64)
+        {
+            start.Environment["BOX64_LD_LIBRARY_PATH"] =
+                "/lib/x86_64-linux-gnu:/usr/lib/x86_64-linux-gnu:/lib";
+            // Use Box64's interpreter until ARM64 device testing confirms dynarec stability.
+            start.Environment["BOX64_DYNAREC"] = "0";
+            start.Environment["BOX64_LOG"] = "1";
+            start.Environment["BOX64_SHOWSEGV"] = "1";
+        }
 
         var logPath = Path.Combine(RuntimeDirectory, "logs", name + ".log");
         Directory.CreateDirectory(Path.GetDirectoryName(logPath)!);
         var log = new StreamWriter(logPath, append: true) { AutoFlush = true };
         log.WriteLine($"[{DateTime.UtcNow:O}] Launching: {ProotPath} {string.Join(" ", args)}");
-        WriteRuntimeLog("PROCESS", $"Launching {name}; executable={ProotPath}; args={string.Join(" ", args)}; log={logPath}.");
+        WriteRuntimeLog("PROCESS", $"Launching {name}; executable={ProotPath}; args={string.Join(" ", args)}; nativeHost={RuntimeInformation.ProcessArchitecture}; log={logPath}.");
         var process = new System.Diagnostics.Process { StartInfo = start, EnableRaisingEvents = true };
         process.OutputDataReceived += (_, e) => { if (e.Data is not null) lock (log) log.WriteLine(e.Data); };
         process.ErrorDataReceived += (_, e) => { if (e.Data is not null) lock (log) log.WriteLine(e.Data); };
@@ -571,7 +589,7 @@ public sealed class MainActivity : Android.App.Activity
             log.Dispose();
             throw new IOException(
                 "Could not execute Android native PRoot at " + ProotPath +
-                ". Confirm the APK extracted libproot.so and libloader.so. " + ex.Message, ex);
+                ". Confirm the APK extracted the correct native PRoot and loader. " + ex.Message, ex);
         }
 
         process.BeginOutputReadLine();
@@ -606,7 +624,7 @@ public sealed class MainActivity : Android.App.Activity
             _status.Text = "Testing original UABEA bundle edit and save…";
 
             var import = StartGuestProcess("UABEA-Bundle-Import",
-                "/usr/local/bin/box64", "/opt/dotnet/dotnet", "/opt/uabea/UABEAvalonia.dll",
+                "/opt/dotnet/dotnet", "/opt/uabea/UABEAvalonia.dll",
                 "batchimportbundle", "/home/uabea/.uabea-selftest");
             await import.WaitForExitAsync().WaitAsync(TimeSpan.FromSeconds(90));
             if (import.ExitCode != 0)
@@ -617,7 +635,7 @@ public sealed class MainActivity : Android.App.Activity
                 throw new InvalidDataException("The test bundle did not change after the edit operation.");
 
             var export = StartGuestProcess("UABEA-Bundle-Verify",
-                "/usr/local/bin/box64", "/opt/dotnet/dotnet", "/opt/uabea/UABEAvalonia.dll",
+                "/opt/dotnet/dotnet", "/opt/uabea/UABEAvalonia.dll",
                 "batchexportbundle", "/home/uabea/.uabea-selftest");
             await export.WaitForExitAsync().WaitAsync(TimeSpan.FromSeconds(90));
             if (export.ExitCode != 0)
