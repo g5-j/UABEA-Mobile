@@ -383,7 +383,7 @@ jobs:
       - name: Upload raw Android host APK for device-level CI
         uses: actions/upload-artifact@v4
         with:
-          name: UABEA-Original-Android-Host-x86_64-CI-APK-${{ github.sha }}
+          name: UABEA-Original-Android-Host-APK-${{ github.sha }}
           path: UABEA-Original-Host-debug.apk
           if-no-files-found: error
           compression-level: 0
@@ -415,7 +415,7 @@ jobs:
                   sys.exit("Missing native x86_64 PRoot files: " + ", ".join(missing))
               for name in required:
                   data = zf.read(name)
-                  if data[:4] != b"\\x7fELF" or data[4] != 2 or data[5] != 1 or struct.unpack_from("<H", data, 18)[0] != 62:
+                  if data[:4] != bytes((127, 69, 76, 70)) or data[4] != 2 or data[5] != 1 or struct.unpack_from("<H", data, 18)[0] != 62:
                       sys.exit("Invalid x86_64 ELF executable: " + name)
               if "lib/x86_64/libbox64.so" in zf.namelist():
                   sys.exit("x86_64 emulator APK must not package or invoke ARM64 Box64.")
@@ -467,7 +467,7 @@ jobs:
       - name: Download signed Android host APK
         uses: actions/download-artifact@v4
         with:
-          name: UABEA-Original-Android-Host-APK-${{ github.sha }}
+          name: UABEA-Original-Android-Host-x86_64-CI-APK-${{ github.sha }}
           path: ${{ runner.temp }}/uabea-apk
 
       - name: Enable KVM for Android Emulator
@@ -476,7 +476,7 @@ jobs:
           sudo udevadm control --reload-rules
           sudo udevadm trigger --name-match=kvm
 
-      - name: Run ARM64 APK integration tests on API 35 emulator
+      - name: Run native x86_64 Android integration tests on API 35 emulator
         uses: reactivecircus/android-emulator-runner@v2
         with:
           api-level: 35
