@@ -116,7 +116,7 @@ for attempt in $(seq 1 240); do
     adb logcat -d -t 1500
     run_app_shell <<'APP_SHELL' || true
 for f in files/runtime/logs/*.log; do echo "==== $f"; cat "$f"; done
-APP_SHELL || true
+APP_SHELL
     echo "::error::Android guest runtime failed to start."
     exit 1
   fi
@@ -127,7 +127,7 @@ if [[ "$started" != 1 ]]; then
   adb logcat -d -t 1500
   run_app_shell <<'APP_SHELL' || true
 for f in files/runtime/logs/*.log; do echo "==== $f"; cat "$f"; done
-APP_SHELL || true
+APP_SHELL
   echo "::error::Original UABEA did not reach its running state inside Android."
   exit 1
 fi
@@ -171,7 +171,7 @@ for attempt in $(seq 1 120); do
     echo "$UI"
     run_app_shell <<'APP_SHELL' || true
 for f in files/runtime/logs/UABEA-Bundle-*.log; do echo "==== $f"; cat "$f"; done
-APP_SHELL || true
+APP_SHELL
     echo "::error::UABEA could not edit, save and reopen the test UnityFS bundle."
     exit 1
   fi
@@ -181,7 +181,7 @@ if [[ "$bundle_test" != 1 ]]; then
   dump_ui
   run_app_shell <<'APP_SHELL' || true
 for f in files/runtime/logs/UABEA-Bundle-*.log; do echo "==== $f"; cat "$f"; done
-APP_SHELL || true
+APP_SHELL
   echo "::error::UABEA bundle edit/save round-trip did not finish."
   exit 1
 fi
@@ -246,7 +246,7 @@ for attempt in $(seq 1 240); do
     echo "$UI"
     run_app_shell <<'APP_SHELL' || true
 for f in files/runtime/logs/*.log; do echo "==== $f"; cat "$f"; done
-APP_SHELL || true
+APP_SHELL
     echo "::error::UABEA failed to restart after Stop."
     exit 1
   fi
