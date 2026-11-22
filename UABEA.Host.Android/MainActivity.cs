@@ -223,6 +223,13 @@ public sealed class MainActivity : Android.App.Activity
     async Task InstallArchiveAtomicallyAsync(string assetName, string destination, string[] requiredFiles)
     {
         WriteRuntimeLog("ARCHIVE", $"Checking archive '{assetName}' for destination '{destination}'.");
+        var backup = destination + ".previous";
+        if (!Directory.Exists(destination) && Directory.Exists(backup))
+        {
+            Directory.Move(backup, destination);
+            WriteRuntimeLog("ARCHIVE", $"Recovered previous installation after an interrupted replacement: {destination}.");
+        }
+
         var marker = Path.Combine(destination, ".install-complete");
         var valid = File.Exists(marker) &&
             File.ReadAllText(marker).StartsWith(RuntimeInstallVersion, StringComparison.Ordinal) && requiredFiles.All(
@@ -271,9 +278,37 @@ public sealed class MainActivity : Android.App.Activity
 
             await File.WriteAllTextAsync(Path.Combine(staging, ".install-complete"),
                 RuntimeInstallVersion + "\n" + assetName + "\n" + DateTime.UtcNow.ToString("O"));
-            if (Directory.Exists(destination)) Directory.Delete(destination, recursive: true);
-            Directory.Move(staging, destination);
-            WriteRuntimeLog("ARCHIVE", $"Atomic installation committed: {destination}.");
+
+            var movedPrevious = false;
+            if (Directory.Exists(destination))
+            {
+                if (Directory.Exists(backup))
+                    Directory.Delete(backup, recursive: true);
+                Directory.Move(destination, backup);
+                movedPrevious = true;
+            }
+
+            try
+            {
+                Directory.Move(staging, destination);
+            }
+            catch
+            {
+                if (!Directory.Exists(destination) && movedPrevious && Directory.Exists(backup))
+                    Directory.Move(backup, destination);
+                throw;
+            }
+
+            if (movedPrevious)
+            {
+                try { Directory.Delete(backup, recursive: true); }
+                catch (Exception cleanupEx)
+                {
+                    WriteRuntimeLog("ARCHIVE-WARN", $"New installation committed, but previous-installation cleanup failed: {cleanupEx.Message}");
+                }
+            }
+
+            WriteRuntimeLog("ARCHIVE", $"Installation committed with rollback protection: {destination}.");
         }
         catch (Exception ex)
         {
