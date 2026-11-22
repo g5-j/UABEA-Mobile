@@ -399,6 +399,16 @@ public sealed class MainActivity : Android.App.Activity
                 WriteRuntimeLog("START", $"Required component present: {required}; bytes={new FileInfo(required).Length}.");
             }
 
+            _status.Text = "Checking Box64 Linux execution…";
+            var box64Sanity = StartGuestProcess("Box64-Sanity",
+                "/usr/local/bin/box64", "/usr/bin/true");
+            await box64Sanity.WaitForExitAsync().WaitAsync(TimeSpan.FromSeconds(20));
+            if (box64Sanity.ExitCode != 0)
+                throw new IOException(
+                    $"Box64 could not execute the Linux x86_64 sanity binary (exit code {box64Sanity.ExitCode}). Check runtime/logs/Box64-Sanity.log.");
+
+            WriteRuntimeLog("START", "Box64 x86_64 sanity executable completed successfully.");
+
             _status.Text = "Starting Linux desktop…";
             if (GetRunningProcess("Xvfb") is null)
             {
@@ -483,6 +493,11 @@ public sealed class MainActivity : Android.App.Activity
         start.Environment["PROOT_TMP_DIR"] = Path.Combine(RuntimeDirectory, "proot-tmp");
         start.Environment["BOX64_LD_LIBRARY_PATH"] =
             "/lib/x86_64-linux-gnu:/usr/lib/x86_64-linux-gnu:/lib";
+        // Use Box64's interpreter while validating Android/PRoot compatibility.
+        // This avoids a dynarec crash masking whether x86_64 execution works at all.
+        start.Environment["BOX64_DYNAREC"] = "0";
+        start.Environment["BOX64_LOG"] = "1";
+        start.Environment["BOX64_SHOWSEGV"] = "1";
         start.Environment["BOX64_PATH"] = "/usr/bin:/bin";
         start.Environment["DISPLAY"] = ":1";
         start.Environment["HOME"] = "/home/uabea";
