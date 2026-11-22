@@ -65,7 +65,7 @@ public sealed class MainActivity : Android.App.Activity
             .GetString("output_tree_uri", null);
         if (!string.IsNullOrWhiteSpace(savedTree) && Android.Net.Uri.Parse(savedTree) is { } savedUri)
             _outputTreeUri = savedUri;
-        _installTask = InstallRuntimeAssetsAsync();
+        _installTask = Task.Run(InstallRuntimeAssetsAsync);
     }
 
     void InitializeRuntimeLogging()
@@ -209,13 +209,14 @@ public sealed class MainActivity : Android.App.Activity
 
             StartHomeFileWatcher();
             WriteRuntimeLog("INSTALL", "Runtime installation completed successfully. Required files and Android native libraries are present.");
-            _status.Text = "Linux runtime installed and verified. Press Start, then connect with a VNC app.";
+            RunOnUiThread(() =>
+                _status.Text = "Linux runtime installed and verified. Press Start, then connect with a VNC app.");
             return true;
         }
         catch (Exception ex)
         {
             WriteRuntimeLog("INSTALL-ERROR", ex.ToString());
-            _status.Text = "Runtime installation failed: " + ex.Message;
+            RunOnUiThread(() => _status.Text = "Runtime installation failed: " + ex.Message);
             return false;
         }
     }
