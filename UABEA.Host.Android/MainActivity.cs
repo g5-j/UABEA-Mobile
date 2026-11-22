@@ -202,11 +202,16 @@ public sealed class MainActivity : Android.App.Activity
             WriteRuntimeLog("VERIFY", $"dotnet exists={File.Exists(dotnetPath)}; bytes={(File.Exists(dotnetPath) ? new FileInfo(dotnetPath).Length : 0)}; path={dotnetPath}.");
             Directory.CreateDirectory(Path.Combine(RootfsDirectory, "home", "uabea"));
 
-            foreach (var nativeBinary in new[] { ProotPath, LoaderPath, Box64Path })
+            var requiredNativeBinaries = new List<string> { ProotPath, LoaderPath };
+            if (!IsNativeX64)
+                requiredNativeBinaries.Add(Box64Path);
+
+            foreach (var nativeBinary in requiredNativeBinaries)
             {
                 if (!File.Exists(nativeBinary))
                     throw new FileNotFoundException(
                         "Android did not extract a required executable from the APK native libraries: " + nativeBinary);
+                WriteRuntimeLog("VERIFY", $"Android native executable present: {nativeBinary}; bytes={new FileInfo(nativeBinary).Length}.");
             }
 
             StartHomeFileWatcher();
